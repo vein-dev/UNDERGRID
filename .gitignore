@@ -1,0 +1,22 @@
+# Node modules
+node_modules/
+package-lock.json
+
+# roblox-ts build outputs
+out/
+include/
+*.tsbuildinfo
+
+# Rojo sourcemap & temp files
+sourcemap.json
+*.rbxlx.lock
+*.rbxl.lock
+
+# Roblox place files & scratch dumps
+*.rbxl
+*.rbxlx
+scratch/
+
+# OS & Editor
+.DS_Store
+Thumbs.db

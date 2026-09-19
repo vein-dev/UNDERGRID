@@ -1,0 +1,8 @@
+{
+	"recommendations": [
+		"evaera.vscode-roblox-ts",
+		"rojo-rbx.vscode-rojo",
+		"dbaeumer.vscode-eslint",
+		"esbenp.prettier-vscode"
+	]
+}
