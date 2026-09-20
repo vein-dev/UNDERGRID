@@ -258,6 +258,14 @@ export class SkateboardAnimationService {
 	}
 
 	/**
+	 * Memeriksa apakah animasi tertentu sedang aktif diputar
+	 */
+	public isPlaying(animId: string): boolean {
+		const track = this.getTrack(animId);
+		return track !== undefined && track.IsPlaying;
+	}
+
+	/**
 	 * Menghentikan animasi berdasarkan Asset ID atau nama trik
 	 */
 	public stopAnimation(animId: string, fadeTime = 0.15): void {

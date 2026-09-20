@@ -84,6 +84,14 @@ export class ServerSkateboardService {
 			this.dismountPlayer(player);
 		});
 
+		const starterSkate = StarterPack.FindFirstChild("Skateboard") as Tool | undefined;
+		if (starterSkate) {
+			starterSkate.RequiresHandle = false;
+			starterSkate.ManualActivationOnly = true;
+			const oldHandle = starterSkate.FindFirstChild("Handle");
+			if (oldHandle) oldHandle.Name = "ToolAnchor";
+		}
+
 		print("[ServerSkateboardService] Initialized successfully with Combat-grade Keyframe & Sound replication.");
 	}
 
@@ -233,7 +241,11 @@ export class ServerSkateboardService {
 				}
 			} else {
 				for (const child of toolSource.GetChildren()) {
-					if (child.Name !== "Handle" && (child.IsA("BasePart") || child.IsA("Model") || child.IsA("Folder"))) {
+					if (
+						child.Name !== "Handle" &&
+						child.Name !== "ToolAnchor" &&
+						(child.IsA("BasePart") || child.IsA("Model") || child.IsA("Folder"))
+					) {
 						child.Clone().Parent = tmpl;
 					}
 				}
@@ -270,8 +282,21 @@ export class ServerSkateboardService {
 			animator.Parent = humanoid;
 		}
 
-		// Jika sudah terpasang, bersihkan terlebih dahulu
-		this.dismountPlayer(player);
+		// Jika sudah terpasang papan sebelumnya, bersihkan board & joint saja (JANGAN dismountPlayer agar tool tidak di-unequip)
+		const oldBoard = this.activeBoards.get(player);
+		if (oldBoard) {
+			oldBoard.Destroy();
+			this.activeBoards.delete(player);
+		}
+		for (const child of char.GetChildren()) {
+			if (child.Name === "PlayerSkateboard") {
+				child.Destroy();
+			}
+		}
+		const oldJoint = rootPart.FindFirstChild(SkateboardConfig.ATTACHMENT.jointName);
+		if (oldJoint) {
+			oldJoint.Destroy();
+		}
 
 		if (!this.templateModel) {
 			this.findOrCreateTemplate(player);
@@ -308,12 +333,17 @@ export class ServerSkateboardService {
 			}
 		}
 
-		// Set semua part tidak anchored, canCollide false, dan massless
+		// Set semua part tidak anchored, canCollide false, massless, dan pastikan part visual papan 100% terlihat
 		for (const desc of boardModel.GetDescendants()) {
 			if (desc.IsA("BasePart")) {
 				desc.Anchored = false;
 				desc.CanCollide = false;
 				desc.Massless = true;
+				if (desc.Name === "Handle" || desc.Name === "ToolAnchor" || desc.Name === "Trucks") {
+					desc.Transparency = 1;
+				} else {
+					desc.Transparency = 0;
+				}
 			}
 		}
 
@@ -332,12 +362,30 @@ export class ServerSkateboardService {
 		joint.C1 = new CFrame();
 		joint.Parent = rootPart;
 
-		// Sembunyikan part visual Tool di tangan secara global agar sinkron ke SEMUA pemain
+		// Kunci part tool ke HumanoidRootPart agar tidak jatuh bebas ke void (mencegah tool terhapus oleh FallenPartsDestroyHeight)
 		const equippedTool = char.FindFirstChildOfClass("Tool");
 		if (equippedTool) {
+			equippedTool.RequiresHandle = false;
+			const anchorPart = (equippedTool.FindFirstChild("ToolAnchor") ??
+				equippedTool.FindFirstChild("Handle") ??
+				equippedTool.FindFirstChildWhichIsA("BasePart")) as BasePart | undefined;
+			if (anchorPart) {
+				anchorPart.Name = "ToolAnchor";
+				anchorPart.CFrame = rootPart.CFrame;
+				let weld = anchorPart.FindFirstChild("ToolRootWeld") as WeldConstraint | undefined;
+				if (!weld) {
+					weld = new Instance("WeldConstraint");
+					weld.Name = "ToolRootWeld";
+					weld.Part0 = rootPart;
+					weld.Part1 = anchorPart;
+					weld.Parent = anchorPart;
+				}
+			}
 			for (const desc of equippedTool.GetDescendants()) {
 				if (desc.IsA("BasePart")) {
 					desc.Transparency = 1;
+					desc.CanCollide = false;
+					desc.Massless = true;
 				}
 			}
 		}
@@ -352,7 +400,9 @@ export class ServerSkateboardService {
 		humanoid.WalkSpeed = 0;
 		humanoid.JumpPower = 0;
 		humanoid.AutoRotate = false;
-		this.originalHipHeights.set(player, humanoid.HipHeight);
+		if (!this.originalHipHeights.has(player)) {
+			this.originalHipHeights.set(player, humanoid.HipHeight);
+		}
 		humanoid.HipHeight = SkateboardConfig.ATTACHMENT.hipHeightMounted;
 
 		this.activeBoards.set(player, boardModel);
@@ -392,18 +442,10 @@ export class ServerSkateboardService {
 				if (joint) joint.Destroy();
 			}
 
-			// Pulihkan part visual Tool di tangan secara global
-			const equippedTool = char.FindFirstChildOfClass("Tool");
-			if (equippedTool) {
-				for (const desc of equippedTool.GetDescendants()) {
-					if (desc.IsA("BasePart")) {
-						desc.Transparency = 0;
-					}
-				}
-			}
-
+			// Unequip tool skateboard dari tangan ke Backpack
 			const humanoid = char.FindFirstChildOfClass("Humanoid");
 			if (humanoid && humanoid.Health > 0) {
+				humanoid.UnequipTools();
 				humanoid.WalkSpeed = 12;
 				humanoid.JumpPower = 35;
 				humanoid.AutoRotate = true;

@@ -88,5 +88,31 @@ export const SkateboardConfig = {
 		rolling: "rbxassetid://9125955982",
 		pop: "rbxassetid://135161226700647",
 		landing: "rbxassetid://80130417720843",
+		grind: "rbxassetid://9117967996",
+	},
+
+	// Konfigurasi Fisika Audio Rolling & Inersia Roda
+	AUDIO: {
+		minRollSpeed: 0.2, // studs/s batas hening saat diam
+		maxRollVolume: 0.35, // Volume maksimum yang nyaman dan realistis
+		minRollVolume: 0.02, // Volume desisan lembut saat mulai meluncur perlahan
+		minRollPitch: 0.72, // Pitch gemuruh roda berat di kecepatan rendah
+		maxRollPitch: 1.28, // Pitch desingan bearing di kecepatan tinggi
+		airborneVolumeMultiplier: 0.28, // Rasio volume desingan roda di udara (28% dari ground contact)
+		airborneDecayRate: 1.6, // Laju deselerasi putaran roda di udara per detik (~0.6-0.8s fade out)
+		groundLerpSpeed: 10.0, // Kecepatan respons lerp volume di tanah
+		airLerpSpeed: 6.0, // Kecepatan transisi ke desingan udara saat lepas landas
+	},
+
+	GRINDING: {
+		tag: "GrindRail",
+		raycastDistance: 4.8, // Jarak deteksi ke bawah dari HRP saat InAir (studs)
+		minGrindSpeed: 18, // Kecepatan minimal saat lock ke rel (studs/s)
+		friction: 2.2, // Perlambatan gesekan per detik di rel datar (studs/s^2)
+		slopeBoost: 1.25, // Pengali dorongan gravitasi saat menuruni rel miring
+		popOffImpulse: 7, // Impuls vertikal ekstra saat Ollie keluar dari rel
+		boardslideAngleThreshold: 0.707, // Batas sudut Dot product (~45 deg) untuk 50-50 vs Boardslide
+		grindHeightOffset: 3.28, // Offset pas untuk 50-50 grind (trucks menempel rel)
+		boardslideHeightOffset: 3.08, // Offset pas untuk Boardslide (deck papan menempel rel)
 	},
 } as const;

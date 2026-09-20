@@ -1,5 +1,17 @@
-import { ContextActionService, Debris, Players, ReplicatedStorage, RunService, TweenService, UserInputService, Workspace } from "@rbxts/services";
+import {
+	ContentProvider,
+	ContextActionService,
+	Debris,
+	GuiService,
+	Players,
+	ReplicatedStorage,
+	RunService,
+	TweenService,
+	UserInputService,
+	Workspace,
+} from "@rbxts/services";
 import { CombatHudView } from "client/ui/views/CombatHudView";
+import { BackpackController } from "client/controllers/BackpackController";
 import { getRemoteEvent } from "shared/network";
 import { ARCZIS_COMBAT_CONFIG } from "shared/types";
 import { MovementConfig } from "shared/config/MovementConfig";
@@ -76,6 +88,7 @@ export class CombatController {
 
 	// Connections
 	private connections: RBXScriptConnection[] = [];
+	private toolAnimConnections: RBXScriptConnection[] = [];
 
 	private constructor() {}
 
@@ -189,6 +202,9 @@ export class CombatController {
 	private onCharacterAdded(char: Model): void {
 		this.character = char;
 		this.humanoid = char.WaitForChild("Humanoid") as Humanoid;
+		this.humanoidRootPart =
+			(char.WaitForChild("HumanoidRootPart", 5) as BasePart | undefined) ??
+			(char.FindFirstChild("HumanoidRootPart") as BasePart | undefined);
 		this.animator =
 			this.humanoid.FindFirstChildOfClass("Animator") ??
 			(this.humanoid.WaitForChild("Animator", 5) as Animator | undefined);
@@ -236,6 +252,10 @@ export class CombatController {
 				if (this.isEquipped && this.humanoid && this.humanoid.Jump) {
 					this.humanoid.Jump = false;
 				}
+			});
+
+			this.humanoid.Died.Connect(() => {
+				this.onUnequipped();
 			});
 		}
 		UserInputService.MouseBehavior = Enum.MouseBehavior.Default;
@@ -313,12 +333,56 @@ export class CombatController {
 	}
 
 	// ═══════════════════════════════════════════════════════
+	// TOOL ANIMATION SUPPRESSION (toolnone / slash)
+	// ═══════════════════════════════════════════════════════
+
+	private suppressToolNoneAnimations(): void {
+		this.cleanToolNoneListeners();
+		if (!this.humanoid) return;
+
+		for (const track of this.humanoid.GetPlayingAnimationTracks()) {
+			const name = track.Name.lower();
+			const animName = track.Animation?.Name.lower() ?? "";
+			if (
+				name.find("toolnone")[0] !== undefined ||
+				animName.find("toolnone")[0] !== undefined ||
+				name.find("slash")[0] !== undefined ||
+				animName.find("slash")[0] !== undefined
+			) {
+				track.Stop(0);
+			}
+		}
+
+		this.toolAnimConnections.push(
+			this.humanoid.AnimationPlayed.Connect((track) => {
+				const name = track.Name.lower();
+				const animName = track.Animation?.Name.lower() ?? "";
+				if (
+					name.find("toolnone")[0] !== undefined ||
+					animName.find("toolnone")[0] !== undefined ||
+					name.find("slash")[0] !== undefined ||
+					animName.find("slash")[0] !== undefined
+				) {
+					track.Stop(0);
+				}
+			}),
+		);
+	}
+
+	private cleanToolNoneListeners(): void {
+		for (const conn of this.toolAnimConnections) {
+			conn.Disconnect();
+		}
+		this.toolAnimConnections = [];
+	}
+
+	// ═══════════════════════════════════════════════════════
 	// PROCEDURAL R6 JOINT ANIMATION FALLBACK
 	// ═══════════════════════════════════════════════════════
 
 	public isTrackUsable(name: string): boolean {
 		const track = this.animTracks.get(name);
-		return track !== undefined && track.Length > 0;
+		return track !== undefined;
 	}
 
 	private playProceduralM1(combo: number): void {
@@ -496,6 +560,14 @@ export class CombatController {
 		this.lastActionDebug = "Fists Dipegang: Combat Aktif (Shift Lock ON)";
 		this.combatEvent.FireServer("Equip", true);
 
+		// Tandai karakter dan HRP dengan atribut IsFighting agar MovementController tidak bentrok
+		if (this.character) {
+			this.character.SetAttribute("IsFighting", true);
+		}
+		if (this.humanoidRootPart) {
+			this.humanoidRootPart.SetAttribute("IsFighting", true);
+		}
+
 		// Enable Shift Lock mode
 		if (this.humanoid) {
 			this.humanoid.AutoRotate = false;
@@ -506,6 +578,9 @@ export class CombatController {
 			this.humanoid.JumpHeight = 0;
 		}
 		UserInputService.MouseBehavior = Enum.MouseBehavior.LockCenter;
+
+		// Hentikan animasi tool bawaan Roblox (toolnone / slash)
+		this.suppressToolNoneAnimations();
 
 		this.combatHud.setVisible(true);
 		this.combatHud.setCombatStates(this.isBlocking, this.isSprinting);
@@ -541,22 +616,28 @@ export class CombatController {
 		this.combatEvent.FireServer("Equip", false);
 		this.blockEvent.FireServer(false);
 
-		// Disable Shift Lock mode & restore Jump
+		// Hapus atribut IsFighting
+		if (this.character) {
+			this.character.SetAttribute("IsFighting", false);
+		}
+		if (this.humanoidRootPart) {
+			this.humanoidRootPart.SetAttribute("IsFighting", false);
+		}
+
+		this.cleanToolNoneListeners();
+
+		// Disable Shift Lock mode & restore Jump & normal WalkSpeed
 		if (this.humanoid) {
 			this.humanoid.AutoRotate = true;
 			this.humanoid.CameraOffset = new Vector3(0, 0, 0);
 			this.humanoid.SetStateEnabled(Enum.HumanoidStateType.Jumping, true);
 			this.humanoid.UseJumpPower = true;
 			this.humanoid.JumpPower = MovementConfig.JUMP.jumpPower;
+			this.humanoid.WalkSpeed = MovementConfig.CROUCH.normalSpeed;
 		}
 		UserInputService.MouseBehavior = Enum.MouseBehavior.Default;
 
 		this.combatHud.setVisible(false);
-
-		if (this.humanoid) {
-			this.humanoid.WalkSpeed = ARCZIS_COMBAT_CONFIG.DefaultWalkSpeed;
-		}
-
 		this.isBlocking = false;
 		this.isAttacking = false;
 		this.isSprinting = false;
@@ -579,6 +660,30 @@ export class CombatController {
 			this.combatHud.setVisible(false);
 			this.stopAllCombatAnims();
 			this.setProceduralBlock(false);
+			this.cleanToolNoneListeners();
+
+			// Pulihkan camera dan mouse saat paused
+			if (this.humanoid) {
+				this.humanoid.AutoRotate = true;
+				this.humanoid.CameraOffset = new Vector3(0, 0, 0);
+				this.humanoid.SetStateEnabled(Enum.HumanoidStateType.Jumping, true);
+				this.humanoid.UseJumpPower = true;
+				this.humanoid.JumpPower = MovementConfig.JUMP.jumpPower;
+			}
+			UserInputService.MouseBehavior = Enum.MouseBehavior.Default;
+		} else if (this.isEquipped) {
+			// Aktifkan kembali Shift Lock jika Fists masih dipegang
+			if (this.humanoid) {
+				this.humanoid.AutoRotate = false;
+				this.humanoid.CameraOffset = new Vector3(1.75, 0.25, 0);
+				this.humanoid.SetStateEnabled(Enum.HumanoidStateType.Jumping, false);
+				this.humanoid.JumpPower = 0;
+				this.humanoid.JumpHeight = 0;
+			}
+			UserInputService.MouseBehavior = Enum.MouseBehavior.LockCenter;
+			this.suppressToolNoneAnimations();
+			this.combatHud.setVisible(true);
+			this.updateMovement();
 		}
 	}
 
@@ -589,11 +694,17 @@ export class CombatController {
 		const camera = Workspace.CurrentCamera;
 		if (!camera) return;
 
-		// Lock mouse to center of screen unless player is typing in chat/input
+		// Lock mouse to center of screen unless player is typing, in core menu, or backpack is open
 		const isTyping = UserInputService.GetFocusedTextBox() !== undefined;
-		if (!isTyping) {
-			UserInputService.MouseBehavior = Enum.MouseBehavior.LockCenter;
+		const isMenuOpen = GuiService.MenuIsOpen;
+		const isBackpackOpen = BackpackController.getInstance().isOpen();
+
+		if (isTyping || isMenuOpen || isBackpackOpen) {
+			UserInputService.MouseBehavior = Enum.MouseBehavior.Default;
+			return;
 		}
+
+		UserInputService.MouseBehavior = Enum.MouseBehavior.LockCenter;
 
 		// Rotate character horizontally to match camera view direction (Shift Lock orientation)
 		const [, yaw] = camera.CFrame.ToOrientation();
@@ -742,12 +853,8 @@ export class CombatController {
 			track.Looped = looped;
 			this.animTracks.set(name, track);
 
-			task.delay(0.5, () => {
-				if (track.Length === 0) {
-					this.studioWarn(
-						`[CombatController] PERINGATAN: Animasi '${name}' (ID: ${id}) memiliki panjang 0 detik! Ini biasanya karena Roblox memblokir izin aset ini (Asset Ownership Restriction).`,
-					);
-				}
+			task.spawn(() => {
+				pcall(() => ContentProvider.PreloadAsync([anim]));
 			});
 
 			return track;
@@ -1011,13 +1118,33 @@ export class CombatController {
 		this.stopAnim("CombatIdle", 0.05);
 		this.stopAnim("CombatWalk", 0.05);
 		this.stopAnim("CombatRun", 0.05);
+		this.stopAttackAnims();
 
+		this.isAttacking = true;
 		const animName = `M1_Punch${this.comboIndex}`;
+		let track: AnimationTrack | undefined;
 		if (this.isTrackUsable(animName)) {
-			this.playAnim(animName, 0.05);
+			track = this.playAnim(animName, 0.05);
 		} else {
 			this.playProceduralM1(this.comboIndex);
 		}
+
+		task.delay(ARCZIS_COMBAT_CONFIG.M1AnimationLock, () => {
+			this.isAttacking = false;
+			if (track && track.IsPlaying) {
+				track.Stop(0.1);
+			}
+			if (
+				this.isEquipped &&
+				!this.isBlocking &&
+				!this.isGuardBroken &&
+				!this.isInClash &&
+				!this.isInClashWinAnimation &&
+				!this.isStunned
+			) {
+				this.updateMovement();
+			}
+		});
 
 		this.playLocalSound(ARCZIS_COMBAT_CONFIG.Sounds.Swing);
 		this.combatEvent.FireServer("M1");
@@ -1038,11 +1165,30 @@ export class CombatController {
 		this.stopAnim("CombatRun", 0.05);
 		this.stopAttackAnims();
 
+		this.isAttacking = true;
+		let track: AnimationTrack | undefined;
 		if (this.isTrackUsable("HeavyPunch")) {
-			this.playAnim("HeavyPunch", 0.05);
+			track = this.playAnim("HeavyPunch", 0.05);
 		} else {
 			this.playProceduralHeavy();
 		}
+
+		task.delay(ARCZIS_COMBAT_CONFIG.HeavyAnimationLock, () => {
+			this.isAttacking = false;
+			if (track && track.IsPlaying) {
+				track.Stop(0.1);
+			}
+			if (
+				this.isEquipped &&
+				!this.isBlocking &&
+				!this.isGuardBroken &&
+				!this.isInClash &&
+				!this.isInClashWinAnimation &&
+				!this.isStunned
+			) {
+				this.updateMovement();
+			}
+		});
 
 		this.playLocalSound(ARCZIS_COMBAT_CONFIG.Sounds.SwingHeavy);
 		this.combatEvent.FireServer("Heavy");
@@ -1125,11 +1271,17 @@ export class CombatController {
 			if (eventType === "PlayAttack") {
 				const attackType = arg1 as "M1" | "Heavy";
 				const comboNum = arg2 as number;
+				const animName = attackType === "Heavy" ? "HeavyPunch" : `M1_Punch${comboNum}`;
+				const currentTrack = this.animTracks.get(animName);
+
+				// Jika serangan ini sudah aktif dan sedang diputar oleh client lokal, jangan hentikan / restart!
+				if (this.isAttacking && currentTrack && currentTrack.IsPlaying) {
+					return;
+				}
 
 				this.isAttacking = true;
 				this.stopAttackAnims();
 
-				const animName = attackType === "Heavy" ? "HeavyPunch" : `M1_Punch${comboNum}`;
 				let track: AnimationTrack | undefined;
 				if (this.isTrackUsable(animName)) {
 					track = this.playAnim(animName, 0.05);

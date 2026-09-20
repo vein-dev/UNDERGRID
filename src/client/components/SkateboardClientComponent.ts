@@ -1,73 +1,72 @@
-import { Players, UserInputService } from "@rbxts/services";
+import { Players } from "@rbxts/services";
 import { IToolComponent } from "./IToolComponent";
 import { SkateboardController } from "../controllers/SkateboardController";
 
 /**
  * OOP Client Component bound to the "Skateboard" Tool for LocalPlayer.
  *
- * - Equip Tool   → Pegang papan skateboard di tangan kanan secara vertikal, karakter bebas berjalan/lari/lompat.
- * - Klik 1       → Naiki papan (Mount), sembunyikan papan di tangan, aktifkan kontrol skateboard.
- * - Klik 2       → Turun dari papan (Dismount), papan kembali dipegang di tangan.
- * - Unequipped   → Jika sedang menaiki papan, otomatis turun dan papan disimpan kembali ke tas/hotbar.
+ * Mengimplementasikan Instant Mount:
+ * - Equip Tool (klik slot hotbar / tombol 1) → Langsung menaiki skateboard seketika (0ms delay).
+ * - Tidak ada sistem handle / pegang di tangan (RequiresHandle = false, part visual tool 100% disembunyikan).
+ * - Tidak ada mekanisme click-to-use (klik mouse / touch bebas tanpa memicu dismount tak terduga).
+ * - Unequipped (tekan slot lagi / ganti tool / klik tombol dismount) → Otomatis dismount dan tersimpan di tas.
  */
 export class SkateboardClientComponent implements IToolComponent {
 	private connections: RBXScriptConnection[] = [];
 	private equippedConnections: RBXScriptConnection[] = [];
-	private originalTransparencies = new Map<BasePart, number>();
 	private unsubscribeMountListener?: () => void;
-	private lastActivateTime = 0;
+
+	private isDismounting = false;
 
 	constructor(public readonly tool: Tool) {
-		this.tool.ManualActivationOnly = false;
+		this.tool.ManualActivationOnly = true;
 		this.tool.RequiresHandle = false;
-		this.recordOriginalTransparencies();
+		this.hideAllToolParts();
 		this.init();
 	}
 
-	private recordOriginalTransparencies(): void {
+	private hideAllToolParts(): void {
 		for (const desc of this.tool.GetDescendants()) {
 			if (desc.IsA("BasePart")) {
-				this.originalTransparencies.set(desc, desc.Transparency);
+				desc.Transparency = 1;
+				desc.CanCollide = false;
+				desc.CanTouch = false;
+				desc.CanQuery = false;
+				desc.Massless = true;
 			}
 		}
-
-		// Bila ada part baru yang ditambahkan di runtime
-		this.connections.push(
-			this.tool.DescendantAdded.Connect((desc) => {
-				if (desc.IsA("BasePart") && !this.originalTransparencies.has(desc)) {
-					this.originalTransparencies.set(desc, desc.Transparency);
-					if (SkateboardController.getInstance().isPlayerMounted()) {
-						desc.Transparency = 1;
-					}
-				}
-			}),
-		);
 	}
 
 	private init(): void {
 		this.connections.push(
 			this.tool.Equipped.Connect(() => this.onEquipped()),
 			this.tool.Unequipped.Connect(() => this.onUnequipped()),
-			this.tool.Activated.Connect(() => this.onActivated()),
-			UserInputService.InputBegan.Connect((input, gameProcessed) => {
-				if (gameProcessed) return;
-				if (
-					input.UserInputType === Enum.UserInputType.MouseButton1 ||
-					input.UserInputType === Enum.UserInputType.Touch
-				) {
-					const character = Players.LocalPlayer.Character;
-					if (character && this.tool.Parent === character) {
-						this.onActivated();
-					}
+			this.tool.DescendantAdded.Connect((desc) => {
+				if (desc.IsA("BasePart")) {
+					desc.Transparency = 1;
+					desc.CanCollide = false;
+					desc.CanTouch = false;
+					desc.CanQuery = false;
+				} else if (desc.IsA("Weld") && (desc.Name === "RightGrip" || desc.Name === "Grip")) {
+					desc.Enabled = false;
+					desc.Destroy();
 				}
 			}),
 		);
 
 		// Dengarkan event sinkronisasi mount dari SkateboardController
 		this.unsubscribeMountListener = SkateboardController.getInstance().onMountStateChanged((mounted) => {
-			if (this.tool.Parent === Players.LocalPlayer.Character) {
-				this.setBoardVisible(!mounted);
-				this.setToolGripActive(!mounted);
+			if (!mounted && !this.isDismounting) {
+				this.isDismounting = true;
+				// Jika dismount terjadi saat tool masih di karakter (misal dari tombol UI mobile DISMOUNT), unequip tool
+				const char = Players.LocalPlayer.Character;
+				if (this.tool.Parent === char) {
+					const hum = char?.FindFirstChildOfClass("Humanoid");
+					if (hum) {
+						hum.UnequipTools();
+					}
+				}
+				this.isDismounting = false;
 			}
 		});
 
@@ -76,32 +75,50 @@ export class SkateboardClientComponent implements IToolComponent {
 			this.onEquipped();
 		}
 
-		print("[SkateboardClientComponent] Initialized: Skateboard Tool ready.");
+		print("[SkateboardClientComponent] Initialized: Skateboard instant-mount tool ready.");
 	}
 
 	private onEquipped(): void {
 		this.cleanupEquippedConnections();
 
-		const isMounted = SkateboardController.getInstance().isPlayerMounted();
-		this.setBoardVisible(!isMounted);
-		this.setToolGripActive(!isMounted);
+		// Sembunyikan semua part tool agar tangan kanan bersih dan tidak ada papan melayang di tangan
+		this.hideAllToolParts();
 
 		const character = (this.tool.Parent as Model | undefined) ?? Players.LocalPlayer.Character;
-		const humanoid = character?.FindFirstChildOfClass("Humanoid");
-		const rightArm = character?.FindFirstChild("Right Arm") as BasePart | undefined;
+		const hrp = (character?.FindFirstChild("HumanoidRootPart") ?? character?.FindFirstChild("Torso")) as BasePart | undefined;
+		const anchorPart = (this.tool.FindFirstChild("ToolAnchor") ??
+			this.tool.FindFirstChild("Handle") ??
+			this.tool.FindFirstChildWhichIsA("BasePart")) as BasePart | undefined;
 
-		if (rightArm) {
-			this.equippedConnections.push(
-				rightArm.ChildAdded.Connect((child) => {
-					if (child.Name === "RightGrip" && SkateboardController.getInstance().isPlayerMounted()) {
-						this.setToolGripActive(false);
-					}
-				}),
-			);
+		// Kunci ToolAnchor ke HumanoidRootPart agar part tool tidak jatuh bebas ke void
+		if (hrp && anchorPart) {
+			anchorPart.Name = "ToolAnchor";
+			anchorPart.CFrame = hrp.CFrame;
+			let weld = anchorPart.FindFirstChild("ToolRootWeld") as WeldConstraint | undefined;
+			if (!weld) {
+				weld = new Instance("WeldConstraint");
+				weld.Name = "ToolRootWeld";
+				weld.Part0 = hrp;
+				weld.Part1 = anchorPart;
+				weld.Parent = anchorPart;
+			}
 		}
 
+		// Bersihkan RightGrip di tangan kanan jika pernah ada
+		const rightArm = character?.FindFirstChild("Right Arm") as BasePart | undefined;
+		if (rightArm) {
+			for (const child of rightArm.GetChildren()) {
+				if (child.IsA("Weld") && (child.Name === "RightGrip" || child.Name === "Grip")) {
+					child.Enabled = false;
+					child.Destroy();
+				}
+			}
+		}
+
+		const humanoid = character?.FindFirstChildOfClass("Humanoid");
+
 		if (humanoid) {
-			// Hentikan animasi tool bawaan Roblox (toolnone) agar tangan kanan menggantung santai menenteng papan
+			// Hentikan animasi tool default Roblox (toolnone / slash)
 			for (const track of humanoid.GetPlayingAnimationTracks()) {
 				const name = track.Name.lower();
 				const animName = track.Animation?.Name.lower() ?? "";
@@ -131,115 +148,27 @@ export class SkateboardClientComponent implements IToolComponent {
 			);
 		}
 
-		print("[SkateboardClientComponent] Skateboard equipped in hand.");
+		// INSTANT MOUNT: Langsung naiki skateboard saat tool dipilih di hotbar tanpa perlu klik layar
+		if (!SkateboardController.getInstance().isPlayerMounted()) {
+			print("[SkateboardClientComponent] Skateboard tool equipped from hotbar -> Instant Mounting!");
+			SkateboardController.getInstance().mount();
+		}
 	}
 
 	private onUnequipped(): void {
 		this.cleanupEquippedConnections();
 
+		if (this.isDismounting) return;
+		this.isDismounting = true;
+
 		// Jika pemain menyimpan tool saat sedang skating, otomatis dismount
 		if (SkateboardController.getInstance().isPlayerMounted()) {
-			print("[SkateboardClientComponent] Tool unequipped while mounted. Dismounting...");
+			print("[SkateboardClientComponent] Tool unequipped from hotbar -> Dismounting...");
 			SkateboardController.getInstance().dismount();
 		}
 
-		// Pulihkan transparansi & grip saat tool disimpan agar siap ketika di-equip berikutnya
-		this.setBoardVisible(true);
-		this.setToolGripActive(true);
-
+		this.isDismounting = false;
 		print("[SkateboardClientComponent] Skateboard unequipped.");
-	}
-
-	private onActivated(): void {
-		// Batalkan animasi slash default Roblox jika terpicu klik
-		const character = (this.tool.Parent as Model | undefined) ?? Players.LocalPlayer.Character;
-		const humanoid = character?.FindFirstChildOfClass("Humanoid");
-		if (humanoid) {
-			for (const track of humanoid.GetPlayingAnimationTracks()) {
-				const name = track.Name.lower();
-				const animName = track.Animation?.Name.lower() ?? "";
-				if (name.find("slash")[0] !== undefined || animName.find("slash")[0] !== undefined) {
-					track.Stop(0);
-				}
-			}
-		}
-
-		const now = os.clock();
-		if (now - this.lastActivateTime < 0.25) {
-			return;
-		}
-		this.lastActivateTime = now;
-
-		print("[SkateboardClientComponent] Tool clicked -> Toggling Skateboard Mount!");
-		SkateboardController.getInstance().toggleMount();
-	}
-
-	private setToolGripActive(active: boolean): void {
-		const character = (this.tool.Parent as Model | undefined) ?? Players.LocalPlayer.Character;
-		if (!character) return;
-		const rightArm = (character.FindFirstChild("Right Arm") ?? character.FindFirstChild("RightHand")) as BasePart | undefined;
-
-		if (!active) {
-			if (rightArm) {
-				const rightGrip = rightArm.FindFirstChild("RightGrip") as Weld | undefined;
-				if (rightGrip) {
-					rightGrip.Enabled = false;
-					rightGrip.Part1 = undefined;
-					rightGrip.Destroy();
-				}
-				for (const child of rightArm.GetChildren()) {
-					if (child.IsA("Weld") && (child.Name === "RightGrip" || child.Name === "Grip")) {
-						child.Enabled = false;
-						child.Destroy();
-					}
-				}
-			}
-			for (const desc of character.GetDescendants()) {
-				if (desc.IsA("Weld") && (desc.Name === "RightGrip" || desc.Name === "Grip")) {
-					desc.Enabled = false;
-					desc.Destroy();
-				}
-			}
-		} else {
-			if (!rightArm) return;
-			const handle = this.tool.FindFirstChild("Handle") as BasePart | undefined;
-			if (handle) {
-				const armOffset = rightArm.Name === "RightHand" ? new Vector3(0, 0, 0) : new Vector3(0, -1, 0);
-				const defaultGripC0 = new CFrame(armOffset.X, armOffset.Y, armOffset.Z, 1, 0, 0, 0, 0, 1, 0, -1, 0);
-
-				const rightGrip = rightArm.FindFirstChild("RightGrip") as Weld | undefined;
-				if (!rightGrip) {
-					const newGrip = new Instance("Weld");
-					newGrip.Name = "RightGrip";
-					newGrip.Part0 = rightArm;
-					newGrip.Part1 = handle;
-					newGrip.C0 = defaultGripC0;
-					newGrip.C1 = this.tool.Grip;
-					newGrip.Parent = rightArm;
-				} else {
-					rightGrip.Part1 = handle;
-					rightGrip.C0 = defaultGripC0;
-					rightGrip.C1 = this.tool.Grip;
-					rightGrip.Enabled = true;
-				}
-			}
-		}
-	}
-
-	private setBoardVisible(visible: boolean): void {
-		for (const desc of this.tool.GetDescendants()) {
-			if (desc.IsA("BasePart")) {
-				if (!visible) {
-					if (!this.originalTransparencies.has(desc)) {
-						this.originalTransparencies.set(desc, desc.Transparency);
-					}
-					desc.Transparency = 1;
-				} else {
-					const orig = this.originalTransparencies.get(desc) ?? 0;
-					desc.Transparency = orig;
-				}
-			}
-		}
 	}
 
 	private cleanupEquippedConnections(): void {
@@ -262,8 +191,6 @@ export class SkateboardClientComponent implements IToolComponent {
 			this.unsubscribeMountListener = undefined;
 		}
 
-		this.setBoardVisible(true);
-		this.setToolGripActive(true);
 		print("[SkateboardClientComponent] Destroyed.");
 	}
 }

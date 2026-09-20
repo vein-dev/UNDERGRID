@@ -14,6 +14,7 @@ export class SkateboardAudioService {
 
 	private parentPart?: BasePart;
 	private rollingSound?: Sound;
+	private grindSound?: Sound;
 
 	// Pre-buffered pools untuk pemutaran instan 0ms (Zero Latency)
 	private popSounds: Sound[] = [];
@@ -21,6 +22,11 @@ export class SkateboardAudioService {
 
 	private landingSounds: Sound[] = [];
 	private currentLandingIndex = 0;
+
+	// Fisika Akustik Inersia Roda
+	private virtualWheelSpeed = 0;
+	private currentVolume = 0;
+	private currentPitch = 0.85;
 
 	private constructor() {}
 
@@ -51,6 +57,19 @@ export class SkateboardAudioService {
 		roll.MaxDistance = 55;
 		roll.Parent = parentPart;
 		this.rollingSound = roll;
+
+		// 1.5 Grind loop sound
+		const grind = new Instance("Sound");
+		grind.Name = "SkateboardGrind";
+		grind.SoundId = SkateboardConfig.SOUNDS.grind;
+		grind.Looped = true;
+		grind.Volume = 0;
+		grind.PlaybackSpeed = 1.0;
+		grind.RollOffMode = Enum.RollOffMode.InverseTapered;
+		grind.MinDistance = 8;
+		grind.MaxDistance = 65;
+		grind.Parent = parentPart;
+		this.grindSound = grind;
 
 		// 2. Pre-created pool untuk Pop sound (2 slot agar tidak terpotong saat trigger cepat)
 		this.popSounds = [];
@@ -83,7 +102,48 @@ export class SkateboardAudioService {
 		}
 
 		// Preload seluruh aset audio ke memori client secara asynchronous
-		ContentProvider.PreloadAsync([this.rollingSound, ...this.popSounds, ...this.landingSounds]);
+		ContentProvider.PreloadAsync([this.rollingSound, this.grindSound, ...this.popSounds, ...this.landingSounds]);
+	}
+
+	/**
+	 * Memulai audio gesekan rel saat karakter lock ke rail grind
+	 */
+	public startGrind(): void {
+		if (!this.grindSound) return;
+		this.grindSound.Volume = 0.45;
+		this.grindSound.PlaybackSpeed = 0.95;
+		this.grindSound.TimePosition = 0;
+		if (!this.grindSound.IsPlaying) {
+			this.grindSound.Play();
+		}
+	}
+
+	/**
+	 * Memperbarui modulasi volume & pitch audio grind berdasarkan kecepatan luncur rel
+	 */
+	public updateGrind(speed: number, maxSpeed: number, dt: number): void {
+		if (!this.grindSound || !this.grindSound.IsPlaying) return;
+
+		const absSpeed = math.abs(speed);
+		const speedAlpha = math.clamp(absSpeed / maxSpeed, 0, 1.4);
+		const targetVolume = 0.4 + speedAlpha * 0.45;
+		const targetPitch = 0.9 + speedAlpha * 0.25;
+
+		this.grindSound.Volume =
+			this.grindSound.Volume + (targetVolume - this.grindSound.Volume) * math.clamp(10 * dt, 0, 1);
+		this.grindSound.PlaybackSpeed =
+			this.grindSound.PlaybackSpeed + (targetPitch - this.grindSound.PlaybackSpeed) * math.clamp(8 * dt, 0, 1);
+	}
+
+	/**
+	 * Menghentikan audio grind saat lepas atau lompat keluar dari rel
+	 */
+	public stopGrind(): void {
+		if (!this.grindSound) return;
+		if (this.grindSound.IsPlaying) {
+			this.grindSound.Stop();
+			this.grindSound.Volume = 0;
+		}
 	}
 
 	/**
@@ -116,43 +176,99 @@ export class SkateboardAudioService {
 	}
 
 	/**
-	 * Update suara rolling secara dinamis berdasarkan status kontak tanah dan kecepatan laju
+	 * Update suara rolling secara dinamis berdasarkan status kontak tanah, kecepatan laju fisik,
+	 * material permukaan pijakan, status pengereman, dan inersia putaran roda di udara (Ollie).
 	 */
-	public updateRolling(isGrounded: boolean, speed: number, maxSpeed: number, dt: number): void {
+	public updateRolling(
+		isGrounded: boolean,
+		speed: number,
+		maxSpeed: number,
+		dt: number,
+		material?: Enum.Material,
+		isBraking?: boolean,
+	): void {
 		if (!this.rollingSound) return;
 
+		const cfg = SkateboardConfig.AUDIO;
 		const absSpeed = math.abs(speed);
 
-		// Jika di udara atau laju sangat pelan (< 0.6 studs/s): fade out
-		if (!isGrounded || absSpeed < 0.6) {
-			if (this.rollingSound.Volume > 0.01) {
-				this.rollingSound.Volume = math.max(0, this.rollingSound.Volume - 7 * dt);
-			} else if (this.rollingSound.IsPlaying) {
-				this.rollingSound.Stop();
-				this.rollingSound.Volume = 0;
-			}
-			return;
-		}
-
-		// Jika di tanah dan sedang meluncur:
 		if (!this.rollingSound.IsPlaying) {
-			this.rollingSound.Volume = 0.05;
+			this.rollingSound.Volume = 0;
 			this.rollingSound.Play();
 		}
 
-		// Hitung target volume dan pitch berdasarkan rasio kecepatan
-		const speedAlpha = math.clamp(absSpeed / maxSpeed, 0, 1);
-		const targetVolume = 0.15 + speedAlpha * 0.55; // Volume berkisar 0.15 - 0.70
-		const targetPitch = 0.85 + speedAlpha * 0.35; // Pitch berkisar 0.85 - 1.20
+		if (isGrounded) {
+			// 1. DI TANAH: Roda berputar langsung sesuai kecepatan kontak aspal
+			this.virtualWheelSpeed = absSpeed;
 
-		// Smooth lerp agar transisi suara halus & tidak mengejutkan telinga
-		this.rollingSound.Volume =
-			this.rollingSound.Volume +
-			(targetVolume - this.rollingSound.Volume) * math.clamp(8 * dt, 0, 1);
+			if (absSpeed < cfg.minRollSpeed) {
+				// Berhenti di tempat: fade out lembut ke hening (bebas suara klik/pop)
+				this.currentVolume = math.max(0, this.currentVolume - 3.5 * dt);
+				this.rollingSound.Volume = this.currentVolume;
+				return;
+			}
 
-		this.rollingSound.PlaybackSpeed =
-			this.rollingSound.PlaybackSpeed +
-			(targetPitch - this.rollingSound.PlaybackSpeed) * math.clamp(6 * dt, 0, 1);
+			// Rasio kecepatan fisik non-linear (kurva eksponensial respons telinga manusia)
+			const speedRatio = math.clamp(absSpeed / maxSpeed, 0, 1.2);
+			let targetVolume = cfg.minRollVolume + math.pow(speedRatio, 1.2) * (cfg.maxRollVolume - cfg.minRollVolume);
+			let targetPitch = cfg.minRollPitch + speedRatio * (cfg.maxRollPitch - cfg.minRollPitch);
+
+			// Modulasi material permukaan pijakan (akustik lingkungan)
+			if (material) {
+				if (
+					material === Enum.Material.Grass ||
+					material === Enum.Material.Sand ||
+					material === Enum.Material.Fabric
+				) {
+					targetVolume *= 0.65;
+					targetPitch *= 0.88;
+				} else if (material === Enum.Material.Metal || material === Enum.Material.CorrodedMetal) {
+					targetVolume *= 1.1;
+					targetPitch *= 1.08;
+				} else if (material === Enum.Material.Wood || material === Enum.Material.WoodPlanks) {
+					targetVolume *= 1.05;
+					targetPitch *= 0.96;
+				}
+			}
+
+			// Modulasi gesekan saat pengereman aktif (menahan tombol S)
+			if (isBraking && absSpeed > 3) {
+				targetVolume = math.min(cfg.maxRollVolume * 1.15, targetVolume * 1.25);
+				targetPitch *= 0.94;
+			}
+
+			// Smooth lerp di tanah (cepat & responsif)
+			this.currentVolume =
+				this.currentVolume + (targetVolume - this.currentVolume) * math.clamp(cfg.groundLerpSpeed * dt, 0, 1);
+			this.currentPitch =
+				this.currentPitch + (targetPitch - this.currentPitch) * math.clamp(cfg.groundLerpSpeed * dt, 0, 1);
+		} else {
+			// 2. DI UDARA (Ollie / Melayang):
+			// Roda tidak mati seketika! Inersia massa & bearing roda membuatnya tetap berputar bebas di udara,
+			// menghasilkan desingan halus berangsur melambat (fade out realistis ~0.6-0.8 detik).
+			if (this.virtualWheelSpeed > 0.5) {
+				// Deselerasi putaran bebas akibat hambatan udara dan gesekan bearing
+				const decayRate = 14 + this.virtualWheelSpeed * cfg.airborneDecayRate;
+				this.virtualWheelSpeed = math.max(0, this.virtualWheelSpeed - decayRate * dt);
+
+				const airRatio = math.clamp(this.virtualWheelSpeed / maxSpeed, 0, 1.2);
+				const targetVolume =
+					(cfg.minRollVolume + math.pow(airRatio, 1.3) * (cfg.maxRollVolume - cfg.minRollVolume)) *
+					cfg.airborneVolumeMultiplier;
+				const targetPitch = (cfg.minRollPitch + airRatio * (cfg.maxRollPitch - cfg.minRollPitch)) * 1.05;
+
+				this.currentVolume =
+					this.currentVolume + (targetVolume - this.currentVolume) * math.clamp(cfg.airLerpSpeed * dt, 0, 1);
+				this.currentPitch =
+					this.currentPitch + (targetPitch - this.currentPitch) * math.clamp(cfg.airLerpSpeed * dt, 0, 1);
+			} else {
+				// Roda sudah benar-benar berhenti berputar di udara
+				this.currentVolume = math.max(0, this.currentVolume - 4.0 * dt);
+			}
+		}
+
+		this.rollingSound.Volume = math.clamp(this.currentVolume, 0, 1);
+		this.rollingSound.PlaybackSpeed = math.clamp(this.currentPitch, 0.5, 2.0);
 	}
 
 	/**
@@ -163,6 +279,12 @@ export class SkateboardAudioService {
 			this.rollingSound.Stop();
 			this.rollingSound.Destroy();
 			this.rollingSound = undefined;
+		}
+
+		if (this.grindSound) {
+			this.grindSound.Stop();
+			this.grindSound.Destroy();
+			this.grindSound = undefined;
 		}
 
 		for (const pop of this.popSounds) {
@@ -178,6 +300,10 @@ export class SkateboardAudioService {
 		}
 		this.landingSounds = [];
 		this.currentLandingIndex = 0;
+
+		this.virtualWheelSpeed = 0;
+		this.currentVolume = 0;
+		this.currentPitch = 0.85;
 
 		this.parentPart = undefined;
 	}

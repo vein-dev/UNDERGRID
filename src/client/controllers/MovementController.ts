@@ -417,8 +417,12 @@ export class MovementController {
 		tiltState: PlayerTiltState,
 		isLocalPlayer: boolean,
 	): void {
-		// 1. CRAWL & SKATE LOCK: Lewati manipulasi joint saat crawling atau skating
-		if (hrp.GetAttribute("CrawlLock") === true || hrp.GetAttribute("IsSkating") === true) {
+		// 1. CRAWL, SKATE & COMBAT LOCK: Lewati manipulasi joint saat crawling, skating, atau bertarung
+		if (
+			hrp.GetAttribute("CrawlLock") === true ||
+			hrp.GetAttribute("IsSkating") === true ||
+			hrp.GetAttribute("IsFighting") === true
+		) {
 			return;
 		}
 
@@ -685,10 +689,11 @@ export class MovementController {
 			hrp.GetAttribute("IsCrouching") === true ||
 			hrp.GetAttribute("IsCrawling") === true ||
 			hrp.GetAttribute("CrawlLock") === true ||
-			hrp.GetAttribute("IsSkating") === true;
+			hrp.GetAttribute("IsSkating") === true ||
+			hrp.GetAttribute("IsFighting") === true;
 		const isLanding = hrp.GetAttribute("IsLanding") === true;
 
-		// Jika karakter sedang crouch, crawl, landing, skating, atau mati: serahkan ke controller terkait
+		// Jika karakter sedang crouch, crawl, landing, skating, bertarung, atau mati: serahkan ke controller terkait
 		if (isCrouchOrCrawl || isLanding || humanoid.Health <= 0) {
 			if (tracks.walk.IsPlaying) tracks.walk.Stop(0);
 			if (tracks.run.IsPlaying) tracks.run.Stop(0);
