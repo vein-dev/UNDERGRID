@@ -7,6 +7,7 @@ import { LucideIcon } from "../components/LucideIcon";
 import { AdminMusicTabComponent } from "./tabs/AdminMusicTab";
 import { AdminPlayerTabComponent } from "./tabs/AdminPlayerTab";
 import { AdminStageFxTabComponent } from "./tabs/AdminStageFxTab";
+import { AdminTimeTabComponent } from "./tabs/AdminTimeTab";
 
 export interface AdminPanelProps {
 	visible: boolean;
@@ -44,6 +45,7 @@ export function AdminPanelComponent({
 	const tabs: Array<{ id: AdminTab; label: string }> = [
 		{ id: AdminTab.MusicMaster, label: "Audio Hub" },
 		{ id: AdminTab.StageFx, label: "Stage & FX" },
+		{ id: AdminTab.TimeControl, label: "Time Control" },
 		{ id: AdminTab.PlayerManagement, label: "Players" },
 	];
 
@@ -190,13 +192,13 @@ export function AdminPanelComponent({
 						return (
 							<textbutton
 								key={`TabBtn_${tab.id}`}
-								Size={new UDim2(0.32, 0, 1, 0)}
+								Size={new UDim2(1 / tabs.size(), -4, 1, 0)}
 								BackgroundColor3={Color3.fromHex(isSelected ? "#2c2c2c" : "#242424")}
 								BackgroundTransparency={isSelected ? 0 : 1}
 								Text={tab.label}
 								TextColor3={Color3.fromHex(isSelected ? "#ffffff" : "#888888")}
 								Font={Fonts.Bold}
-								TextSize={12}
+								TextSize={11}
 								AutoButtonColor={false}
 								ZIndex={7}
 								Event={{
@@ -219,6 +221,7 @@ export function AdminPanelComponent({
 				>
 					<AdminMusicTabComponent visible={activeTab === AdminTab.MusicMaster} />
 					<AdminStageFxTabComponent visible={activeTab === AdminTab.StageFx} />
+					<AdminTimeTabComponent visible={activeTab === AdminTab.TimeControl} />
 					<AdminPlayerTabComponent visible={activeTab === AdminTab.PlayerManagement} />
 				</frame>
 			</frame>

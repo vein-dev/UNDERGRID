@@ -9,6 +9,7 @@ import {
 	ServerDummyService,
 	ServerEmoteService,
 	ServerSkateboardService,
+	ServerTimeService,
 } from "./services";
 
 /**
@@ -18,6 +19,9 @@ function main() {
 	print("[Server] Starting server services...");
 
 	// Initialize singleton services
+	const timeService = ServerTimeService.getInstance();
+	timeService.init();
+
 	const playerService = ServerPlayerService.getInstance();
 	playerService.init();
 

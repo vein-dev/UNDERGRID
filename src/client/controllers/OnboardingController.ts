@@ -26,8 +26,14 @@ export class OnboardingController {
 	public init(): void {
 		// A. TAHAN GAME DARI AWAL: Nonaktifkan CoreGui default Roblox
 		pcall(() => {
-			StarterGui.SetCoreGuiEnabled(Enum.CoreGuiType.All, true);
+			StarterGui.SetCoreGuiEnabled(Enum.CoreGuiType.All, false);
 		});
+		pcall(() => {
+			StarterGui.SetCore("TopbarEnabled", false);
+		});
+
+		// Sembunyikan UI gameplay dari awal loading screen
+		SpawnCinematicController.getInstance().setCinematicUiVisible(false);
 
 		// B. FREEZE INPUT & FISIKA PEMAIN SECARA TOTAL (Hanya pada join pertama)
 		this.freezePlayerMovement();

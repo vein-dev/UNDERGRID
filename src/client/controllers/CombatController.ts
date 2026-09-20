@@ -2,7 +2,6 @@ import {
 	ContentProvider,
 	ContextActionService,
 	Debris,
-	GuiService,
 	Players,
 	ReplicatedStorage,
 	RunService,
@@ -11,7 +10,6 @@ import {
 	Workspace,
 } from "@rbxts/services";
 import { CombatHudView } from "client/ui/views/CombatHudView";
-import { BackpackController } from "client/controllers/BackpackController";
 import { getRemoteEvent } from "shared/network";
 import { ARCZIS_COMBAT_CONFIG } from "shared/types";
 import { MovementConfig } from "shared/config/MovementConfig";
@@ -176,7 +174,6 @@ export class CombatController {
 		UserInputService.InputBegan.Connect((input, processed) => this.onInputBegan(input, processed));
 		UserInputService.InputEnded.Connect((input, processed) => this.onInputEnded(input, processed));
 		RunService.RenderStepped.Connect(() => {
-			this.updateShiftLock();
 			this.updateMovement();
 		});
 
@@ -259,6 +256,7 @@ export class CombatController {
 			});
 		}
 		UserInputService.MouseBehavior = Enum.MouseBehavior.Default;
+		this.setCombatCamera(false);
 
 		this.watchCharacterValues();
 
@@ -557,7 +555,7 @@ export class CombatController {
 	public onEquipped(): void {
 		if (this.isEquipped) return;
 		this.isEquipped = true;
-		this.lastActionDebug = "Fists Dipegang: Combat Aktif (Shift Lock ON)";
+		this.lastActionDebug = "Fists Dipegang: Combat Aktif";
 		this.combatEvent.FireServer("Equip", true);
 
 		// Tandai karakter dan HRP dengan atribut IsFighting agar MovementController tidak bentrok
@@ -568,16 +566,17 @@ export class CombatController {
 			this.humanoidRootPart.SetAttribute("IsFighting", true);
 		}
 
-		// Enable Shift Lock mode
+		// Non-ShiftLock: Karakter bebas berputar dengan AutoRotate aktif & kamera mengikuti arah gerak
 		if (this.humanoid) {
-			this.humanoid.AutoRotate = false;
-			this.humanoid.CameraOffset = new Vector3(1.75, 0.25, 0);
+			this.humanoid.AutoRotate = true;
+			this.humanoid.CameraOffset = new Vector3(0, 0, 0);
 			// Disable Jump while in fight mode
 			this.humanoid.SetStateEnabled(Enum.HumanoidStateType.Jumping, false);
 			this.humanoid.JumpPower = 0;
 			this.humanoid.JumpHeight = 0;
 		}
-		UserInputService.MouseBehavior = Enum.MouseBehavior.LockCenter;
+		UserInputService.MouseBehavior = Enum.MouseBehavior.Default;
+		this.setCombatCamera(true);
 
 		// Hentikan animasi tool bawaan Roblox (toolnone / slash)
 		this.suppressToolNoneAnimations();
@@ -588,6 +587,7 @@ export class CombatController {
 		this.updateDebugHUD();
 
 		// Play equip animation & sound
+		this.updateWalkSpeed();
 		const equipTrack = this.animTracks.get("Equip");
 		if (equipTrack && this.isTrackUsable("Equip")) {
 			equipTrack.Play(0.1);
@@ -595,8 +595,6 @@ export class CombatController {
 			task.delay(math.max(0.3, equipTrack.Length * 0.7), () => {
 				if (
 					this.isEquipped &&
-					!this.isAttacking &&
-					!this.isBlocking &&
 					!this.isGuardBroken &&
 					!this.isInClash &&
 					!this.isStunned
@@ -612,7 +610,7 @@ export class CombatController {
 	public onUnequipped(): void {
 		if (!this.isEquipped) return;
 		this.isEquipped = false;
-		this.lastActionDebug = "Fists Dilepas: Combat Nonaktif (Shift Lock OFF)";
+		this.lastActionDebug = "Fists Dilepas: Combat Nonaktif";
 		this.combatEvent.FireServer("Equip", false);
 		this.blockEvent.FireServer(false);
 
@@ -626,7 +624,7 @@ export class CombatController {
 
 		this.cleanToolNoneListeners();
 
-		// Disable Shift Lock mode & restore Jump & normal WalkSpeed
+		// Pulihkan Jump & normal WalkSpeed
 		if (this.humanoid) {
 			this.humanoid.AutoRotate = true;
 			this.humanoid.CameraOffset = new Vector3(0, 0, 0);
@@ -636,6 +634,7 @@ export class CombatController {
 			this.humanoid.WalkSpeed = MovementConfig.CROUCH.normalSpeed;
 		}
 		UserInputService.MouseBehavior = Enum.MouseBehavior.Default;
+		this.setCombatCamera(false);
 
 		this.combatHud.setVisible(false);
 		this.isBlocking = false;
@@ -671,42 +670,39 @@ export class CombatController {
 				this.humanoid.JumpPower = MovementConfig.JUMP.jumpPower;
 			}
 			UserInputService.MouseBehavior = Enum.MouseBehavior.Default;
+			this.setCombatCamera(false);
 		} else if (this.isEquipped) {
-			// Aktifkan kembali Shift Lock jika Fists masih dipegang
 			if (this.humanoid) {
-				this.humanoid.AutoRotate = false;
-				this.humanoid.CameraOffset = new Vector3(1.75, 0.25, 0);
+				this.humanoid.AutoRotate = true;
+				this.humanoid.CameraOffset = new Vector3(0, 0, 0);
 				this.humanoid.SetStateEnabled(Enum.HumanoidStateType.Jumping, false);
 				this.humanoid.JumpPower = 0;
 				this.humanoid.JumpHeight = 0;
 			}
-			UserInputService.MouseBehavior = Enum.MouseBehavior.LockCenter;
+			UserInputService.MouseBehavior = Enum.MouseBehavior.Default;
+			this.setCombatCamera(true);
 			this.suppressToolNoneAnimations();
 			this.combatHud.setVisible(true);
 			this.updateMovement();
 		}
 	}
 
-	private updateShiftLock(): void {
-		if (this.isPaused || !this.isEquipped || !this.humanoid || !this.humanoidRootPart) return;
-		if (this.isInClash) return;
-
+	/**
+	 * Mengatur mode kamera kombat (Follow untuk mengikuti arah gerakan, Custom untuk kamera standar).
+	 */
+	private setCombatCamera(follow: boolean): void {
 		const camera = Workspace.CurrentCamera;
 		if (!camera) return;
+		camera.CameraType = follow ? Enum.CameraType.Follow : Enum.CameraType.Custom;
+	}
 
-		// Lock mouse to center of screen unless player is typing, in core menu, or backpack is open
-		const isTyping = UserInputService.GetFocusedTextBox() !== undefined;
-		const isMenuOpen = GuiService.MenuIsOpen;
-		const isBackpackOpen = BackpackController.getInstance().isOpen();
-
-		if (isTyping || isMenuOpen || isBackpackOpen) {
-			UserInputService.MouseBehavior = Enum.MouseBehavior.Default;
-			return;
-		}
-
-		UserInputService.MouseBehavior = Enum.MouseBehavior.LockCenter;
-
-		// Rotate character horizontally to match camera view direction (Shift Lock orientation)
+	/**
+	 * Menghadapkan karakter ke arah horizontal pandangan kamera secara instan saat melancarkan serangan.
+	 */
+	private faceCamera(): void {
+		if (!this.humanoidRootPart) return;
+		const camera = Workspace.CurrentCamera;
+		if (!camera) return;
 		const [, yaw] = camera.CFrame.ToOrientation();
 		const currentPos = this.humanoidRootPart.Position;
 		this.humanoidRootPart.CFrame = new CFrame(currentPos).mul(CFrame.Angles(0, yaw, 0));
@@ -760,6 +756,7 @@ export class CombatController {
 			this.connections.push(
 				attackingVal.Changed.Connect((val) => {
 					this.isAttacking = val;
+					this.updateWalkSpeed();
 					if (!val && this.isEquipped && !this.isGuardBroken && !this.isInClash && !this.isStunned) {
 						this.updateMovement();
 					}
@@ -773,6 +770,10 @@ export class CombatController {
 				blockingVal.Changed.Connect((val) => {
 					this.isBlocking = val;
 					this.combatHud.setCombatStates(this.isBlocking, this.isSprinting);
+					this.updateWalkSpeed();
+					if (this.isEquipped && !this.isGuardBroken && !this.isInClash && !this.isStunned) {
+						this.updateMovement();
+					}
 				}),
 			);
 		}
@@ -950,34 +951,73 @@ export class CombatController {
 	// MOVEMENT & SPRINT
 	// ═══════════════════════════════════════════════════════
 
-	private updateMovement(): void {
-		if (!this.isEquipped || !this.humanoid || !this.humanoidRootPart) return;
-		if (this.isAttacking || this.isGuardBroken || this.isInClash || this.isInClashWinAnimation || this.isStunned) return;
-
-		if (this.isBlocking) {
-			this.stopAnim("CombatIdle", 0.1);
-			this.stopAnim("CombatWalk", 0.1);
-			this.stopAnim("CombatRun", 0.1);
-			this.playAnim("Block", 0.1);
+	private updateWalkSpeed(): void {
+		if (!this.humanoid || !this.isEquipped) return;
+		if (this.isGuardBroken || this.isInClash) {
+			this.humanoid.WalkSpeed = 0;
+			return;
+		}
+		if (this.isStunned) {
+			this.humanoid.WalkSpeed = ARCZIS_COMBAT_CONFIG.StunnedWalkSpeed;
 			return;
 		}
 
-		this.stopAnim("Block", 0.1);
+		const baseSpeed = this.isSprinting ? ARCZIS_COMBAT_CONFIG.SprintSpeed : ARCZIS_COMBAT_CONFIG.DefaultWalkSpeed;
+		let multiplier = 1;
 
+		if (this.isBlocking) {
+			multiplier = ARCZIS_COMBAT_CONFIG.BlockWalkSpeedMultiplier;
+		} else if (this.isAttacking) {
+			multiplier = ARCZIS_COMBAT_CONFIG.AttackingWalkSpeedMultiplier;
+		}
+
+		this.humanoid.WalkSpeed = baseSpeed * multiplier;
+	}
+
+	private updateMovement(): void {
+		if (!this.isEquipped || !this.humanoid || !this.humanoidRootPart) return;
+		if (this.isGuardBroken || this.isInClash || this.isInClashWinAnimation || this.isStunned) {
+			this.stopAnim("CombatIdle", 0.1);
+			this.stopAnim("CombatWalk", 0.1);
+			this.stopAnim("CombatRun", 0.1);
+			return;
+		}
+
+		// Kelola animasi Guard / Block
+		if (this.isBlocking) {
+			if (this.isTrackUsable("Block")) {
+				this.playAnim("Block", 0.1);
+			} else {
+				this.setProceduralBlock(true);
+			}
+		} else {
+			this.stopAnim("Block", 0.15);
+			this.setProceduralBlock(false);
+		}
+
+		// Kelola animasi Locomotion (Walk / Run / Idle) pada kaki
 		const velocity = this.humanoidRootPart.AssemblyLinearVelocity;
 		const horizontalSpeed = new Vector3(velocity.X, 0, velocity.Z).Magnitude;
+		const isMoving = this.humanoid.MoveDirection.Magnitude > 0.05 || horizontalSpeed > 0.5;
 
-		if (horizontalSpeed > 1) {
+		if (isMoving) {
 			this.stopAnim("CombatIdle", 0.15);
-			const currentSpeed = this.humanoid.WalkSpeed;
-			const isRunning = currentSpeed > ARCZIS_COMBAT_CONFIG.RunSpeedThreshold || this.isSprinting;
+			const isRunning = this.isSprinting && !this.isBlocking;
 
 			if (isRunning) {
 				this.stopAnim("CombatWalk", 0.1);
-				this.playAnim("CombatRun", 0.15);
+				const runTrack = this.playAnim("CombatRun", 0.15);
+				if (runTrack && runTrack.IsPlaying) {
+					const runScale = math.clamp(this.humanoid.WalkSpeed / ARCZIS_COMBAT_CONFIG.SprintSpeed, 0.4, 1.6);
+					runTrack.AdjustSpeed(runScale);
+				}
 			} else {
 				this.stopAnim("CombatRun", 0.1);
-				this.playAnim("CombatWalk", 0.15);
+				const walkTrack = this.playAnim("CombatWalk", 0.15);
+				if (walkTrack && walkTrack.IsPlaying) {
+					const walkScale = math.clamp(this.humanoid.WalkSpeed / ARCZIS_COMBAT_CONFIG.DefaultWalkSpeed, 0.4, 1.4);
+					walkTrack.AdjustSpeed(walkScale);
+				}
 			}
 		} else {
 			this.stopAnim("CombatWalk", 0.15);
@@ -1066,8 +1106,9 @@ export class CombatController {
 	private setSprint(sprint: boolean): void {
 		this.isSprinting = sprint;
 		this.combatHud.setCombatStates(this.isBlocking, this.isSprinting);
-		if (this.humanoid && this.isEquipped && !this.isBlocking && !this.isStunned && !this.isGuardBroken) {
-			this.humanoid.WalkSpeed = sprint ? ARCZIS_COMBAT_CONFIG.SprintSpeed : ARCZIS_COMBAT_CONFIG.DefaultWalkSpeed;
+		this.updateWalkSpeed();
+		if (this.isEquipped) {
+			this.combatEvent.FireServer("Sprint", sprint);
 		}
 	}
 
@@ -1115,12 +1156,11 @@ export class CombatController {
 		this.lastActionDebug = `LMB: Pukulan M1 Combo ${this.comboIndex}`;
 		this.updateDebugHUD();
 
-		this.stopAnim("CombatIdle", 0.05);
-		this.stopAnim("CombatWalk", 0.05);
-		this.stopAnim("CombatRun", 0.05);
 		this.stopAttackAnims();
+		this.faceCamera();
 
 		this.isAttacking = true;
+		this.updateWalkSpeed();
 		const animName = `M1_Punch${this.comboIndex}`;
 		let track: AnimationTrack | undefined;
 		if (this.isTrackUsable(animName)) {
@@ -1131,12 +1171,12 @@ export class CombatController {
 
 		task.delay(ARCZIS_COMBAT_CONFIG.M1AnimationLock, () => {
 			this.isAttacking = false;
+			this.updateWalkSpeed();
 			if (track && track.IsPlaying) {
 				track.Stop(0.1);
 			}
 			if (
 				this.isEquipped &&
-				!this.isBlocking &&
 				!this.isGuardBroken &&
 				!this.isInClash &&
 				!this.isInClashWinAnimation &&
@@ -1160,12 +1200,11 @@ export class CombatController {
 		this.lastActionDebug = "RMB: Heavy Punch / Push";
 		this.updateDebugHUD();
 
-		this.stopAnim("CombatIdle", 0.05);
-		this.stopAnim("CombatWalk", 0.05);
-		this.stopAnim("CombatRun", 0.05);
 		this.stopAttackAnims();
+		this.faceCamera();
 
 		this.isAttacking = true;
+		this.updateWalkSpeed();
 		let track: AnimationTrack | undefined;
 		if (this.isTrackUsable("HeavyPunch")) {
 			track = this.playAnim("HeavyPunch", 0.05);
@@ -1175,12 +1214,12 @@ export class CombatController {
 
 		task.delay(ARCZIS_COMBAT_CONFIG.HeavyAnimationLock, () => {
 			this.isAttacking = false;
+			this.updateWalkSpeed();
 			if (track && track.IsPlaying) {
 				track.Stop(0.1);
 			}
 			if (
 				this.isEquipped &&
-				!this.isBlocking &&
 				!this.isGuardBroken &&
 				!this.isInClash &&
 				!this.isInClashWinAnimation &&
@@ -1232,16 +1271,15 @@ export class CombatController {
 		this.lastActionDebug = "E: Guard / Block Aktif";
 		this.updateDebugHUD();
 		this.blockEvent.FireServer(true);
-
-		this.stopAnim("CombatIdle", 0.1);
-		this.stopAnim("CombatWalk", 0.1);
-		this.stopAnim("CombatRun", 0.1);
+		this.updateWalkSpeed();
 
 		if (this.isTrackUsable("Block")) {
 			this.playAnim("Block", 0.1);
 		} else {
 			this.setProceduralBlock(true);
 		}
+
+		this.updateMovement();
 	}
 
 	private stopBlock(): void {
@@ -1252,6 +1290,7 @@ export class CombatController {
 		this.lastActionDebug = "E: Guard Dilepas";
 		this.updateDebugHUD();
 		this.blockEvent.FireServer(false);
+		this.updateWalkSpeed();
 
 		this.stopAnim("Block", 0.15);
 		this.setProceduralBlock(false);
@@ -1280,6 +1319,7 @@ export class CombatController {
 				}
 
 				this.isAttacking = true;
+				this.faceCamera();
 				this.stopAttackAnims();
 
 				let track: AnimationTrack | undefined;
@@ -1298,12 +1338,12 @@ export class CombatController {
 
 				task.delay(lockTime, () => {
 					this.isAttacking = false;
+					this.updateWalkSpeed();
 					if (track && track.IsPlaying) {
 						track.Stop(0.1);
 					}
 					if (
 						this.isEquipped &&
-						!this.isBlocking &&
 						!this.isGuardBroken &&
 						!this.isInClash &&
 						!this.isInClashWinAnimation &&
@@ -1314,6 +1354,7 @@ export class CombatController {
 				});
 			} else if (eventType === "NoStamina") {
 				this.isAttacking = false;
+				this.updateWalkSpeed();
 				if (this.isEquipped && !this.isGuardBroken && !this.isInClash && !this.isStunned) {
 					this.updateMovement();
 				}
@@ -1328,6 +1369,7 @@ export class CombatController {
 				this.isStunned = true;
 				this.stopAnim("Block", 0.05);
 				this.stopAttackAnims();
+				this.updateWalkSpeed();
 				if (this.isTrackUsable("GuardBreak")) {
 					this.playAnim("GuardBreak", 0.05);
 				} else {
@@ -1336,10 +1378,12 @@ export class CombatController {
 			} else if (eventType === "GuardBroken" || eventType === "CannotBlock") {
 				this.isBlocking = false;
 				this.setProceduralBlock(false);
+				this.updateWalkSpeed();
 			} else if (eventType === "NoStamina") {
 				this.isBlocking = false;
 				this.stopAnim("Block", 0.15);
 				this.setProceduralBlock(false);
+				this.updateWalkSpeed();
 				if (this.isEquipped && !this.isGuardBroken && !this.isInClash && !this.isStunned) {
 					this.updateMovement();
 				}
@@ -1490,7 +1534,8 @@ export class CombatController {
 		this.stopAnim("HitReactionM1_2", 0.1);
 		this.stopAnim("HitReactionHeavy", 0.1);
 
-		if (this.isEquipped && !this.isBlocking) {
+		if (this.isEquipped) {
+			this.updateWalkSpeed();
 			this.updateMovement();
 		}
 	}

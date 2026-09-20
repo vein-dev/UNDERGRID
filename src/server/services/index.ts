@@ -8,3 +8,4 @@ export * from "./ServerAdminService";
 export * from "./ServerDummyService";
 export * from "./ServerEmoteService";
 export * from "./ServerSkateboardService";
+export * from "./ServerTimeService";

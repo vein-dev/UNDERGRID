@@ -6,6 +6,7 @@ import { SettingsModalView } from "client/ui/views/SettingsModalView";
 import { isPlayerAdmin } from "shared/config";
 import { GetIconUri } from "shared/utils";
 import { BackpackController } from "./BackpackController";
+import { HotbarController } from "./HotbarController";
 
 /**
  * Client singleton controller managing TopbarPlus icons.
@@ -13,6 +14,7 @@ import { BackpackController } from "./BackpackController";
 export class TopbarController {
 	private static instance?: TopbarController;
 	private icons = new Map<string, Icon>();
+	private isTopbarEnabled = true;
 
 	private constructor() {}
 
@@ -85,7 +87,43 @@ export class TopbarController {
 
 		this.icons.set("Emotes", emoteIcon);
 
-		// 3. Icon Admin Panel (Hanya untuk Player berhak Admin)
+		// 3. Icon Toggle Hotbar (Fullscreen mode tanpa Hotbar, keybind H)
+		const hotbarController = HotbarController.getInstance();
+		const hotbarIcon = new Icon()
+			.setName("HotbarToggle")
+			.setImage(GetIconUri("eye"), "Deselected")
+			.setImage(GetIconUri("eye-off"), "Selected")
+			.setCaption("Sembunyikan Hotbar (H)")
+			.bindToggleKey(Enum.KeyCode.H);
+
+		let isSyncingHotbar = false;
+
+		hotbarIcon.bindEvent("toggled", (_self, isSelected) => {
+			if (isSyncingHotbar) return;
+			isSyncingHotbar = true;
+			// isSelected = true -> Fullscreen / Hotbar disembunyikan
+			// isSelected = false -> Normal / Hotbar ditampilkan
+			hotbarController.setVisible(!isSelected);
+			hotbarIcon.setCaption(isSelected ? "Tampilkan Hotbar (H)" : "Sembunyikan Hotbar (H)");
+			isSyncingHotbar = false;
+		});
+
+		hotbarController.onVisibilityChanged((visible) => {
+			if (isSyncingHotbar) return;
+			isSyncingHotbar = true;
+			if (!visible && !hotbarIcon.isSelected) {
+				hotbarIcon.select();
+				hotbarIcon.setCaption("Tampilkan Hotbar (H)");
+			} else if (visible && hotbarIcon.isSelected) {
+				hotbarIcon.deselect();
+				hotbarIcon.setCaption("Sembunyikan Hotbar (H)");
+			}
+			isSyncingHotbar = false;
+		});
+
+		this.icons.set("HotbarToggle", hotbarIcon);
+
+		// 4. Icon Admin Panel (Hanya untuk Player berhak Admin)
 		if (isPlayerAdmin(Players.LocalPlayer)) {
 			const adminView = AdminPanelView.getInstance();
 
@@ -150,7 +188,32 @@ export class TopbarController {
 
 		this.icons.set("Settings", settingsIcon);
 
+		// Jika setEnabled(false) dipanggil sebelum atau selama init, langsung sembunyikan
+		if (!this.isTopbarEnabled) {
+			this.setEnabled(false);
+		}
+
 		print("[TopbarController] Initialized successfully with TopbarPlus icons!");
+	}
+
+	public setEnabled(enabled: boolean): void {
+		this.isTopbarEnabled = enabled;
+
+		// 1. Enable/Disable each registered Icon instance
+		for (const [_, icon] of this.icons) {
+			icon.setEnabled(enabled);
+		}
+
+		// 2. Hide/Show all TopbarPlus ScreenGuis in PlayerGui
+		const localPlayer = Players.LocalPlayer;
+		const playerGui = localPlayer?.FindFirstChildOfClass("PlayerGui");
+		if (playerGui) {
+			for (const child of playerGui.GetChildren()) {
+				if (child.IsA("ScreenGui") && child.Name.find("Topbar")[0] !== undefined) {
+					child.Enabled = enabled;
+				}
+			}
+		}
 	}
 
 	public getIcon(name: string): Icon | undefined {

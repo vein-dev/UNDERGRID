@@ -6,6 +6,7 @@
 export enum AdminTab {
 	MusicMaster = "MusicMaster",
 	StageFx = "StageFx",
+	TimeControl = "TimeControl",
 	PlayerManagement = "PlayerManagement",
 }
 

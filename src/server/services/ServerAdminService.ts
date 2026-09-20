@@ -3,6 +3,7 @@ import { isPlayerAdmin } from "shared/config";
 import { getRemoteEvent, getRemoteFunction } from "shared/network";
 import { AdminStateSync, AtmospherePreset, PlayerEntryInfo } from "shared/types";
 import { ServerMusicService } from "./ServerMusicService";
+import { ServerTimeService } from "./ServerTimeService";
 
 /**
  * Server singleton service handling authenticated Admin actions:
@@ -119,6 +120,41 @@ export class ServerAdminService {
 				break;
 			}
 
+			case "SetClockTime": {
+				if (typeIs(data, "number")) {
+					ServerTimeService.getInstance().setClockTime(data as number);
+				}
+				break;
+			}
+
+			case "SetTimeScale": {
+				if (typeIs(data, "number")) {
+					ServerTimeService.getInstance().setTimeScale(data as number);
+				}
+				break;
+			}
+
+			case "ToggleTimePause": {
+				const timeService = ServerTimeService.getInstance();
+				if (typeIs(data, "boolean")) {
+					if (data as boolean) timeService.pause();
+					else timeService.resume();
+				} else {
+					const currentPaused =
+						(game.GetService("ReplicatedStorage").GetAttribute("IsTimePaused") as boolean | undefined) ?? false;
+					if (currentPaused) timeService.resume();
+					else timeService.pause();
+				}
+				break;
+			}
+
+			case "SetCycleDuration": {
+				if (typeIs(data, "number")) {
+					ServerTimeService.getInstance().setCycleDurationMinutes(data as number);
+				}
+				break;
+			}
+
 			default:
 				warn(`[ServerAdminService] Unknown action: ${action}`);
 		}
@@ -153,6 +189,7 @@ export class ServerAdminService {
 
 		switch (preset) {
 			case AtmospherePreset.Blackout: {
+				ServerTimeService.getInstance().setAdminOverride(true);
 				Lighting.Brightness = 0;
 				Lighting.ClockTime = 0;
 				Lighting.Ambient = Color3.fromHex("#020206");
@@ -198,10 +235,14 @@ export class ServerAdminService {
 			this.strobeThread = undefined;
 		}
 
+		if (preset === AtmospherePreset.Blackout) {
+			ServerTimeService.getInstance().setAdminOverride(false);
+		}
+
 		// Restore lighting defaults if no blackout/strobe is active
 		if (!this.activePresets.has(AtmospherePreset.Blackout) && !this.activePresets.has(AtmospherePreset.Strobe)) {
 			Lighting.Brightness = this.originalBrightness;
-			Lighting.ClockTime = this.originalClockTime;
+			Lighting.ClockTime = ServerTimeService.getInstance().getClockTime();
 			Lighting.Ambient = this.originalAmbient;
 			Lighting.OutdoorAmbient = this.originalOutdoorAmbient;
 		}

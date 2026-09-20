@@ -250,7 +250,7 @@ export class ServerCombatService {
 
 		const data = this.playerData.get(player);
 		if (data) {
-			data.BaseWalkSpeed = humanoid.WalkSpeed;
+			data.BaseWalkSpeed = ARCZIS_COMBAT_CONFIG.DefaultWalkSpeed;
 		}
 
 		const createValue = (name: string, className: "NumberValue" | "BoolValue", defaultValue: number | boolean) => {
@@ -493,7 +493,9 @@ export class ServerCombatService {
 
 		const hasAnimateHandling = character.FindFirstChild("HasAnimateSpeedHandling") as BoolValue | undefined;
 		if (!hasAnimateHandling || !hasAnimateHandling.Value) {
-			const baseSpeed = data.BaseWalkSpeed || ARCZIS_COMBAT_CONFIG.DefaultWalkSpeed;
+			const baseSpeed = data.IsEquipped
+				? (data.BaseWalkSpeed || ARCZIS_COMBAT_CONFIG.DefaultWalkSpeed)
+				: MovementConfig.CROUCH.normalSpeed;
 			humanoid.WalkSpeed = baseSpeed * multiplier;
 
 			if (data.IsGuardBroken || data.IsInClash || data.IsEquipped) {
@@ -1145,12 +1147,23 @@ export class ServerCombatService {
 				data.IsClashImmune = false;
 				data.ClashImmuneUntil = 0;
 				data.IsClashWinner = false;
+				data.BaseWalkSpeed = ARCZIS_COMBAT_CONFIG.DefaultWalkSpeed;
 				this.syncCharacterValues(character, data);
 				this.applySpeed(character, data);
 				this.playSoundOnCharacter(character, ARCZIS_COMBAT_CONFIG.Sounds.Equip, 1.0);
 			} else {
+				data.BaseWalkSpeed = MovementConfig.CROUCH.normalSpeed;
 				this.applySpeed(character, data);
 			}
+			return;
+		}
+
+		if (action === "Sprint") {
+			const isSprinting = args[0] as boolean;
+			data.BaseWalkSpeed = isSprinting
+				? ARCZIS_COMBAT_CONFIG.SprintSpeed
+				: ARCZIS_COMBAT_CONFIG.DefaultWalkSpeed;
+			this.applySpeed(character, data);
 			return;
 		}
 

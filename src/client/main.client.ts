@@ -21,6 +21,7 @@ import {
 import { AdminService } from "./services/AdminService";
 import { EmoteService } from "./services/EmoteService";
 import { GlobalNotificationService } from "./services/GlobalNotificationService";
+import { TimeService } from "./services/TimeService";
 
 /**
  * Client Entry Point
@@ -31,8 +32,9 @@ function main() {
 
 	print("[Client] Starting client controllers...");
 
-	// 0. Inisialisasi Graphics Controller untuk optimasi HD & post-processing
+	// 0. Inisialisasi Graphics Controller & Time Service (Siklus Waktu Dinamis)
 	GraphicsController.getInstance().init();
+	TimeService.getInstance().init();
 
 	// 1. Inisialisasi Onboarding Screen (Loading & Cinematic Spawn) paling pertama agar langsung menutupi layar
 	OnboardingController.getInstance().init();

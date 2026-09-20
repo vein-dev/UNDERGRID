@@ -112,6 +112,22 @@ export class AdminService {
 		this.adminControlEvent.FireServer("BringPlayer", userId);
 	}
 
+	public setClockTime(hour: number): void {
+		this.adminControlEvent.FireServer("SetClockTime", hour);
+	}
+
+	public setTimeScale(scale: number): void {
+		this.adminControlEvent.FireServer("SetTimeScale", scale);
+	}
+
+	public toggleTimePause(pause?: boolean): void {
+		this.adminControlEvent.FireServer("ToggleTimePause", pause);
+	}
+
+	public setCycleDuration(minutes: number): void {
+		this.adminControlEvent.FireServer("SetCycleDuration", minutes);
+	}
+
 	public onStateUpdated(cb: StateUpdateCallback): () => void {
 		this.stateUpdateCallbacks.push(cb);
 		return () => {

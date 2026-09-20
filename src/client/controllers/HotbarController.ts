@@ -10,6 +10,8 @@ export class HotbarController {
 
 	private player = Players.LocalPlayer;
 	private hotbarView?: HotbarView;
+	private isVisible = true;
+	private visibilityCallbacks: Array<(visible: boolean) => void> = [];
 
 	// Slot number (1-9) -> Tool instance
 	private toolSlots = new Map<number, Tool>();
@@ -46,6 +48,9 @@ export class HotbarController {
 
 		// 2. Initialize visual View
 		this.hotbarView = new HotbarView();
+		if (!this.isVisible) {
+			this.hotbarView.setVisible(false);
+		}
 		this.hotbarView.onSlotClicked((slotNumber) => {
 			this.toggleSlot(slotNumber);
 		});
@@ -349,5 +354,29 @@ export class HotbarController {
 
 	public getToolInSlot(slotNumber: number): Tool | undefined {
 		return this.toolSlots.get(slotNumber);
+	}
+
+	public setVisible(visible: boolean): void {
+		this.isVisible = visible;
+		this.hotbarView?.setVisible(visible);
+		for (const cb of this.visibilityCallbacks) {
+			cb(visible);
+		}
+	}
+
+	public isHotbarVisible(): boolean {
+		return this.isVisible;
+	}
+
+	public toggleVisible(): boolean {
+		this.setVisible(!this.isVisible);
+		return this.isVisible;
+	}
+
+	public onVisibilityChanged(callback: (visible: boolean) => void): () => void {
+		this.visibilityCallbacks.push(callback);
+		return () => {
+			this.visibilityCallbacks = this.visibilityCallbacks.filter((cb) => cb !== callback);
+		};
 	}
 }

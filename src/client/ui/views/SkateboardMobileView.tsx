@@ -184,23 +184,6 @@ export function SkateboardMobileComponent({
 				BackgroundTransparency={1}
 				ZIndex={51}
 			>
-				{/* Hint label */}
-				<textlabel
-					key="SteerHint"
-					AnchorPoint={new Vector2(0, 0)}
-					Position={new UDim2(0, 4, 0, 0)}
-					Size={new UDim2(1, 0, 0, 12)}
-					BackgroundTransparency={1}
-					Text="STEER / CARVE"
-					TextColor3={Color3.fromHex("#94a3b8")}
-					Font={Fonts.Bold}
-					TextSize={9}
-					TextXAlignment={Enum.TextXAlignment.Left}
-					ZIndex={52}
-				>
-					<uistroke Color={Color3.fromHex("#000000")} Thickness={1} Transparency={0.5} />
-				</textlabel>
-
 				{/* Tombol Turn Left */}
 				<SkateRoundButton
 					name="SteerLeftBtn"
@@ -250,12 +233,7 @@ export function SkateboardMobileComponent({
 				<uicorner CornerRadius={new UDim(1, 0)} />
 				<uistroke Color={Color3.fromHex("#38383a")} Thickness={1.2} Transparency={0.35} />
 
-				<frame
-					key="DismountContent"
-					Size={new UDim2(1, 0, 1, 0)}
-					BackgroundTransparency={1}
-					ZIndex={56}
-				>
+				<frame key="DismountContent" Size={new UDim2(1, 0, 1, 0)} BackgroundTransparency={1} ZIndex={56}>
 					<uilistlayout
 						FillDirection={Enum.FillDirection.Horizontal}
 						VerticalAlignment={Enum.VerticalAlignment.Center}

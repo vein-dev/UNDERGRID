@@ -1,4 +1,4 @@
-import { ContextActionService, Players, RunService, TweenService, Workspace } from "@rbxts/services";
+import { ContextActionService, Players, RunService, StarterGui, TweenService, Workspace } from "@rbxts/services";
 import { GameConfig } from "shared/config";
 import { CinematicOverlayView } from "client/ui/views/CinematicOverlayView";
 
@@ -15,6 +15,8 @@ export class SpawnCinematicController {
 	private finishCallbacks: Array<() => void> = [];
 	private overlayView: CinematicOverlayView;
 	private activeConnection?: RBXScriptConnection;
+	private touchGuiConn?: RBXScriptConnection;
+	private uiSuppressionConn?: RBXScriptConnection;
 
 	private constructor() {
 		this.overlayView = new CinematicOverlayView();
@@ -81,6 +83,109 @@ export class SpawnCinematicController {
 		this.playCinematicSequence(character, rootPart, humanoid);
 	}
 
+	private setTouchControlsEnabled(enabled: boolean): void {
+		const localPlayer = Players.LocalPlayer;
+		const playerGui = localPlayer?.FindFirstChildOfClass("PlayerGui");
+		const touchGui = playerGui?.FindFirstChild("TouchGui") as ScreenGui | undefined;
+		if (touchGui) {
+			touchGui.Enabled = enabled;
+		}
+
+		if (!enabled) {
+			this.touchGuiConn?.Disconnect();
+			if (playerGui) {
+				this.touchGuiConn = playerGui.ChildAdded.Connect((child) => {
+					if (child.Name === "TouchGui" && child.IsA("ScreenGui")) {
+						child.Enabled = false;
+					}
+				});
+			}
+		} else {
+			this.touchGuiConn?.Disconnect();
+			this.touchGuiConn = undefined;
+		}
+
+		try {
+			const playerScripts = localPlayer?.FindFirstChild("PlayerScripts");
+			const playerModule = playerScripts?.FindFirstChild("PlayerModule");
+			if (playerModule) {
+				const controls = require(playerModule as ModuleScript) as {
+					GetControls: () => { Disable: () => void; Enable: (enable?: boolean) => void };
+				};
+				if (enabled) {
+					controls.GetControls().Enable(true);
+				} else {
+					controls.GetControls().Disable();
+				}
+			}
+		} catch (e) {
+			// Safe fallback
+		}
+	}
+
+	public setCinematicUiVisible(visible: boolean): void {
+		// 1. Roblox CoreGui (Chat, PlayerList, Health, Backpack, Emotes)
+		pcall(() => {
+			StarterGui.SetCoreGuiEnabled(Enum.CoreGuiType.All, visible);
+			if (visible) {
+				// Tetap nonaktifkan default backpack Roblox karena menggunakan Hotbar custom
+				StarterGui.SetCoreGuiEnabled(Enum.CoreGuiType.Backpack, false);
+			}
+		});
+
+		pcall(() => {
+			StarterGui.SetCore("TopbarEnabled", visible);
+		});
+
+		// 2. Sembunyikan / Munculkan ScreenGui di PlayerGui (TopbarPlus, Hotbar, dll.)
+		const localPlayer = Players.LocalPlayer;
+		const playerGui =
+			localPlayer?.FindFirstChildOfClass("PlayerGui") ??
+			(localPlayer?.WaitForChild("PlayerGui", 5) as PlayerGui | undefined);
+
+		if (playerGui) {
+			const applyScreenGuiVisibility = () => {
+				for (const child of playerGui.GetChildren()) {
+					if (!child.IsA("ScreenGui")) continue;
+					// Jangan sembunyikan GUI loading atau overlay sinematik
+					if (child.Name === "CinematicOverlayGui" || child.Name === "LoadingScreenGui") continue;
+
+					if (
+						child.Name.find("Topbar")[0] !== undefined ||
+						child.Name === "StandardHotbarGui" ||
+						child.Name === "TouchGui"
+					) {
+						child.Enabled = visible;
+					}
+				}
+			};
+
+			applyScreenGuiVisibility();
+
+			if (!visible) {
+				this.uiSuppressionConn?.Disconnect();
+				this.uiSuppressionConn = playerGui.ChildAdded.Connect((child) => {
+					if (child.IsA("ScreenGui")) {
+						if (child.Name === "CinematicOverlayGui" || child.Name === "LoadingScreenGui") return;
+						if (
+							child.Name.find("Topbar")[0] !== undefined ||
+							child.Name === "StandardHotbarGui" ||
+							child.Name === "TouchGui"
+						) {
+							child.Enabled = false;
+						}
+					}
+				});
+			} else {
+				this.uiSuppressionConn?.Disconnect();
+				this.uiSuppressionConn = undefined;
+			}
+		}
+
+		// 3. Analog & Touch Controls
+		this.setTouchControlsEnabled(visible);
+	}
+
 	private playCinematicSequence(character: Model, rootPart: BasePart, humanoid: Humanoid): void {
 		const camera = Workspace.CurrentCamera;
 		if (!camera) return;
@@ -118,10 +223,13 @@ export class SpawnCinematicController {
 			Enum.KeyCode.Six,
 		);
 
-		// 2. TAMPILKAN LETTERBOX SINEMATIK (Diam di tempat tanpa animasi masuk)
+		// 2. SEMBUNYIKAN SEMUA UI GAMEPLAY (CoreGui, TopbarPlus, Hotbar, Analog)
+		this.setCinematicUiVisible(false);
+
+		// 3. TAMPILKAN LETTERBOX SINEMATIK (Diam di tempat tanpa animasi masuk)
 		this.overlayView.show();
 
-		// 3. SET KAMERA SCRIPTABLE (Tanpa modifikasi FOV buatan)
+		// 4. SET KAMERA SCRIPTABLE (Tanpa modifikasi FOV buatan)
 		camera.CameraType = Enum.CameraType.Scriptable;
 
 		const rootCFrame = rootPart.CFrame;
@@ -195,7 +303,10 @@ export class SpawnCinematicController {
 		// 1. PASTIKAN LETTERBOX BARS SELESAI
 		this.overlayView.hide();
 
-		// 2. KEMBALIKAN KAMERA KE DEFAULT GAMEPLAY TEPAT DI FRAME AKHIR (ZERO HENTAKAN)
+		// 2. PULIHKAN SEMUA UI GAMEPLAY (CoreGui, TopbarPlus, Hotbar, Analog)
+		this.setCinematicUiVisible(true);
+
+		// 3. KEMBALIKAN KAMERA KE DEFAULT GAMEPLAY TEPAT DI FRAME AKHIR (ZERO HENTAKAN)
 		if (camera) {
 			camera.CameraSubject = humanoid;
 			camera.Focus = new CFrame(targetFocus);
@@ -203,7 +314,7 @@ export class SpawnCinematicController {
 			camera.CameraType = Enum.CameraType.Custom;
 		}
 
-		// 3. UNFREEZE KARAKTER
+		// 4. UNFREEZE KARAKTER
 		rootPart.Anchored = false;
 		humanoid.WalkSpeed = GameConfig.PLAYER.DEFAULT_WALKSPEED;
 		humanoid.JumpPower = GameConfig.PLAYER.DEFAULT_JUMPPOWER;
@@ -239,12 +350,17 @@ export class SpawnCinematicController {
 	public destroy(): void {
 		this.activeConnection?.Disconnect();
 		this.activeConnection = undefined;
+		this.touchGuiConn?.Disconnect();
+		this.touchGuiConn = undefined;
+		this.uiSuppressionConn?.Disconnect();
+		this.uiSuppressionConn = undefined;
 		ContextActionService.UnbindAction("SpawnCinematicFreeze");
 		const character = Players.LocalPlayer?.Character;
 		const rootPart = character?.FindFirstChild("HumanoidRootPart") as BasePart | undefined;
 		if (rootPart) {
 			rootPart.Anchored = false;
 		}
+		this.setCinematicUiVisible(true);
 		this.overlayView.destroy();
 	}
 }

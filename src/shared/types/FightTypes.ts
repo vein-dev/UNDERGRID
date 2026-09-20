@@ -171,13 +171,13 @@ export const ARCZIS_COMBAT_CONFIG: ArczisCombatConfig = {
 	HeavyKnockback: 40,
 	GuardBreakKnockback: 25,
 
-	BlockWalkSpeedMultiplier: 0.3,
+	BlockWalkSpeedMultiplier: 0.6,
 	StunnedWalkSpeed: 0,
 	HitStunWalkSpeedMultiplier: 0.3,
 	AttackingWalkSpeedMultiplier: 0.3,
-	DefaultWalkSpeed: 9,
-	RunSpeedThreshold: 11,
-	SprintSpeed: 14,
+	DefaultWalkSpeed: 11,
+	RunSpeedThreshold: 14,
+	SprintSpeed: 16,
 
 	SoundVolume: 1.0,
 	SoundRange: 50,
@@ -245,6 +245,6 @@ export interface ActiveClashSession {
 	Constraints: Instance[];
 }
 
-export type CombatActionType = "Equip" | "M1" | "Heavy" | "Dash";
+export type CombatActionType = "Equip" | "M1" | "Heavy" | "Dash" | "Sprint";
 export type CombatReactionType =
 	"HitReactionM1_1" | "HitReactionM1_2" | "HitReactionHeavy" | "GuardBreak" | "BlockHit" | "StunEnded";
