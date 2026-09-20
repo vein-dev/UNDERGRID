@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from "@rbxts/react";
 import ReactRoblox, { Root } from "@rbxts/react-roblox";
-import { Players, RunService, TweenService, UserInputService, Workspace } from "@rbxts/services";
+import { GuiService, Players, RunService, TweenService, UserInputService, Workspace } from "@rbxts/services";
 import { EmoteService } from "client/services/EmoteService";
 import { Fonts } from "../Typography";
 import { EMOTE_CONFIG } from "shared/config";
@@ -22,7 +22,10 @@ export function EmoteModalComponent({ isOpen, onClose, onAnimationFinished }: Em
 		EmoteService.getInstance().getActiveEmoteId(),
 	);
 	const [scale, setScale] = useState(1);
-	const [leftOffset, setLeftOffset] = useState(28);
+	const [targetPos, setTargetPos] = useState<UDim2>(new UDim2(0, 28, 0.5, 0));
+	const [offscreenPos, setOffscreenPos] = useState<UDim2>(new UDim2(0, -360, 0.5, 0));
+	const [anchorPoint, setAnchorPoint] = useState<Vector2>(new Vector2(0, 0.5));
+	const [topbarHeight, setTopbarHeight] = useState(54);
 	const [shouldRender, setShouldRender] = useState(isOpen);
 
 	const panelRef = useRef<Frame>();
@@ -33,12 +36,41 @@ export function EmoteModalComponent({ isOpen, onClose, onAnimationFinished }: Em
 		const updateScale = () => {
 			const camera = Workspace.CurrentCamera;
 			const vp = camera ? camera.ViewportSize : new Vector2(1280, 720);
-			const scaleY = (vp.Y * 0.84) / 500;
-			const scaleX = (vp.X * 0.45) / 310;
-			setScale(math.clamp(math.min(scaleY, scaleX), 0.45, 1.05));
 
-			const isMobileCompact = vp.Y <= 520;
-			setLeftOffset(isMobileCompact ? 56 : 28);
+			const [topInset] = GuiService.GetGuiInset();
+			const topHeight = math.max(topInset.Y + 16, 68);
+			setTopbarHeight(topHeight);
+
+			const bottomInset = 16;
+			const availableHeight = math.max(vp.Y - topHeight - bottomInset, 180);
+			const centerY = topHeight + availableHeight / 2;
+
+			const isPortrait = vp.X < vp.Y || vp.X < 640;
+
+			if (isPortrait) {
+				const availableWidth = math.max(vp.X - 32, 200);
+				const scaleY = (availableHeight * 0.85) / 500;
+				const scaleX = (availableWidth * 0.88) / 310;
+				const newScale = math.clamp(math.min(scaleY, scaleX), 0.55, 0.88);
+				setScale(newScale);
+
+				setAnchorPoint(new Vector2(0.5, 0.5));
+				setTargetPos(new UDim2(0.5, 0, 0, centerY));
+				setOffscreenPos(new UDim2(0.5, 0, 1.5, 0));
+			} else {
+				const availableWidth = math.max(vp.X - 40, 300);
+				const scaleY = (availableHeight * 0.85) / 500;
+				const scaleX = (availableWidth * 0.38) / 310;
+				const newScale = math.clamp(math.min(scaleY, scaleX), 0.4, 0.85);
+				setScale(newScale);
+
+				const safeLeft = math.max(topInset.X, 16);
+				const offset = vp.Y <= 520 ? safeLeft + 20 : 28;
+
+				setAnchorPoint(new Vector2(0, 0.5));
+				setTargetPos(new UDim2(0, offset, 0, centerY));
+				setOffscreenPos(new UDim2(0, -360, 0, centerY));
+			}
 		};
 
 		updateScale();
@@ -71,14 +103,13 @@ export function EmoteModalComponent({ isOpen, onClose, onAnimationFinished }: Em
 		if (!panel || !backdrop) return;
 
 		if (isOpen) {
-			// Animasi slide-in dari sisi kiri layar (0.38s Quart Out)
-			panel.Position = new UDim2(0, -360, 0.5, 0);
+			panel.Position = offscreenPos;
 			backdrop.BackgroundTransparency = 1;
 
 			const openPanelTween = TweenService.Create(
 				panel,
 				new TweenInfo(0.38, Enum.EasingStyle.Quart, Enum.EasingDirection.Out),
-				{ Position: new UDim2(0, leftOffset, 0.5, 0) },
+				{ Position: targetPos },
 			);
 
 			openPanelTween.Play();
@@ -87,9 +118,8 @@ export function EmoteModalComponent({ isOpen, onClose, onAnimationFinished }: Em
 				openPanelTween.Cancel();
 			};
 		} else {
-			// Animasi slide-out ke sisi kiri layar (0.28s Quad In)
 			if (!isMountedRef.current) {
-				panel.Position = new UDim2(0, -360, 0.5, 0);
+				panel.Position = offscreenPos;
 				backdrop.BackgroundTransparency = 1;
 				setShouldRender(false);
 				return;
@@ -98,7 +128,7 @@ export function EmoteModalComponent({ isOpen, onClose, onAnimationFinished }: Em
 			const closePanelTween = TweenService.Create(
 				panel,
 				new TweenInfo(0.28, Enum.EasingStyle.Quad, Enum.EasingDirection.In),
-				{ Position: new UDim2(0, -360, 0.5, 0) },
+				{ Position: offscreenPos },
 			);
 
 			const conn = closePanelTween.Completed.Connect((status) => {
@@ -116,7 +146,7 @@ export function EmoteModalComponent({ isOpen, onClose, onAnimationFinished }: Em
 				closePanelTween.Cancel();
 			};
 		}
-	}, [isOpen, shouldRender, leftOffset]);
+	}, [isOpen, shouldRender, targetPos, offscreenPos]);
 
 	useEffect(() => {
 		isMountedRef.current = true;
@@ -140,11 +170,12 @@ export function EmoteModalComponent({ isOpen, onClose, onAnimationFinished }: Em
 
 	return (
 		<frame key="EmoteModalRoot" Size={new UDim2(1, 0, 1, 0)} BackgroundTransparency={1} ZIndex={1}>
-			{/* Backdrop */}
+			{/* Backdrop - Berada di bawah Topbar agar menu Topbar tidak tertutup dan bebas diklik */}
 			<textbutton
 				ref={backdropRef}
 				key="Backdrop"
-				Size={new UDim2(1, 0, 1, 0)}
+				Position={new UDim2(0, 0, 0, topbarHeight)}
+				Size={new UDim2(1, 0, 1, -topbarHeight)}
 				BackgroundColor3={Color3.fromHex("#000000")}
 				BackgroundTransparency={1}
 				Text=""
@@ -172,12 +203,12 @@ export function EmoteModalComponent({ isOpen, onClose, onAnimationFinished }: Em
 				}}
 			/>
 
-			{/* Left Side Panel */}
+			{/* Left Side Panel / Centered on Portrait */}
 			<frame
 				ref={panelRef}
 				key="EmotePanelWrapper"
-				AnchorPoint={new Vector2(0, 0.5)}
-				Position={new UDim2(0, -360, 0.5, 0)}
+				AnchorPoint={anchorPoint}
+				Position={offscreenPos}
 				Size={new UDim2(0, 310, 0, 500)}
 				BackgroundColor3={Color3.fromHex("#141414")}
 				BackgroundTransparency={0}
@@ -475,7 +506,7 @@ export class EmoteModalView {
 			this.screenGui = new Instance("ScreenGui");
 			this.screenGui.Name = "EmoteSystemGui";
 			this.screenGui.ResetOnSpawn = false;
-			this.screenGui.DisplayOrder = 25;
+			this.screenGui.DisplayOrder = 200;
 			this.screenGui.ScreenInsets = Enum.ScreenInsets.None;
 			this.screenGui.IgnoreGuiInset = true;
 			this.screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling;
@@ -549,6 +580,7 @@ export class EmoteModalView {
 		this._isOpen = target;
 		if (target && this.screenGui) {
 			this.screenGui.Enabled = true;
+			this.screenGui.DisplayOrder = 200;
 		}
 		this.animateFOV(target);
 		this.render();

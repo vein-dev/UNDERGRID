@@ -1,4 +1,4 @@
-import React from "@rbxts/react";
+import React, { useState } from "@rbxts/react";
 import ReactRoblox, { Root } from "@rbxts/react-roblox";
 import { Players, UserInputService } from "@rbxts/services";
 import { Fonts } from "../Typography";
@@ -57,14 +57,17 @@ function MobileActionButton({
 	onPressDown,
 	onPressUp,
 }: MobileActionButtonProps) {
+	const [isPressed, setIsPressed] = useState(false);
+	const active = isActive || isPressed;
+
 	return (
 		<textbutton
 			key={name}
 			AnchorPoint={new Vector2(0.5, 0.5)}
 			Position={position}
 			Size={new UDim2(0, size, 0, size)}
-			BackgroundColor3={isActive ? Color3.fromHex("#2563eb") : Color3.fromHex("#14161c")}
-			BackgroundTransparency={isActive ? 0.15 : 0.3}
+			BackgroundColor3={active ? Color3.fromHex("#ffffff") : Color3.fromHex("#141416")}
+			BackgroundTransparency={active ? 0.08 : 0.35}
 			AutoButtonColor={false}
 			Text=""
 			ZIndex={65}
@@ -75,6 +78,7 @@ function MobileActionButton({
 						input.UserInputType === Enum.UserInputType.Touch ||
 						input.UserInputType === Enum.UserInputType.MouseButton1
 					) {
+						setIsPressed(true);
 						onPressDown?.();
 					}
 				},
@@ -83,6 +87,13 @@ function MobileActionButton({
 						input.UserInputType === Enum.UserInputType.Touch ||
 						input.UserInputType === Enum.UserInputType.MouseButton1
 					) {
+						setIsPressed(false);
+						onPressUp?.();
+					}
+				},
+				MouseLeave: () => {
+					if (isPressed) {
+						setIsPressed(false);
 						onPressUp?.();
 					}
 				},
@@ -90,9 +101,9 @@ function MobileActionButton({
 		>
 			<uicorner CornerRadius={new UDim(1, 0)} />
 			<uistroke
-				Color={isActive ? Color3.fromHex("#60a5fa") : Color3.fromHex("#3a4055")}
-				Thickness={1.5}
-				Transparency={0.2}
+				Color={active ? Color3.fromHex("#ffffff") : Color3.fromHex("#38383a")}
+				Thickness={active ? 2 : 1.2}
+				Transparency={active ? 0.05 : 0.35}
 				ApplyStrokeMode={Enum.ApplyStrokeMode.Border}
 			/>
 
@@ -101,8 +112,8 @@ function MobileActionButton({
 				name={icon}
 				size={new UDim2(0, iconSize, 0, iconSize)}
 				anchorPoint={new Vector2(0.5, 0.5)}
-				position={new UDim2(0.5, 0, 0.4, 0)}
-				color={accentColor}
+				position={new UDim2(0.5, 0, 0.38, 0)}
+				color={active ? Color3.fromHex("#0a0a0a") : Color3.fromHex("#f4f4f5")}
 				zIndex={66}
 			/>
 
@@ -110,11 +121,11 @@ function MobileActionButton({
 			<textlabel
 				key="ActionLabel"
 				AnchorPoint={new Vector2(0.5, 1)}
-				Position={new UDim2(0.5, 0, 1, -6)}
-				Size={new UDim2(1, -6, 0, 12)}
+				Position={new UDim2(0.5, 0, 1, -5)}
+				Size={new UDim2(1, -4, 0, 11)}
 				BackgroundTransparency={1}
 				Text={label}
-				TextColor3={isActive ? Color3.fromHex("#ffffff") : Color3.fromHex("#cbd5e1")}
+				TextColor3={active ? Color3.fromHex("#0a0a0a") : Color3.fromHex("#a1a1aa")}
 				Font={Fonts.Bold}
 				TextScaled={true}
 				ZIndex={66}
@@ -481,10 +492,10 @@ export function CombatHudComponent({
 							AnchorPoint={new Vector2(0.5, 0)}
 							Position={new UDim2(0.5, 0, 1, 10)}
 							Size={new UDim2(0, 260, 0, 44)}
-							BackgroundColor3={Color3.fromHex("#ef4444")}
-							BackgroundTransparency={0.15}
+							BackgroundColor3={Color3.fromHex("#ffffff")}
+							BackgroundTransparency={0.1}
 							Text="MASH TAP!"
-							TextColor3={Color3.fromHex("#ffffff")}
+							TextColor3={Color3.fromHex("#000000")}
 							Font={Fonts.Bold}
 							TextSize={14}
 							AutoButtonColor={false}
@@ -495,7 +506,7 @@ export function CombatHudComponent({
 							}}
 						>
 							<uicorner CornerRadius={new UDim(0, 10)} />
-							<uistroke Color={Color3.fromHex("#fca5a5")} Thickness={1.5} />
+							<uistroke Color={Color3.fromHex("#ffffff")} Thickness={1.5} />
 						</textbutton>
 					)}
 				</frame>
@@ -531,7 +542,7 @@ export function CombatHudComponent({
 						size={52}
 						iconSize={22}
 						position={new UDim2(0, 125, 0, 175)}
-						accentColor={Color3.fromHex("#fbbf24")}
+						accentColor={Color3.fromHex("#ffffff")}
 						onActivated={onHeavy}
 					/>
 
@@ -543,7 +554,7 @@ export function CombatHudComponent({
 						size={52}
 						iconSize={22}
 						position={new UDim2(0, 125, 0, 110)}
-						accentColor={isBlocking ? Color3.fromHex("#ffffff") : Color3.fromHex("#60a5fa")}
+						accentColor={Color3.fromHex("#ffffff")}
 						isActive={isBlocking}
 						onPressDown={onBlockStart}
 						onPressUp={onBlockEnd}
@@ -557,7 +568,7 @@ export function CombatHudComponent({
 						size={52}
 						iconSize={22}
 						position={new UDim2(0, 195, 0, 95)}
-						accentColor={Color3.fromHex("#38bdf8")}
+						accentColor={Color3.fromHex("#ffffff")}
 						onActivated={onDash}
 					/>
 
@@ -569,7 +580,7 @@ export function CombatHudComponent({
 						size={46}
 						iconSize={20}
 						position={new UDim2(0, 55, 0, 145)}
-						accentColor={isSprinting ? Color3.fromHex("#ffffff") : Color3.fromHex("#f97316")}
+						accentColor={Color3.fromHex("#ffffff")}
 						isActive={isSprinting}
 						onActivated={onSprintToggle}
 					/>

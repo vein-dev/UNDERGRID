@@ -15,7 +15,7 @@ import {
 	UserInputService,
 	Workspace,
 } from "@rbxts/services";
-import { SkateboardConfig } from "shared/config";
+import { MovementConfig, SkateboardConfig } from "shared/config";
 import { getRemoteEvent } from "shared/network";
 import {
 	SkateboardGrindData,
@@ -43,6 +43,7 @@ export class SkateboardController {
 	private animService: SkateboardAnimationService;
 	private audioService: SkateboardAudioService;
 	private mobileView: SkateboardMobileView;
+	private touchGuiConnection?: RBXScriptConnection;
 
 	private isMounted = false;
 	private currentState: SkateboardState = "OffBoard";
@@ -136,6 +137,7 @@ export class SkateboardController {
 			this.activeBoardTrick = undefined;
 			if (this.isMounted) {
 				this.mobileView.hide();
+				this.setTouchControlsEnabled(true);
 				this.isMounted = false;
 				this.currentState = "OffBoard";
 				this.currentStance = "Regular";
@@ -215,11 +217,60 @@ export class SkateboardController {
 		});
 	}
 
+	/**
+	 * Mengaktifkan atau menonaktifkan kontrol analog virtual bawaan Roblox (TouchGui / Dynamic Thumbstick)
+	 * saat berada di mode layar sentuh (touch) agar tidak bentrok dengan kontrol UI Skateboard.
+	 */
+	public setTouchControlsEnabled(enabled: boolean): void {
+		if (this.touchGuiConnection) {
+			this.touchGuiConnection.Disconnect();
+			this.touchGuiConnection = undefined;
+		}
+
+		const playerGui = Players.LocalPlayer.FindFirstChildOfClass("PlayerGui");
+		if (playerGui) {
+			const touchGui = playerGui.FindFirstChild("TouchGui") as ScreenGui | undefined;
+			if (touchGui) {
+				touchGui.Enabled = enabled;
+			}
+
+			if (!enabled) {
+				this.touchGuiConnection = playerGui.ChildAdded.Connect((child) => {
+					if (child.Name === "TouchGui" && child.IsA("ScreenGui")) {
+						child.Enabled = false;
+					}
+				});
+			}
+		}
+
+		try {
+			const playerScripts = Players.LocalPlayer.FindFirstChildOfClass("PlayerScripts");
+			const playerModuleScript = playerScripts?.FindFirstChild("PlayerModule") as ModuleScript | undefined;
+			if (playerModuleScript) {
+				const playerModule = require(playerModuleScript) as {
+					GetControls?: () => { Disable: () => void; Enable: (enable?: boolean) => void };
+				};
+				const controls = playerModule?.GetControls?.();
+				if (controls) {
+					if (enabled) {
+						controls.Enable(true);
+					} else {
+						controls.Disable();
+					}
+				}
+			}
+		} catch (err) {
+			// Ignore jika PlayerModule belum siap atau berjalan di luar runtime penuh
+		}
+	}
+
 	private setupMobileControls(): void {
 		// Sinkronisasi otomatis visibilitas saat tipe input berubah (PC mouse vs mobile touch)
 		UserInputService.LastInputTypeChanged.Connect(() => {
 			if (this.isMounted) {
-				this.mobileView.setVisible(UserInputService.TouchEnabled);
+				const isTouch = UserInputService.TouchEnabled;
+				this.mobileView.setVisible(isTouch);
+				this.setTouchControlsEnabled(!isTouch);
 			}
 		});
 
@@ -385,7 +436,7 @@ export class SkateboardController {
 
 	private setupInputListener(): void {
 		UserInputService.InputBegan.Connect((input, gameProcessed) => {
-			if (gameProcessed) return;
+			if (UserInputService.GetFocusedTextBox() !== undefined) return;
 			if (!this.isMounted) return;
 
 			// Tombol Gerak
@@ -552,6 +603,7 @@ export class SkateboardController {
 
 			if (UserInputService.TouchEnabled) {
 				this.mobileView.show();
+				this.setTouchControlsEnabled(false);
 			}
 
 			const char = Players.LocalPlayer.Character;
@@ -698,6 +750,7 @@ export class SkateboardController {
 
 		if (UserInputService.TouchEnabled) {
 			this.mobileView.show();
+			this.setTouchControlsEnabled(false);
 		}
 
 		if (char) {
@@ -786,6 +839,7 @@ export class SkateboardController {
 		this.activeBoardTrick = undefined;
 
 		this.mobileView.hide();
+		this.setTouchControlsEnabled(true);
 		this.isMounted = false;
 		this.currentState = "OffBoard";
 		this.currentStance = "Regular";
@@ -825,7 +879,8 @@ export class SkateboardController {
 				hum.UnequipTools();
 				hum.SetStateEnabled(Enum.HumanoidStateType.Jumping, true);
 				hum.AutoRotate = true;
-				hum.JumpPower = 35;
+				hum.WalkSpeed = MovementConfig.CROUCH.normalSpeed;
+				hum.JumpPower = MovementConfig.JUMP.jumpPower;
 				hum.JumpHeight = 7.2;
 				hum.HipHeight = SkateboardConfig.ATTACHMENT.hipHeightDismounted;
 				hum.Move(Vector3.zero, false);
@@ -1543,6 +1598,55 @@ export class SkateboardController {
 				this.stopPushing();
 			}
 
+			// Active polling kemudi PC (A/D) dan rem/fakie (S) agar tidak bergantung hanya pada event InputBegan
+			if (!UserInputService.TouchEnabled && UserInputService.GetFocusedTextBox() === undefined) {
+				const isLeftDown = UserInputService.IsKeyDown(SkateboardConfig.KEYBINDS.turnLeft);
+				const isRightDown = UserInputService.IsKeyDown(SkateboardConfig.KEYBINDS.turnRight);
+				if (isLeftDown && !isRightDown) {
+					if (this.steerDirection !== -1) {
+						this.steerDirection = -1;
+						this.playTurnAnim("Left");
+					}
+				} else if (isRightDown && !isLeftDown) {
+					if (this.steerDirection !== 1) {
+						this.steerDirection = 1;
+						this.playTurnAnim("Right");
+					}
+				} else if (!isLeftDown && !isRightDown && (this.steerDirection === -1 || this.steerDirection === 1)) {
+					this.steerDirection = 0;
+					this.stopTurnAnims(0.2);
+					if (!this.isPushing && this.pushPhase !== "FakiePushing" && this.currentState !== "InAir") {
+						const idleAnim =
+							this.currentStance === "Fakie"
+								? SkateboardConfig.ANIMATIONS.fakieIdle
+								: SkateboardConfig.ANIMATIONS.idle;
+						this.animService.playAnimation(idleAnim, Enum.AnimationPriority.Action, true, 0.2);
+					}
+				}
+
+				const isBrakeDown = UserInputService.IsKeyDown(SkateboardConfig.KEYBINDS.brake);
+				if (isBrakeDown && !this.isHoldingBrake) {
+					this.isHoldingBrake = true;
+					if (this.currentSpeed > 0.5) {
+						this.isBraking = true;
+						this.animService.playAnimation(SkateboardConfig.ANIMATIONS.stop, Enum.AnimationPriority.Action, true);
+					} else {
+						this.isBraking = false;
+						this.currentStance = "Fakie";
+						this.startFakiePushing();
+					}
+				} else if (!isBrakeDown && this.isHoldingBrake) {
+					this.isHoldingBrake = false;
+					if (this.isBraking) {
+						this.isBraking = false;
+						this.animService.stopAnimation(SkateboardConfig.ANIMATIONS.stop, 0.2);
+					}
+					if (this.pushPhase === "FakiePushing") {
+						this.stopFakiePushing();
+					}
+				}
+			}
+
 			// 0. Update audio rolling roda dinamis dengan parameter fisika lengkap
 			this.audioService.updateRolling(
 				grounded,
@@ -1896,16 +2000,19 @@ export class SkateboardController {
 			const moveDir = this.currentSpeed >= 0 ? currentHeadingForward : currentHeadingForward.mul(-1);
 			const horiz = moveDir.mul(math.abs(this.currentSpeed));
 
-			humanoid.WalkSpeed = 0; // Tetap 0 agar controller internal Roblox Humanoid tidak mengintervensi
-
 			if (grounded) {
 				if (math.abs(this.currentSpeed) > 0.1) {
+					humanoid.WalkSpeed = math.abs(this.currentSpeed);
+					humanoid.Move(moveDir, false);
 					// Dorongan linear velocity horizontal langsung mengikuti orientasi belok terbaru
 					rootPart.AssemblyLinearVelocity = new Vector3(horiz.X, rootPart.AssemblyLinearVelocity.Y, horiz.Z);
 				} else {
+					humanoid.WalkSpeed = 0;
+					humanoid.Move(Vector3.zero, false);
 					rootPart.AssemblyLinearVelocity = new Vector3(0, rootPart.AssemblyLinearVelocity.Y, 0);
 				}
 			} else {
+				humanoid.WalkSpeed = 0;
 				// Jaga momentum horizontal saat melayang di udara agar laju maju tidak mandek / berhenti di tengah trik
 				rootPart.AssemblyLinearVelocity = new Vector3(horiz.X, rootPart.AssemblyLinearVelocity.Y, horiz.Z);
 			}

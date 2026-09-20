@@ -60,6 +60,8 @@ export class CrouchController {
 			if (this.isSprinting) {
 				this.stopSprint();
 			}
+		} else {
+			this.applySpeed();
 		}
 	}
 
@@ -190,7 +192,7 @@ export class CrouchController {
 		return can !== false;
 	}
 
-	private applySpeed(): void {
+	public applySpeed(): void {
 		if (!this.humanoid) return;
 		const cfg = MovementConfig.CROUCH;
 

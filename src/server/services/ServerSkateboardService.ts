@@ -90,6 +90,13 @@ export class ServerSkateboardService {
 			starterSkate.ManualActivationOnly = true;
 			const oldHandle = starterSkate.FindFirstChild("Handle");
 			if (oldHandle) oldHandle.Name = "ToolAnchor";
+			for (const desc of starterSkate.GetDescendants()) {
+				if (desc.IsA("BasePart")) {
+					desc.Anchored = false;
+					desc.CanCollide = false;
+					desc.Massless = true;
+				}
+			}
 		}
 
 		print("[ServerSkateboardService] Initialized successfully with Combat-grade Keyframe & Sound replication.");
@@ -371,6 +378,9 @@ export class ServerSkateboardService {
 				equippedTool.FindFirstChildWhichIsA("BasePart")) as BasePart | undefined;
 			if (anchorPart) {
 				anchorPart.Name = "ToolAnchor";
+				anchorPart.Anchored = false;
+				anchorPart.CanCollide = false;
+				anchorPart.Massless = true;
 				anchorPart.CFrame = rootPart.CFrame;
 				let weld = anchorPart.FindFirstChild("ToolRootWeld") as WeldConstraint | undefined;
 				if (!weld) {
@@ -386,6 +396,7 @@ export class ServerSkateboardService {
 					desc.Transparency = 1;
 					desc.CanCollide = false;
 					desc.Massless = true;
+					desc.Anchored = false;
 				}
 			}
 		}

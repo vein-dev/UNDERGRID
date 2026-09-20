@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from "@rbxts/react";
 import ReactRoblox, { Root } from "@rbxts/react-roblox";
-import { Lighting, Players, RunService, TweenService, UserInputService, Workspace } from "@rbxts/services";
+import { GuiService, Lighting, Players, RunService, TweenService, UserInputService, Workspace } from "@rbxts/services";
 import { Fonts } from "../Typography";
 import { LucideIcon } from "../components/LucideIcon";
 
@@ -350,6 +350,9 @@ export function BackpackComponent({
 	onAnimationFinished,
 }: BackpackComponentProps) {
 	const [scale, setScale] = useState(1);
+	const [isCompact, setIsCompact] = useState(false);
+	const [targetPos, setTargetPos] = useState<UDim2>(new UDim2(0.5, 0, 0.5, 0));
+	const [topbarHeight, setTopbarHeight] = useState(54);
 	const [shouldRender, setShouldRender] = useState(visible);
 	const [searchQuery, setSearchQuery] = useState(initialSearchQuery ?? "");
 	const centerWrapperRef = useRef<Frame>();
@@ -364,9 +367,30 @@ export function BackpackComponent({
 		const updateScale = () => {
 			const camera = Workspace.CurrentCamera;
 			const vp = camera ? camera.ViewportSize : new Vector2(1280, 720);
-			const scaleY = (vp.Y * 0.9) / 500;
-			const scaleX = (vp.X * 0.9) / 750;
-			setScale(math.clamp(math.min(scaleY, scaleX), 0.45, 1.05));
+
+			const [topInset] = GuiService.GetGuiInset();
+			const topHeight = math.max(topInset.Y, 54);
+			setTopbarHeight(topHeight);
+
+			const bottomInset = 16;
+			const availableHeight = math.max(vp.Y - topHeight - bottomInset, 200);
+			const centerY = topHeight + availableHeight / 2;
+
+			const compact = vp.X < 720 || vp.X < vp.Y;
+			setIsCompact(compact);
+			setTargetPos(new UDim2(0.5, 0, 0, centerY));
+
+			if (compact) {
+				const availableWidth = math.max(vp.X - 32, 200);
+				const scaleY = availableHeight / 470;
+				const scaleX = availableWidth / 360;
+				setScale(math.clamp(math.min(scaleY, scaleX), 0.65, 1.05));
+			} else {
+				const availableWidth = math.max(vp.X - 40, 300);
+				const scaleY = availableHeight / 470;
+				const scaleX = availableWidth / 736;
+				setScale(math.clamp(math.min(scaleY, scaleX), 0.45, 1.0));
+			}
 		};
 
 		updateScale();
@@ -394,30 +418,21 @@ export function BackpackComponent({
 		if (!center || !backdrop) return;
 
 		if (visible) {
-			// Animasi slide-in dari sisi bawah layar (seperti smartphone: 0.38s Quart Out)
 			center.Position = new UDim2(0.5, 0, 1.5, 0);
 			backdrop.BackgroundTransparency = 1;
 
 			const openCenterTween = TweenService.Create(
 				center,
 				new TweenInfo(0.38, Enum.EasingStyle.Quart, Enum.EasingDirection.Out),
-				{ Position: new UDim2(0.5, 0, 0.5, 0) },
-			);
-			const openBackdropTween = TweenService.Create(
-				backdrop,
-				new TweenInfo(0.38, Enum.EasingStyle.Quart, Enum.EasingDirection.Out),
-				{ BackgroundTransparency: 0.55 },
+				{ Position: targetPos },
 			);
 
 			openCenterTween.Play();
-			openBackdropTween.Play();
 
 			return () => {
 				openCenterTween.Cancel();
-				openBackdropTween.Cancel();
 			};
 		} else {
-			// Animasi slide-out ke sisi bawah layar (seperti smartphone: 0.28s Quad In)
 			if (!isMountedRef.current) {
 				center.Position = new UDim2(0.5, 0, 1.5, 0);
 				backdrop.BackgroundTransparency = 1;
@@ -430,11 +445,6 @@ export function BackpackComponent({
 				new TweenInfo(0.28, Enum.EasingStyle.Quad, Enum.EasingDirection.In),
 				{ Position: new UDim2(0.5, 0, 1.5, 0) },
 			);
-			const closeBackdropTween = TweenService.Create(
-				backdrop,
-				new TweenInfo(0.28, Enum.EasingStyle.Quad, Enum.EasingDirection.In),
-				{ BackgroundTransparency: 1.0 },
-			);
 
 			const conn = closeCenterTween.Completed.Connect((status) => {
 				conn.Disconnect();
@@ -445,15 +455,13 @@ export function BackpackComponent({
 			});
 
 			closeCenterTween.Play();
-			closeBackdropTween.Play();
 
 			return () => {
 				conn.Disconnect();
 				closeCenterTween.Cancel();
-				closeBackdropTween.Cancel();
 			};
 		}
-	}, [visible, shouldRender]);
+	}, [visible, shouldRender, targetPos]);
 
 	useEffect(() => {
 		isMountedRef.current = true;
@@ -524,11 +532,12 @@ export function BackpackComponent({
 
 	return (
 		<frame key="BackpackRoot" Size={new UDim2(1, 0, 1, 0)} BackgroundTransparency={1} ZIndex={1}>
-			{/* Dark Backdrop */}
+			{/* Dark Backdrop - Berada di bawah Topbar agar menu Topbar tidak tertutup dan bebas diklik */}
 			<textbutton
 				ref={backdropRef}
 				key="Backdrop"
-				Size={new UDim2(1, 0, 1, 0)}
+				Position={new UDim2(0, 0, 0, topbarHeight)}
+				Size={new UDim2(1, 0, 1, -topbarHeight)}
 				BackgroundColor3={Color3.fromHex("#000000")}
 				BackgroundTransparency={1}
 				Text=""
@@ -556,13 +565,13 @@ export function BackpackComponent({
 				}}
 			/>
 
-			{/* Center Split Wrapper: Left = Character Viewport, Right = Inventory Storage */}
+			{/* Center Split Wrapper: Left = Character Viewport (Landscape only), Right = Inventory Storage */}
 			<frame
 				ref={centerWrapperRef}
 				key="CenterWrapper"
 				AnchorPoint={new Vector2(0.5, 0.5)}
 				Position={new UDim2(0.5, 0, 1.5, 0)}
-				Size={new UDim2(0, 736, 0, 470)}
+				Size={new UDim2(0, isCompact ? 360 : 736, 0, 470)}
 				BackgroundTransparency={1}
 				ZIndex={2}
 			>
@@ -574,8 +583,8 @@ export function BackpackComponent({
 					Padding={new UDim(0, 16)}
 				/>
 
-				{/* Left: 3D Character Viewport */}
-				<CharacterPreview />
+				{/* Left: 3D Character Viewport (Hidden on compact portrait screens) */}
+				{!isCompact && <CharacterPreview />}
 
 				{/* Right: Sleek Dark Inventory & Storage Card */}
 				<frame
@@ -787,7 +796,7 @@ export class BackpackView {
 			this.screenGui = new Instance("ScreenGui");
 			this.screenGui.Name = "BackpackSystemGui";
 			this.screenGui.ResetOnSpawn = false;
-			this.screenGui.DisplayOrder = 30;
+			this.screenGui.DisplayOrder = 200;
 			this.screenGui.ScreenInsets = Enum.ScreenInsets.None;
 			this.screenGui.IgnoreGuiInset = true;
 			this.screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling;
@@ -937,6 +946,7 @@ export class BackpackView {
 		if (visible) {
 			if (this.screenGui) {
 				this.screenGui.Enabled = true;
+				this.screenGui.DisplayOrder = 200;
 			}
 			this.animateFOV(true);
 			this.updateBlurEffect(true);

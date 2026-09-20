@@ -72,8 +72,8 @@ function SkateRoundButton({
 			AnchorPoint={new Vector2(0.5, 0.5)}
 			Position={position}
 			Size={new UDim2(0, size, 0, size)}
-			BackgroundColor3={active ? accentColor.Lerp(Color3.fromHex("#000000"), 0.3) : Color3.fromHex("#121620")}
-			BackgroundTransparency={active ? 0.15 : 0.35}
+			BackgroundColor3={active ? Color3.fromHex("#ffffff") : Color3.fromHex("#141416")}
+			BackgroundTransparency={active ? 0.08 : 0.35}
 			AutoButtonColor={false}
 			Active={true}
 			Text=""
@@ -108,9 +108,9 @@ function SkateRoundButton({
 		>
 			<uicorner CornerRadius={new UDim(1, 0)} />
 			<uistroke
-				Color={active ? accentColor : Color3.fromHex("#3a4358")}
+				Color={active ? Color3.fromHex("#ffffff") : Color3.fromHex("#38383a")}
 				Thickness={active ? 2 : 1.2}
-				Transparency={active ? 0.1 : 0.35}
+				Transparency={active ? 0.05 : 0.35}
 				ApplyStrokeMode={Enum.ApplyStrokeMode.Border}
 			/>
 
@@ -120,7 +120,7 @@ function SkateRoundButton({
 				size={new UDim2(0, iconSize, 0, iconSize)}
 				anchorPoint={new Vector2(0.5, 0.5)}
 				position={new UDim2(0.5, 0, 0.38, 0)}
-				color={active ? Color3.fromHex("#ffffff") : accentColor}
+				color={active ? Color3.fromHex("#0a0a0a") : Color3.fromHex("#f4f4f5")}
 				zIndex={56}
 			/>
 
@@ -132,7 +132,7 @@ function SkateRoundButton({
 				Size={new UDim2(1, -4, 0, 11)}
 				BackgroundTransparency={1}
 				Text={label}
-				TextColor3={active ? Color3.fromHex("#ffffff") : Color3.fromHex("#cbd5e1")}
+				TextColor3={active ? Color3.fromHex("#0a0a0a") : Color3.fromHex("#a1a1aa")}
 				Font={Fonts.Bold}
 				TextScaled={true}
 				ZIndex={56}
@@ -209,7 +209,7 @@ export function SkateboardMobileComponent({
 					size={54}
 					iconSize={26}
 					position={new UDim2(0, 30, 0, 46)}
-					accentColor={Color3.fromHex("#60a5fa")}
+					accentColor={Color3.fromHex("#ffffff")}
 					isActive={steerDirection === -1}
 					onPressDown={onSteerLeftDown}
 					onPressUp={onSteerLeftUp}
@@ -223,7 +223,7 @@ export function SkateboardMobileComponent({
 					size={54}
 					iconSize={26}
 					position={new UDim2(0, 95, 0, 46)}
-					accentColor={Color3.fromHex("#60a5fa")}
+					accentColor={Color3.fromHex("#ffffff")}
 					isActive={steerDirection === 1}
 					onPressDown={onSteerRightDown}
 					onPressUp={onSteerRightUp}
@@ -238,8 +238,8 @@ export function SkateboardMobileComponent({
 				AnchorPoint={new Vector2(1, 0)}
 				Position={new UDim2(1, -20, 0, 65)}
 				Size={new UDim2(0, 100, 0, 36)}
-				BackgroundColor3={Color3.fromHex("#18181b")}
-				BackgroundTransparency={0.25}
+				BackgroundColor3={Color3.fromHex("#141416")}
+				BackgroundTransparency={0.35}
 				AutoButtonColor={false}
 				Text=""
 				ZIndex={55}
@@ -248,7 +248,7 @@ export function SkateboardMobileComponent({
 				}}
 			>
 				<uicorner CornerRadius={new UDim(1, 0)} />
-				<uistroke Color={Color3.fromHex("#ef4444")} Thickness={1.2} Transparency={0.3} />
+				<uistroke Color={Color3.fromHex("#38383a")} Thickness={1.2} Transparency={0.35} />
 
 				<frame
 					key="DismountContent"
@@ -265,7 +265,7 @@ export function SkateboardMobileComponent({
 					<LucideIcon
 						name="log-out"
 						size={new UDim2(0, 16, 0, 16)}
-						color={Color3.fromHex("#f87171")}
+						color={Color3.fromHex("#f4f4f5")}
 						zIndex={57}
 					/>
 					<textlabel
@@ -273,7 +273,7 @@ export function SkateboardMobileComponent({
 						BackgroundTransparency={1}
 						AutomaticSize={Enum.AutomaticSize.XY}
 						Text="DISMOUNT"
-						TextColor3={Color3.fromHex("#fca5a5")}
+						TextColor3={Color3.fromHex("#f4f4f5")}
 						Font={Fonts.Bold}
 						TextSize={10}
 						ZIndex={57}
@@ -292,32 +292,32 @@ export function SkateboardMobileComponent({
 				BackgroundTransparency={1}
 				ZIndex={51}
 			>
-				{/* 1. OLLIE (TOMBOL UTAMA PALING BESAR) */}
-				<SkateRoundButton
-					name="OllieBtn"
-					label="OLLIE"
-					icon="arrow-up"
-					size={74}
-					iconSize={32}
-					position={new UDim2(1, -55, 1, -55)}
-					accentColor={isChargingOllie ? Color3.fromHex("#facc15") : Color3.fromHex("#38bdf8")}
-					isActive={isChargingOllie}
-					onPressDown={onOllieDown}
-					onPressUp={onOllieUp}
-				/>
-
-				{/* 2. PUSH / MAJU */}
+				{/* 1. PUSH / MAJU (TOMBOL UTAMA PALING BESAR) */}
 				<SkateRoundButton
 					name="PushBtn"
 					label="PUSH"
 					icon="chevrons-up"
-					size={58}
-					iconSize={26}
-					position={new UDim2(1, -55, 1, -140)}
-					accentColor={Color3.fromHex("#34d399")}
+					size={74}
+					iconSize={32}
+					position={new UDim2(1, -55, 1, -55)}
+					accentColor={Color3.fromHex("#ffffff")}
 					isActive={isPushing}
 					onPressDown={onPushDown}
 					onPressUp={onPushUp}
+				/>
+
+				{/* 2. OLLIE / LOMPAT */}
+				<SkateRoundButton
+					name="OllieBtn"
+					label="OLLIE"
+					icon="arrow-up"
+					size={58}
+					iconSize={26}
+					position={new UDim2(1, -55, 1, -140)}
+					accentColor={Color3.fromHex("#ffffff")}
+					isActive={isChargingOllie}
+					onPressDown={onOllieDown}
+					onPressUp={onOllieUp}
 				/>
 
 				{/* 3. BRAKE / MUNDUR */}
@@ -328,7 +328,7 @@ export function SkateboardMobileComponent({
 					size={54}
 					iconSize={24}
 					position={new UDim2(1, -135, 1, -55)}
-					accentColor={Color3.fromHex("#f97316")}
+					accentColor={Color3.fromHex("#ffffff")}
 					isActive={isBraking}
 					onPressDown={onBrakeDown}
 					onPressUp={onBrakeUp}
@@ -342,7 +342,7 @@ export function SkateboardMobileComponent({
 					size={46}
 					iconSize={20}
 					position={new UDim2(1, -135, 1, -135)}
-					accentColor={Color3.fromHex("#a78bfa")}
+					accentColor={Color3.fromHex("#ffffff")}
 					onActivated={() => onTrick?.("Kickflip")}
 				/>
 
@@ -354,7 +354,7 @@ export function SkateboardMobileComponent({
 					size={46}
 					iconSize={20}
 					position={new UDim2(1, -195, 1, -115)}
-					accentColor={Color3.fromHex("#f472b6")}
+					accentColor={Color3.fromHex("#ffffff")}
 					onActivated={() => onTrick?.("Heelflip")}
 				/>
 
@@ -366,7 +366,7 @@ export function SkateboardMobileComponent({
 					size={46}
 					iconSize={20}
 					position={new UDim2(1, -135, 1, -200)}
-					accentColor={Color3.fromHex("#fbbf24")}
+					accentColor={Color3.fromHex("#ffffff")}
 					onActivated={() => onTrick?.("Treflip")}
 				/>
 
@@ -378,7 +378,7 @@ export function SkateboardMobileComponent({
 					size={46}
 					iconSize={20}
 					position={new UDim2(1, -195, 1, -180)}
-					accentColor={Color3.fromHex("#22d3ee")}
+					accentColor={Color3.fromHex("#ffffff")}
 					onActivated={() => onTrick?.("Shuv")}
 				/>
 			</frame>

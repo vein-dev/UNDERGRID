@@ -33,6 +33,7 @@ export class SkateboardClientComponent implements IToolComponent {
 				desc.CanTouch = false;
 				desc.CanQuery = false;
 				desc.Massless = true;
+				desc.Anchored = false;
 			}
 		}
 	}
@@ -47,6 +48,8 @@ export class SkateboardClientComponent implements IToolComponent {
 					desc.CanCollide = false;
 					desc.CanTouch = false;
 					desc.CanQuery = false;
+					desc.Massless = true;
+					desc.Anchored = false;
 				} else if (desc.IsA("Weld") && (desc.Name === "RightGrip" || desc.Name === "Grip")) {
 					desc.Enabled = false;
 					desc.Destroy();
@@ -93,6 +96,11 @@ export class SkateboardClientComponent implements IToolComponent {
 		// Kunci ToolAnchor ke HumanoidRootPart agar part tool tidak jatuh bebas ke void
 		if (hrp && anchorPart) {
 			anchorPart.Name = "ToolAnchor";
+			anchorPart.Anchored = false;
+			anchorPart.CanCollide = false;
+			anchorPart.CanTouch = false;
+			anchorPart.CanQuery = false;
+			anchorPart.Massless = true;
 			anchorPart.CFrame = hrp.CFrame;
 			let weld = anchorPart.FindFirstChild("ToolRootWeld") as WeldConstraint | undefined;
 			if (!weld) {
