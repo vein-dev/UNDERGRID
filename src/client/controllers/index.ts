@@ -13,3 +13,4 @@ export * from "./StaminaController";
 export * from "./OnboardingController";
 export * from "./GraphicsController";
 export * from "./SkateboardController";
+export * from "./ClientStageLightingController";

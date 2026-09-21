@@ -19,6 +19,8 @@ export interface TrackData {
 	 * Client akan otomatis menurunkannya kembali (pitch shift) agar musik terdengar normal.
 	 */
 	pitch?: number;
+	/** Beats per minute untuk sinkronisasi panggung konser & lighting (default 128 jika tidak disetel). */
+	bpm?: number;
 }
 
 /** Represents the current playback state of the music player. */
@@ -171,53 +173,24 @@ export const DEFAULT_SMARTPHONE_CONFIG: SmartphoneConfig = {
 	playlist: [
 		{
 			id: "track_1",
-			title: "Numb, But I Still Feel It",
-			artist: "Title Fight",
-			soundId: "rbxassetid://17208361335",
+			title: "Revival",
+			artist: "Miika",
+			soundId: "rbxassetid://104445798142371",
 			coverColor: Color3.fromHex("#1db954"),
 		},
 		{
 			id: "track_2",
-			title: "Leaf",
-			artist: "Title Fight",
-			soundId: "rbxassetid://122427746390315",
-			coverColor: Color3.fromHex("#5856d6"),
+			title: "Embrace",
+			artist: "Miika",
+			soundId: "rbxassetid://138786500301466",
+			coverColor: Color3.fromHex("#a1b91d"),
 		},
 		{
 			id: "track_3",
-			title: "Revival",
-			artist: "MIIKA",
-			soundId: "rbxassetid://129375707474398",
-			coverColor: Color3.fromHex("#ff9500"),
-		},
-		{
-			id: "track_4",
-			title: "Acceptance",
-			artist: "MIIKA",
-			soundId: "rbxassetid://124579830698647",
-			coverColor: Color3.fromHex("#d12424"),
-		},
-		{
-			id: "track_5",
-			title: "Embrace",
-			artist: "MIIKA",
-			soundId: "rbxassetid://82411311172877",
-			coverColor: Color3.fromHex("#0ef1ef"),
-		},
-		{
-			id: "track_6",
-			title: "Unpleasant Path",
-			artist: "Enamore",
-			soundId: "rbxassetid://114483969995029",
-			coverColor: Color3.fromHex("#ff0000"),
-		},
-		{
-			id: "track_7",
-			title: "Head In The Ceiling Fan",
+			title: "Numb, But I Still Feel It",
 			artist: "Title Fight",
-			soundId: "rbxassetid://79926530616230",
-			coverColor: Color3.fromHex("#ff0000"),
-			pitch: 2,
+			soundId: "rbxassetid://124673215456249",
+			coverColor: Color3.fromHex("#1db954"),
 		},
 	],
 };

@@ -1,3 +1,5 @@
+import { StageLightingControlPayload } from "./StageLightingTypes";
+
 /**
  * Types and interfaces for the Admin Panel system.
  */
@@ -22,6 +24,7 @@ export enum AtmospherePreset {
 export interface AdminStateSync {
 	isQueueLocked: boolean;
 	activePresets: AtmospherePreset[];
+	stageLighting?: StageLightingControlPayload;
 }
 
 /** Player information summary for Admin Player Management tab. */

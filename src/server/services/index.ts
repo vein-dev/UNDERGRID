@@ -9,3 +9,4 @@ export * from "./ServerDummyService";
 export * from "./ServerEmoteService";
 export * from "./ServerSkateboardService";
 export * from "./ServerTimeService";
+export * from "./ServerStageLightingService";

@@ -1,9 +1,10 @@
 import { Lighting, Players } from "@rbxts/services";
 import { isPlayerAdmin } from "shared/config";
 import { getRemoteEvent, getRemoteFunction } from "shared/network";
-import { AdminStateSync, AtmospherePreset, PlayerEntryInfo } from "shared/types";
+import { AdminStateSync, AtmospherePreset, PlayerEntryInfo, StageLightMode, StageLightingControlPayload } from "shared/types";
 import { ServerMusicService } from "./ServerMusicService";
 import { ServerTimeService } from "./ServerTimeService";
+import { ServerStageLightingService } from "./ServerStageLightingService";
 
 /**
  * Server singleton service handling authenticated Admin actions:
@@ -65,6 +66,13 @@ export class ServerAdminService {
 		// Handle admin action commands
 		this.adminControlEvent.OnServerEvent.Connect((player, actionName, data) => {
 			this.handleAdminAction(player, actionName as string, data);
+		});
+
+		// Replikasi state awal saat pemain bergabung
+		Players.PlayerAdded.Connect((player) => {
+			task.defer(() => {
+				this.adminStateUpdatedEvent.FireClient(player, this.getState());
+			});
 		});
 
 		print("[ServerAdminService] Initialized with strict admin verification.");
@@ -155,6 +163,14 @@ export class ServerAdminService {
 				break;
 			}
 
+			case "SetStageLightingControl": {
+				if (typeIs(data, "table")) {
+					ServerStageLightingService.getInstance().applyControl(data as Partial<StageLightingControlPayload>);
+					this.broadcastStateUpdate();
+				}
+				break;
+			}
+
 			default:
 				warn(`[ServerAdminService] Unknown action: ${action}`);
 		}
@@ -186,6 +202,7 @@ export class ServerAdminService {
 
 	private activatePreset(preset: AtmospherePreset): void {
 		print(`[ServerAdminService] Activating Atmosphere Preset: ${preset}`);
+		const stageLighting = ServerStageLightingService.getInstance();
 
 		switch (preset) {
 			case AtmospherePreset.Blackout: {
@@ -194,11 +211,13 @@ export class ServerAdminService {
 				Lighting.ClockTime = 0;
 				Lighting.Ambient = Color3.fromHex("#020206");
 				Lighting.OutdoorAmbient = Color3.fromHex("#000000");
+				stageLighting.setMode(StageLightMode.Off);
 				break;
 			}
 
 			case AtmospherePreset.Strobe: {
 				if (this.strobeThread) task.cancel(this.strobeThread);
+				stageLighting.setMode(StageLightMode.Strobe);
 				this.strobeThread = task.spawn(() => {
 					let flag = false;
 					while (this.activePresets.has(AtmospherePreset.Strobe)) {
@@ -215,6 +234,7 @@ export class ServerAdminService {
 				Lighting.Brightness = 2.5;
 				Lighting.Ambient = Color3.fromHex("#282d4b");
 				Lighting.OutdoorAmbient = Color3.fromHex("#141626");
+				stageLighting.setMode(StageLightMode.SpotlightCenter);
 				break;
 			}
 
@@ -229,10 +249,20 @@ export class ServerAdminService {
 
 	private deactivatePreset(preset: AtmospherePreset): void {
 		print(`[ServerAdminService] Deactivating Atmosphere Preset: ${preset}`);
+		const stageLighting = ServerStageLightingService.getInstance();
 
 		if (preset === AtmospherePreset.Strobe && this.strobeThread) {
 			task.cancel(this.strobeThread);
 			this.strobeThread = undefined;
+			if (!this.activePresets.has(AtmospherePreset.Spotlight)) {
+				stageLighting.setMode(StageLightMode.Off);
+			}
+		}
+
+		if (preset === AtmospherePreset.Spotlight) {
+			if (!this.activePresets.has(AtmospherePreset.Strobe)) {
+				stageLighting.setMode(StageLightMode.Off);
+			}
 		}
 
 		if (preset === AtmospherePreset.Blackout) {
@@ -302,6 +332,7 @@ export class ServerAdminService {
 		return {
 			isQueueLocked: ServerMusicService.getInstance().getIsQueueLocked(),
 			activePresets: presetsArray,
+			stageLighting: ServerStageLightingService.getInstance().getControlState(),
 		};
 	}
 
@@ -326,10 +357,6 @@ export class ServerAdminService {
 
 	private broadcastStateUpdate(): void {
 		const state = this.getState();
-		for (const p of Players.GetPlayers()) {
-			if (isPlayerAdmin(p)) {
-				this.adminStateUpdatedEvent.FireClient(p, state);
-			}
-		}
+		this.adminStateUpdatedEvent.FireAllClients(state);
 	}
 }

@@ -33,3 +33,4 @@ export * from "./ProceduralTypes";
 export * from "./MovementTypes";
 export * from "./SkateboardTypes";
 export * from "./TimeTypes";
+export * from "./StageLightingTypes";

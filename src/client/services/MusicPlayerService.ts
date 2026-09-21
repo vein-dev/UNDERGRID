@@ -295,6 +295,10 @@ export class MusicPlayerService {
 		return this.config.playlist;
 	}
 
+	public getSoundInstance(): Sound {
+		return this.sound;
+	}
+
 	// ─── Callbacks ────────────────────────────────────────────────────────────
 
 	public onTrackChanged(cb: TrackChangedCallback): void {

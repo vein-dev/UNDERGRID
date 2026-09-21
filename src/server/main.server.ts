@@ -10,6 +10,7 @@ import {
 	ServerEmoteService,
 	ServerSkateboardService,
 	ServerTimeService,
+	ServerStageLightingService,
 } from "./services";
 
 /**
@@ -21,6 +22,9 @@ function main() {
 	// Initialize singleton services
 	const timeService = ServerTimeService.getInstance();
 	timeService.init();
+
+	const stageLightingService = ServerStageLightingService.getInstance();
+	stageLightingService.init();
 
 	const playerService = ServerPlayerService.getInstance();
 	playerService.init();

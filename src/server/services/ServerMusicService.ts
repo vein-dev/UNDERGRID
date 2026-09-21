@@ -447,4 +447,16 @@ export class ServerMusicService {
 		this.syncAll();
 		print("[ServerMusicService] Song queue cleared by admin.");
 	}
+
+	public getCurrentTrack(): TrackData | undefined {
+		return this.currentTrack;
+	}
+
+	public getPlaybackState(): MusicPlayerState {
+		return this.state;
+	}
+
+	public getPlaybackPosition(): number {
+		return this.getCurrentTimePosition();
+	}
 }

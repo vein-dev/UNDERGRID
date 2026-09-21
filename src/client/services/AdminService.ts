@@ -1,5 +1,5 @@
 import { getRemoteEvent, getRemoteFunction } from "shared/network";
-import { AdminStateSync, AtmospherePreset, PlayerEntryInfo } from "shared/types";
+import { AdminStateSync, AtmospherePreset, PlayerEntryInfo, StageLightingControlPayload } from "shared/types";
 import { GlobalNotificationService } from "./GlobalNotificationService";
 
 type StateUpdateCallback = (state: AdminStateSync) => void;
@@ -126,6 +126,10 @@ export class AdminService {
 
 	public setCycleDuration(minutes: number): void {
 		this.adminControlEvent.FireServer("SetCycleDuration", minutes);
+	}
+
+	public setStageLighting(payload: Partial<StageLightingControlPayload>): void {
+		this.adminControlEvent.FireServer("SetStageLightingControl", payload);
 	}
 
 	public onStateUpdated(cb: StateUpdateCallback): () => void {

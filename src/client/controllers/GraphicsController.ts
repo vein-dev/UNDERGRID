@@ -56,16 +56,22 @@ export class GraphicsController {
 		pcall(() => {
 			Lighting.GlobalShadows = true;
 
+			// Nonaktifkan BlurEffect bawaan di Lighting agar layar tidak buram
+			for (const child of Lighting.GetChildren()) {
+				if (child.IsA("BlurEffect") && child.Name !== "BackpackBlur") {
+					child.Enabled = false;
+					child.Size = 0;
+				}
+			}
+
 			// Kalibrasi DepthOfField agar tidak memburamkan objek/karakter dekat kamera
 			const dof = Lighting.FindFirstChildOfClass("DepthOfFieldEffect");
 			if (dof) {
 				dof.NearIntensity = 0; // Hilangkan blur di sekitar karakter pemain
-				if (dof.FocusDistance < 20) {
-					dof.FocusDistance = 30;
-				}
-				if (dof.InFocusRadius < 25) {
-					dof.InFocusRadius = 25;
-				}
+				dof.FarIntensity = 0.2;
+				dof.FocusDistance = 40;
+				dof.InFocusRadius = 60;
+				dof.Enabled = false; // Nonaktifkan secara default untuk visual jernih & tajam (HD)
 			}
 
 			// Kalibrasi ColorCorrection jika ada
