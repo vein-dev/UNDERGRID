@@ -75,11 +75,8 @@ export class ClientStageLightingController {
 	private kickStrobeCooldown = 0; // detik, jarak min antar burst
 	private lastSignificantKickTs = 0; // os.clock()
 	private lastConfirmedKickTs = 0; // os.clock()
-	private kickConfidence = 0;
 	private stmHistory: number[] = [];
-
-	// Self-healing indexing timer
-	private lastIndexAttempt = 0;
+	private lastMaxStm = 0;
 
 	private constructor() {}
 
@@ -353,32 +350,11 @@ export class ClientStageLightingController {
 	private onRenderStepped(dt: number): void {
 		const clockNow = os.clock();
 
-		// ─── 0. SELF-HEALING FIXTURE INDEXER ───
-		// SYNC: Re-index jika fixtures kosong ATAU ada reference stale (StreamingEnabled race).
-		// Reference dianggap stale jika instance-nya sudah tidak descendant dari game.
-		let needsReindex = this.fixtures.size() === 0;
-		if (!needsReindex) {
-			for (const f of this.fixtures) {
-				if (f.spot !== undefined && !f.spot.IsDescendantOf(game)) {
-					needsReindex = true;
-					break;
-				}
-				if (f.panMotor !== undefined && !f.panMotor.IsDescendantOf(game)) {
-					needsReindex = true;
-					break;
-				}
-				if (f.tiltMotor !== undefined && !f.tiltMotor.IsDescendantOf(game)) {
-					needsReindex = true;
-					break;
-				}
-				// Fixture incomplete: ada model tapi SpotLight belum ke-stream
-				if (f.spot === undefined || f.panMotor === undefined || f.tiltMotor === undefined) {
-					needsReindex = true;
-					break;
-				}
-			}
-		}
-		if (needsReindex) {
+		// ─── 0. FIXTURE INDEX CHECK ───
+		// SYNC: Hanya re-index jika benar-benar kosong. Reference stale di-handle
+		// per-fixture di dalam loop rendering (Section 7) — jangan clear array di sini,
+		// karena akan reset motor state & spot reference setiap frame.
+		if (this.fixtures.size() === 0) {
 			this.indexLocalFixtures();
 			if (this.fixtures.size() === 0) return;
 		}
@@ -386,6 +362,11 @@ export class ClientStageLightingController {
 		const { isSyncActive, brightness, beamEnabled, strobeSpeed, mode } = this.getLightingState();
 		const isManualStrobe = strobeSpeed > 0 || mode === StageLightMode.Strobe;
 		if (!isSyncActive && !isManualStrobe) return;
+
+		if (isManualStrobe) {
+			this.autoStrobeTimer = 0;
+			this.autoStrobeCooldown = 0;
+		}
 
 		const activeSound = this.getActiveMusicSound();
 		const isMusicPlaying = activeSound !== undefined && activeSound.IsPlaying;
@@ -398,8 +379,11 @@ export class ClientStageLightingController {
 			this.kickStrobeCooldown = 0;
 			this.lastConfirmedKickTs = 0;
 			this.stmHistory = [];
+			this.lastLoudness = 0;
+			this.lastMaxStm = 0;
 			const lightingFolder = Workspace.FindFirstChild("Lighting");
-			if (lightingFolder) {
+			const debugEnabled = lightingFolder?.GetAttribute("DebugEnabled") === true;
+			if (lightingFolder && debugEnabled) {
 				lightingFolder.SetAttribute("DebugSongTime", 0);
 				lightingFolder.SetAttribute("DebugBeatPhase", 0);
 				lightingFolder.SetAttribute("DebugBarPhase", 0);
@@ -415,18 +399,59 @@ export class ClientStageLightingController {
 				lightingFolder.SetAttribute("DebugAutoStrobeCd", 0);
 				lightingFolder.SetAttribute("DebugKickStrobeCd", 0);
 				lightingFolder.SetAttribute("DebugKickDensity", 0);
-				lightingFolder.SetAttribute("DebugKickConfidence", 0);
 				lightingFolder.SetAttribute("DebugAutoStrobeTimer", 0);
 				lightingFolder.SetAttribute("DebugHasRecentKick", false);
 				lightingFolder.SetAttribute("DebugLastConfirmedKickAgo", 0);
 				lightingFolder.SetAttribute("DebugLastStrobeSource", "none");
 				lightingFolder.SetAttribute("DebugAtDownbeat", false);
 				lightingFolder.SetAttribute("DebugAtHalfBeat", false);
-				lightingFolder.SetAttribute("DebugMaxRecentStm", 0);
+				lightingFolder.SetAttribute("DebugFirstBrightness", this.fixtures[0]?.spot ? this.fixtures[0].spot.Brightness : -1);
+				lightingFolder.SetAttribute("DebugSpotExists0", this.fixtures[0]?.spot !== undefined);
+				lightingFolder.SetAttribute("DebugBeamExists0", this.fixtures[0]?.beam !== undefined);
+				lightingFolder.SetAttribute(
+					"DebugBodyChildsCount",
+					(() => {
+						const body = this.fixtures[0]?.model.FindFirstChild("Body");
+						return body ? body.GetChildren().size() : -1;
+					})(),
+				);
 			}
 
 			const parkSpeed = dt * 4.0;
 			for (const f of this.fixtures) {
+				if (!f.model.Parent) continue;
+				if (f.spot === undefined || !f.spot.IsDescendantOf(game)) {
+					const body = f.model.FindFirstChild("Body");
+					const beam1 = body?.FindFirstChild("Beam1");
+					f.spot = beam1?.FindFirstChildOfClass("SpotLight");
+					f.beam = beam1?.FindFirstChildOfClass("Beam");
+					f.lens = body?.FindFirstChild("Lens") as BasePart | undefined;
+
+					if (f.spot) {
+						f.spot.Face = Enum.NormalId.Front;
+						f.spot.Range = 28;
+						f.spot.Angle = 55;
+						f.spot.Shadows = true;
+					}
+					if (f.beam) {
+						f.beam.Width0 = 0.9;
+						f.beam.Width1 = 9.5;
+						f.beam.LightEmission = 1;
+						f.beam.LightInfluence = 0;
+						if (f.beam.Attachment0) f.beam.Attachment0.Position = new Vector3(0, 0, -0.2);
+						if (f.beam.Attachment1) f.beam.Attachment1.Position = new Vector3(0, 0, -18);
+					}
+				}
+
+				if (f.panMotor === undefined || !f.panMotor.IsDescendantOf(game)) {
+					const mf = f.model.FindFirstChild("Motor");
+					f.panMotor = mf?.FindFirstChild("Pan") as Motor6D | undefined;
+				}
+				if (f.tiltMotor === undefined || !f.tiltMotor.IsDescendantOf(game)) {
+					const mf = f.model.FindFirstChild("Motor");
+					f.tiltMotor = mf?.FindFirstChild("Tilt") as Motor6D | undefined;
+				}
+
 				const [basePan, baseTilt] = this.getMicAim(f);
 				f.currentPan = f.currentPan + (basePan - f.currentPan) * math.clamp(parkSpeed, 0, 1);
 				f.currentTilt = f.currentTilt + (baseTilt - f.currentTilt) * math.clamp(parkSpeed, 0, 1);
@@ -476,7 +501,8 @@ export class ClientStageLightingController {
 
 		// SYNC: Expose real-time debug timing metrics untuk kalibrasi cepat (Section 10 & Test D)
 		const lightingFolder = Workspace.FindFirstChild("Lighting");
-		if (lightingFolder) {
+		const debugEnabled = lightingFolder?.GetAttribute("DebugEnabled") === true;
+		if (lightingFolder && debugEnabled) {
 			lightingFolder.SetAttribute("DebugSongTime", math.floor(songTime * 1000) / 1000);
 			lightingFolder.SetAttribute("DebugBeatPhase", math.floor(beatPhase * 1000) / 1000);
 			lightingFolder.SetAttribute("DebugBarPhase", math.floor(barPhase * 1000) / 1000);
@@ -485,10 +511,28 @@ export class ClientStageLightingController {
 			lightingFolder.SetAttribute("DebugKickStrobeTimer", math.floor(this.kickStrobeTimer * 1000) / 1000);
 
 			const firstFixture = this.fixtures[0];
+			if (firstFixture && (firstFixture.spot === undefined || !firstFixture.spot.IsDescendantOf(game))) {
+				const body = firstFixture.model.FindFirstChild("Body");
+				const beam1 = body?.FindFirstChild("Beam1");
+				firstFixture.spot = beam1?.FindFirstChildOfClass("SpotLight");
+				firstFixture.beam = beam1?.FindFirstChildOfClass("Beam");
+				firstFixture.lens = body?.FindFirstChild("Lens") as BasePart | undefined;
+			}
+
 			lightingFolder.SetAttribute("DebugFixtureCount", this.fixtures.size());
 			lightingFolder.SetAttribute("DebugFirstSpotExists", firstFixture?.spot !== undefined);
 			lightingFolder.SetAttribute("DebugFirstSpotBrightness", firstFixture?.spot ? firstFixture.spot.Brightness : -1);
+			lightingFolder.SetAttribute("DebugFirstBrightness", firstFixture?.spot ? firstFixture.spot.Brightness : -1);
 			lightingFolder.SetAttribute("DebugFirstPanMotorExists", firstFixture?.panMotor !== undefined);
+			lightingFolder.SetAttribute("DebugSpotExists0", this.fixtures[0]?.spot !== undefined);
+			lightingFolder.SetAttribute("DebugBeamExists0", this.fixtures[0]?.beam !== undefined);
+			lightingFolder.SetAttribute(
+				"DebugBodyChildsCount",
+				(() => {
+					const body = this.fixtures[0]?.model.FindFirstChild("Body");
+					return body ? body.GetChildren().size() : -1;
+				})(),
+			);
 		}
 
 		// ─── 2. MOTOR SLEW RATE & LEAD PREDICTION / COMPENSATED TIMING ───
@@ -529,7 +573,7 @@ export class ClientStageLightingController {
 		const tuneStrobeCd = (lightingFolder?.GetAttribute("TuneStrobeCooldown") as number) ?? 0.12;
 
 		// SYNC: Expose debug untuk verifikasi
-		if (lightingFolder) {
+		if (lightingFolder && debugEnabled) {
 			lightingFolder.SetAttribute("DebugRawLoudness", math.floor(rawLoudness));
 			lightingFolder.SetAttribute("DebugShortEnergy", math.floor(this.shortEnergy));
 			lightingFolder.SetAttribute("DebugMediumEnergy", math.floor(this.mediumEnergy));
@@ -544,15 +588,20 @@ export class ClientStageLightingController {
 		let maxRecentStm = 0;
 		for (const v of this.stmHistory) if (v > maxRecentStm) maxRecentStm = v;
 
+		// SYNC: Rising-edge detection — cegah double trigger dari peak-hold 3 frame.
+		const prevMaxStm = this.lastMaxStm;
+		this.lastMaxStm = maxRecentStm;
+
 		const isSignificantKick = isDownbeatZone
 			&& maxRecentStm > tuneT1
+			&& prevMaxStm <= tuneT1
 			&& rawLoudness > tuneLoud1;
 
 		const isBigKick = isSignificantKick
 			&& maxRecentStm > tuneT2
 			&& rawLoudness > tuneLoud2;
 
-		if (lightingFolder) {
+		if (lightingFolder && debugEnabled) {
 			lightingFolder.SetAttribute("DebugIsSignificantKick", isSignificantKick);
 			lightingFolder.SetAttribute("DebugIsBigKick", isBigKick);
 			lightingFolder.SetAttribute("DebugAutoStrobeCd", math.floor(this.autoStrobeCooldown * 1000) / 1000);
@@ -644,18 +693,18 @@ export class ClientStageLightingController {
 				this.lastDropImpact = 1.0;
 				this.autoStrobeTimer = beatDuration * 2.0;
 				this.autoStrobeCooldown = beatDuration * 8.0;
-				if (lightingFolder) lightingFolder.SetAttribute("DebugLastStrobeSource", "drop");
+				if (lightingFolder && debugEnabled) lightingFolder.SetAttribute("DebugLastStrobeSource", "drop");
 			} else if (isDrumRollSurge && this.kickDensity >= 4.5 && isAtBeatStart) {
 				this.autoStrobeTimer = beatDuration * 1.5;
 				this.autoStrobeCooldown = beatDuration * 6.0;
-				if (lightingFolder) lightingFolder.SetAttribute("DebugLastStrobeSource", "roll");
+				if (lightingFolder && debugEnabled) lightingFolder.SetAttribute("DebugLastStrobeSource", "roll");
 			} else if (isPhraseTurnaround && this.kickDensity >= 2.0) {
 				this.autoStrobeTimer = beatDuration * 1.0;
 				this.autoStrobeCooldown = beatDuration * 4.0;
-				if (lightingFolder) lightingFolder.SetAttribute("DebugLastStrobeSource", "turnaround");
+				if (lightingFolder && debugEnabled) lightingFolder.SetAttribute("DebugLastStrobeSource", "turnaround");
 			}
 		} else if (this.autoStrobeCooldown <= 0 && !hasRecentKick) {
-			if (lightingFolder) lightingFolder.SetAttribute("DebugLastStrobeSource", "none");
+			if (lightingFolder && debugEnabled) lightingFolder.SetAttribute("DebugLastStrobeSource", "none");
 		}
 
 		if (this.autoStrobeTimer > 0) {
@@ -711,6 +760,41 @@ export class ClientStageLightingController {
 		const baseBrightness = brightness;
 
 		for (const f of this.fixtures) {
+			if (!f.model.Parent) continue;
+			// SYNC: Per-fixture self-heal — refetch reference nil TANPA clear array.
+			// Jauh lebih murah dari full re-index, dan tidak reset motor state.
+			if (f.spot === undefined || !f.spot.IsDescendantOf(game)) {
+				const body = f.model.FindFirstChild("Body");
+				const beam1 = body?.FindFirstChild("Beam1");
+				f.spot = beam1?.FindFirstChildOfClass("SpotLight");
+				f.beam = beam1?.FindFirstChildOfClass("Beam");
+				f.lens = body?.FindFirstChild("Lens") as BasePart | undefined;
+
+				if (f.spot) {
+					f.spot.Face = Enum.NormalId.Front;
+					f.spot.Range = 28;
+					f.spot.Angle = 55;
+					f.spot.Shadows = true;
+				}
+				if (f.beam) {
+					f.beam.Width0 = 0.9;
+					f.beam.Width1 = 9.5;
+					f.beam.LightEmission = 1;
+					f.beam.LightInfluence = 0;
+					if (f.beam.Attachment0) f.beam.Attachment0.Position = new Vector3(0, 0, -0.2);
+					if (f.beam.Attachment1) f.beam.Attachment1.Position = new Vector3(0, 0, -18);
+				}
+			}
+
+			if (f.panMotor === undefined || !f.panMotor.IsDescendantOf(game)) {
+				const mf = f.model.FindFirstChild("Motor");
+				f.panMotor = mf?.FindFirstChild("Pan") as Motor6D | undefined;
+			}
+			if (f.tiltMotor === undefined || !f.tiltMotor.IsDescendantOf(game)) {
+				const mf = f.model.FindFirstChild("Motor");
+				f.tiltMotor = mf?.FindFirstChild("Tilt") as Motor6D | undefined;
+			}
+
 			const [basePan, baseTilt] = this.getMicAim(f);
 
 			// Gunakan leadBarPhase & leadTotalBeats agar motor tiba tepat di puncak (downbeat)
