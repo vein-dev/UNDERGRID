@@ -268,6 +268,7 @@ export class ServerStageLightingService {
 			folder.SetAttribute("IsMusicSync", this.controlState.isMusicSync);
 			folder.SetAttribute("StageLightingBrightness", this.controlState.brightness);
 			folder.SetAttribute("StageLightingBeamEnabled", this.controlState.beamEnabled);
+			folder.SetAttribute("StageLightingStrobeSpeed", this.controlState.strobeSpeed);
 		}
 	}
 
@@ -454,23 +455,18 @@ export class ServerStageLightingService {
 
 			const seq = new ColorSequence(activeColor);
 
-			// Sinkronisasi warna cover track / rainbow di server
+			// Sinkronisasi warna cover track / rainbow di server tanpa mengunci Enabled (agar optical shutter strobo client berjalan mulus)
 			for (const f of this.fixtures) {
-				if (f.spotLight) {
+				if (f.spotLight && f.spotLight.Color !== activeColor) {
 					f.spotLight.Color = activeColor;
-					f.spotLight.Enabled = true;
 				}
 				if (f.beam) {
-					f.beam.Enabled = this.controlState.beamEnabled;
 					f.beam.Color = seq;
 				}
-				if (f.lensPart) {
+				if (f.lensPart && f.lensPart.Color !== activeColor) {
 					f.lensPart.Color = activeColor;
-					f.lensPart.Material = Enum.Material.Neon;
 				}
 			}
-			// Catatan: Sudut C0 motor dan dynamic punch kecerahan drum/bass dikendalikan murni oleh
-			// ClientStageLightingController pada RenderStepped client (0ms latensi) guna mencegah replikasi jitter/stutter.
 			return;
 		}
 

@@ -1,5 +1,10 @@
 import { Players } from "@rbxts/services";
-import { IToolComponent, SkateboardClientComponent, SmartphoneClientComponent } from "client/components";
+import {
+	IToolComponent,
+	LightingRemoteClientComponent,
+	SkateboardClientComponent,
+	SmartphoneClientComponent,
+} from "client/components";
 
 /**
  * Client singleton controller responsible for binding OOP components
@@ -68,6 +73,8 @@ export class ToolController {
 			component = new SmartphoneClientComponent(tool);
 		} else if (tool.Name === "Skateboard") {
 			component = new SkateboardClientComponent(tool);
+		} else if (tool.Name === "LightingRemote" || tool.Name === "LightingController") {
+			component = new LightingRemoteClientComponent(tool);
 		}
 
 		if (component !== undefined) {

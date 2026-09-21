@@ -2,7 +2,7 @@ import React, { useEffect, useState } from "@rbxts/react";
 import ReactRoblox, { Root } from "@rbxts/react-roblox";
 import { AdminService } from "client/services/AdminService";
 import { Fonts } from "client/ui/Typography";
-import { AtmospherePreset, StageLightMode, StageLightingControlPayload } from "shared/types";
+import { StageLightMode, StageLightingControlPayload } from "shared/types";
 import { LucideIcon } from "../../components/LucideIcon";
 
 export interface AdminStageFxTabProps {
@@ -42,10 +42,6 @@ export function AdminStageFxTabComponent({ visible }: AdminStageFxTabProps) {
 	const currentPanDeg = math.floor(math.deg(stageLighting.panAngle) + 0.5);
 	const currentTiltDeg = math.floor(math.deg(stageLighting.tiltAngle) + 0.5);
 
-	const presetsList: Array<{ preset: AtmospherePreset; label: string; icon: string }> = [
-		{ preset: AtmospherePreset.FogMachine, label: "Mesin Asap / Fog", icon: "activity" },
-		{ preset: AtmospherePreset.Blackout, label: "Blackout Panggung", icon: "sun" },
-	];
 
 	const quickTexts = [
 		"Rundown Band A dimulai",
@@ -54,7 +50,7 @@ export function AdminStageFxTabComponent({ visible }: AdminStageFxTabProps) {
 	];
 
 	const motionModes: Array<{ mode: StageLightMode; label: string; icon: string }> = [
-		{ mode: StageLightMode.MusicSync, label: "Sync Musik Dinamis", icon: "music" },
+		{ mode: StageLightMode.MusicSync, label: "Sync Musik (BPM Locked)", icon: "music" },
 		{ mode: StageLightMode.SpotlightCenter, label: "Fokus Panggung", icon: "spotlight" },
 		{ mode: StageLightMode.Wave, label: "Gelombang Wave", icon: "activity" },
 		{ mode: StageLightMode.Circle, label: "Orbit Panggung", icon: "compass" },
@@ -95,10 +91,11 @@ export function AdminStageFxTabComponent({ visible }: AdminStageFxTabProps) {
 	];
 
 	const strobePresets = [
-		{ label: "Strobe Off", speed: 0 },
-		{ label: "Slow", speed: 1 },
-		{ label: "Med", speed: 2 },
-		{ label: "Rapid", speed: 3 },
+		{ label: "Off", speed: 0 },
+		{ label: "Beat (1/4)", speed: 1 },
+		{ label: "1/8", speed: 2 },
+		{ label: "1/16", speed: 3 },
+		{ label: "32nd", speed: 4 },
 	];
 
 	return (
@@ -267,112 +264,68 @@ export function AdminStageFxTabComponent({ visible }: AdminStageFxTabProps) {
 				</frame>
 			</frame>
 
-			{/* 2. Atmosphere FX Card */}
+
+			{/* 2.5 Handheld Lighting Remote Shortcut */}
 			<frame
-				key="AtmosphereFxCard"
+				key="HandheldLightingRemoteCard"
 				LayoutOrder={2}
-				Size={new UDim2(1, 0, 0, 105)}
-				BackgroundColor3={Color3.fromHex("#161616")}
-				BackgroundTransparency={0.25}
+				Size={new UDim2(1, 0, 0, 68)}
+				BackgroundColor3={Color3.fromHex("#131b2e")}
+				BackgroundTransparency={0.2}
 				ZIndex={11}
 			>
 				<uicorner CornerRadius={new UDim(0, 14)} />
-				<uistroke Color={Color3.fromHex("#282828")} Transparency={0.5} Thickness={1.1} />
+				<uistroke Color={Color3.fromHex("#3b82f6")} Transparency={0.5} Thickness={1.2} />
 				<uipadding
-					PaddingTop={new UDim(0, 12)}
-					PaddingBottom={new UDim(0, 12)}
-					PaddingLeft={new UDim(0, 12)}
-					PaddingRight={new UDim(0, 12)}
+					PaddingTop={new UDim(0, 10)}
+					PaddingBottom={new UDim(0, 10)}
+					PaddingLeft={new UDim(0, 14)}
+					PaddingRight={new UDim(0, 14)}
 				/>
-
-				<textlabel
-					key="Title"
-					Size={new UDim2(1, 0, 0, 18)}
-					BackgroundTransparency={1}
-					Text="STAGE SPECIAL FX (FOG & BLACKOUT)"
-					TextColor3={Color3.fromHex("#888888")}
+				<uilistlayout
+					FillDirection={Enum.FillDirection.Horizontal}
+					VerticalAlignment={Enum.VerticalAlignment.Center}
+					Padding={new UDim(0, 14)}
+					SortOrder={Enum.SortOrder.LayoutOrder}
+				/>
+				<frame Size={new UDim2(1, -150, 1, 0)} BackgroundTransparency={1} LayoutOrder={1}>
+					<uilistlayout FillDirection={Enum.FillDirection.Vertical} VerticalAlignment={Enum.VerticalAlignment.Center} />
+					<textlabel
+						Size={new UDim2(1, 0, 0, 18)}
+						BackgroundTransparency={1}
+						Text="HANDHELD LIGHTING CONTROLLER TOOL"
+						TextColor3={Color3.fromHex("#60a5fa")}
+						Font={Fonts.Bold}
+						TextSize={11}
+						TextXAlignment={Enum.TextXAlignment.Left}
+					/>
+					<textlabel
+						Size={new UDim2(1, 0, 0, 14)}
+						BackgroundTransparency={1}
+						Text="Gunakan Tool di tangan untuk kontrol Floating Immersive HUD tanpa menutup layar!"
+						TextColor3={Color3.fromHex("#94a3b8")}
+						Font={Fonts.Regular}
+						TextSize={9}
+						TextXAlignment={Enum.TextXAlignment.Left}
+					/>
+				</frame>
+				<textbutton
+					LayoutOrder={2}
+					Size={new UDim2(0, 136, 0, 36)}
+					BackgroundColor3={Color3.fromHex("#2563eb")}
+					Text="Ambil Remote Tool"
+					TextColor3={Color3.fromHex("#ffffff")}
 					Font={Fonts.Bold}
 					TextSize={11}
-					TextXAlignment={Enum.TextXAlignment.Left}
-					ZIndex={12}
-				/>
-
-				<frame
-					key="FxGrid"
-					Position={new UDim2(0, 0, 0, 26)}
-					Size={new UDim2(1, 0, 1, -26)}
-					BackgroundTransparency={1}
-					ZIndex={12}
+					AutoButtonColor={true}
+					Event={{
+						MouseButton1Click: () => {
+							adminService.giveLightingRemote();
+						},
+					}}
 				>
-					<uigridlayout
-						CellSize={new UDim2(0.48, 0, 0, 52)}
-						CellPadding={new UDim2(0.04, 0, 0, 10)}
-					/>
-
-					{presetsList.map((item) => {
-						const isActive = adminState.activePresets.includes(item.preset);
-						return (
-							<textbutton
-								key={`FxBtn_${item.preset}`}
-								BackgroundColor3={
-									isActive ? Color3.fromHex("#ffffff") : Color3.fromHex("#1e1e1e")
-								}
-								Text=""
-								AutoButtonColor={false}
-								ZIndex={13}
-								Event={{
-									MouseButton1Click: () => {
-										adminService.toggleAtmospherePreset(item.preset);
-									},
-								}}
-							>
-								<uicorner CornerRadius={new UDim(0, 10)} />
-								<uistroke
-									Color={
-										isActive ? Color3.fromHex("#ffffff") : Color3.fromHex("#333333")
-									}
-									Thickness={1.1}
-								/>
-								<frame
-									key="Content"
-									Size={new UDim2(1, 0, 1, 0)}
-									BackgroundTransparency={1}
-									ZIndex={14}
-								>
-									<uilistlayout
-										FillDirection={Enum.FillDirection.Horizontal}
-										HorizontalAlignment={Enum.HorizontalAlignment.Center}
-										VerticalAlignment={Enum.VerticalAlignment.Center}
-										Padding={new UDim(0, 8)}
-										SortOrder={Enum.SortOrder.LayoutOrder}
-									/>
-									<LucideIcon
-										name={item.icon}
-										size={new UDim2(0, 16, 0, 16)}
-										color={
-											isActive ? Color3.fromHex("#000000") : Color3.fromHex("#d0d0d0")
-										}
-										zIndex={14}
-										layoutOrder={1}
-									/>
-									<textlabel
-										key="Label"
-										Size={new UDim2(0, 110, 1, 0)}
-										BackgroundTransparency={1}
-										Text={item.label}
-										TextColor3={
-											isActive ? Color3.fromHex("#000000") : Color3.fromHex("#d0d0d0")
-										}
-										Font={Fonts.Bold}
-										TextSize={11}
-										ZIndex={14}
-										LayoutOrder={2}
-									/>
-								</frame>
-							</textbutton>
-						);
-					})}
-				</frame>
+					<uicorner CornerRadius={new UDim(0, 10)} />
+				</textbutton>
 			</frame>
 
 			{/* 3. Stage Lighting - Motion Mode Selector */}
@@ -869,7 +822,7 @@ export function AdminStageFxTabComponent({ visible }: AdminStageFxTabProps) {
 						return (
 							<textbutton
 								key={`strobe_${stp.speed}`}
-								Size={new UDim2(0.23, 0, 1, 0)}
+								Size={new UDim2(0.185, 0, 1, 0)}
 								BackgroundColor3={
 									isSelected ? Color3.fromHex("#ffcc00") : Color3.fromHex("#202020")
 								}
@@ -878,7 +831,7 @@ export function AdminStageFxTabComponent({ visible }: AdminStageFxTabProps) {
 									isSelected ? Color3.fromHex("#000000") : Color3.fromHex("#ffffff")
 								}
 								Font={Fonts.Bold}
-								TextSize={10}
+								TextSize={9}
 								AutoButtonColor={false}
 								ZIndex={13}
 								Event={{

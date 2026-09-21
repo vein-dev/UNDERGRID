@@ -59,6 +59,11 @@ export class MusicPlayerService {
 		this.isUserAdmin = isPlayerAdmin(Players.LocalPlayer);
 
 		// Local synchronized Sound instance
+		for (const old of SoundService.GetChildren()) {
+			if (old.Name === "SmartphoneMusic") {
+				old.Destroy();
+			}
+		}
 		this.sound = new Instance("Sound");
 		this.sound.Name = "SmartphoneMusic";
 		this.sound.Volume = 0.5;

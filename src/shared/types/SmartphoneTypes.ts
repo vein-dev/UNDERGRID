@@ -21,6 +21,10 @@ export interface TrackData {
 	pitch?: number;
 	/** Beats per minute untuk sinkronisasi panggung konser & lighting (default 128 jika tidak disetel). */
 	bpm?: number;
+	/** Offset waktu (dalam detik) sampai ketukan pertama/downbeat lagu terdengar (default 0). */
+	firstBeatOffset?: number;
+	/** Alias per-track beat offset (dalam detik) dari TimePosition=0 ke downbeat pertama. */
+	beatOffset?: number;
 }
 
 /** Represents the current playback state of the music player. */
@@ -191,6 +195,15 @@ export const DEFAULT_SMARTPHONE_CONFIG: SmartphoneConfig = {
 			artist: "Title Fight",
 			soundId: "rbxassetid://124673215456249",
 			coverColor: Color3.fromHex("#1db954"),
+		},
+		{
+			id: "track_4",
+			title: "Mberot",
+			artist: "Putra Mandala",
+			soundId: "rbxassetid://94616406011407",
+			coverColor: Color3.fromHex("#ff758f"),
+			pitch: 2,
+			bpm: 70,
 		},
 	],
 };

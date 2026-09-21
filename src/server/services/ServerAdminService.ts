@@ -1,29 +1,20 @@
-import { Lighting, Players } from "@rbxts/services";
+import { Players } from "@rbxts/services";
 import { isPlayerAdmin } from "shared/config";
 import { getRemoteEvent, getRemoteFunction } from "shared/network";
-import { AdminStateSync, AtmospherePreset, PlayerEntryInfo, StageLightMode, StageLightingControlPayload } from "shared/types";
+import { AdminStateSync, PlayerEntryInfo, StageLightingControlPayload } from "shared/types";
 import { ServerMusicService } from "./ServerMusicService";
 import { ServerTimeService } from "./ServerTimeService";
 import { ServerStageLightingService } from "./ServerStageLightingService";
 
 /**
  * Server singleton service handling authenticated Admin actions:
- * - Stage & Atmosphere visual effects
+ * - Stage lighting visual effects
  * - Push announcements broadcast to all players
  * - Gigs music queue guard (Lock & Clear)
  * - Player management (Teleport To & Bring)
  */
 export class ServerAdminService {
 	private static instance?: ServerAdminService;
-
-	private activePresets = new Set<AtmospherePreset>();
-	private strobeThread?: thread;
-
-	// Saved initial lighting parameters to restore after Blackout/Strobe
-	private originalBrightness: number;
-	private originalClockTime: number;
-	private originalAmbient: Color3;
-	private originalOutdoorAmbient: Color3;
 
 	// Remotes
 	private adminControlEvent: RemoteEvent;
@@ -32,12 +23,6 @@ export class ServerAdminService {
 	private adminStateUpdatedEvent: RemoteEvent;
 
 	private constructor() {
-		// Cache original lighting
-		this.originalBrightness = Lighting.Brightness;
-		this.originalClockTime = Lighting.ClockTime;
-		this.originalAmbient = Lighting.Ambient;
-		this.originalOutdoorAmbient = Lighting.OutdoorAmbient;
-
 		// Remotes
 		this.adminControlEvent = getRemoteEvent("AdminControlEvent");
 		this.adminQueryFunction = getRemoteFunction("AdminQueryFunction");
@@ -93,12 +78,6 @@ export class ServerAdminService {
 				break;
 			}
 
-			case "ToggleAtmospherePreset": {
-				if (typeIs(data, "string")) {
-					this.toggleAtmospherePreset(data as AtmospherePreset);
-				}
-				break;
-			}
 
 			case "SetQueueLocked": {
 				if (typeIs(data, "boolean")) {
@@ -171,6 +150,11 @@ export class ServerAdminService {
 				break;
 			}
 
+			case "GiveLightingRemote": {
+				this.giveLightingRemote(player);
+				break;
+			}
+
 			default:
 				warn(`[ServerAdminService] Unknown action: ${action}`);
 		}
@@ -184,104 +168,6 @@ export class ServerAdminService {
 		this.adminAnnouncementBroadcast.FireAllClients(trimmed);
 	}
 
-	// ─── Stage & Atmosphere Presets ──────────────────────────────────────────
-
-	private toggleAtmospherePreset(preset: AtmospherePreset): void {
-		const isCurrentlyActive = this.activePresets.has(preset);
-
-		if (isCurrentlyActive) {
-			this.activePresets.delete(preset);
-			this.deactivatePreset(preset);
-		} else {
-			this.activePresets.add(preset);
-			this.activatePreset(preset);
-		}
-
-		this.broadcastStateUpdate();
-	}
-
-	private activatePreset(preset: AtmospherePreset): void {
-		print(`[ServerAdminService] Activating Atmosphere Preset: ${preset}`);
-		const stageLighting = ServerStageLightingService.getInstance();
-
-		switch (preset) {
-			case AtmospherePreset.Blackout: {
-				ServerTimeService.getInstance().setAdminOverride(true);
-				Lighting.Brightness = 0;
-				Lighting.ClockTime = 0;
-				Lighting.Ambient = Color3.fromHex("#020206");
-				Lighting.OutdoorAmbient = Color3.fromHex("#000000");
-				stageLighting.setMode(StageLightMode.Off);
-				break;
-			}
-
-			case AtmospherePreset.Strobe: {
-				if (this.strobeThread) task.cancel(this.strobeThread);
-				stageLighting.setMode(StageLightMode.Strobe);
-				this.strobeThread = task.spawn(() => {
-					let flag = false;
-					while (this.activePresets.has(AtmospherePreset.Strobe)) {
-						flag = !flag;
-						Lighting.Brightness = flag ? 3 : 0.2;
-						Lighting.Ambient = flag ? Color3.fromHex("#b4b4dc") : Color3.fromHex("#0a0a14");
-						task.wait(0.12);
-					}
-				});
-				break;
-			}
-
-			case AtmospherePreset.Spotlight: {
-				Lighting.Brightness = 2.5;
-				Lighting.Ambient = Color3.fromHex("#282d4b");
-				Lighting.OutdoorAmbient = Color3.fromHex("#141626");
-				stageLighting.setMode(StageLightMode.SpotlightCenter);
-				break;
-			}
-
-			case AtmospherePreset.FogMachine: {
-				Lighting.FogStart = 0;
-				Lighting.FogEnd = 90;
-				Lighting.FogColor = Color3.fromHex("#191c30");
-				break;
-			}
-		}
-	}
-
-	private deactivatePreset(preset: AtmospherePreset): void {
-		print(`[ServerAdminService] Deactivating Atmosphere Preset: ${preset}`);
-		const stageLighting = ServerStageLightingService.getInstance();
-
-		if (preset === AtmospherePreset.Strobe && this.strobeThread) {
-			task.cancel(this.strobeThread);
-			this.strobeThread = undefined;
-			if (!this.activePresets.has(AtmospherePreset.Spotlight)) {
-				stageLighting.setMode(StageLightMode.Off);
-			}
-		}
-
-		if (preset === AtmospherePreset.Spotlight) {
-			if (!this.activePresets.has(AtmospherePreset.Strobe)) {
-				stageLighting.setMode(StageLightMode.Off);
-			}
-		}
-
-		if (preset === AtmospherePreset.Blackout) {
-			ServerTimeService.getInstance().setAdminOverride(false);
-		}
-
-		// Restore lighting defaults if no blackout/strobe is active
-		if (!this.activePresets.has(AtmospherePreset.Blackout) && !this.activePresets.has(AtmospherePreset.Strobe)) {
-			Lighting.Brightness = this.originalBrightness;
-			Lighting.ClockTime = ServerTimeService.getInstance().getClockTime();
-			Lighting.Ambient = this.originalAmbient;
-			Lighting.OutdoorAmbient = this.originalOutdoorAmbient;
-		}
-
-		if (preset === AtmospherePreset.FogMachine) {
-			Lighting.FogStart = 0;
-			Lighting.FogEnd = 10000;
-		}
-	}
 
 	// ─── Player Management Actions ───────────────────────────────────────────
 
@@ -324,14 +210,8 @@ export class ServerAdminService {
 	// ─── State Management & Synchronization ──────────────────────────────────
 
 	public getState(): AdminStateSync {
-		const presetsArray: AtmospherePreset[] = [];
-		for (const p of this.activePresets) {
-			presetsArray.push(p);
-		}
-
 		return {
 			isQueueLocked: ServerMusicService.getInstance().getIsQueueLocked(),
-			activePresets: presetsArray,
 			stageLighting: ServerStageLightingService.getInstance().getControlState(),
 		};
 	}
@@ -358,5 +238,20 @@ export class ServerAdminService {
 	private broadcastStateUpdate(): void {
 		const state = this.getState();
 		this.adminStateUpdatedEvent.FireAllClients(state);
+	}
+
+	private giveLightingRemote(player: Player): void {
+		const backpack = player.FindFirstChildOfClass("Backpack");
+		const character = player.Character;
+		if (backpack?.FindFirstChild("LightingRemote") || character?.FindFirstChild("LightingRemote")) {
+			return;
+		}
+
+		const starterPack = game.GetService("StarterPack");
+		const template = starterPack.FindFirstChild("LightingRemote") as Tool | undefined;
+		if (template && backpack) {
+			const clone = template.Clone();
+			clone.Parent = backpack;
+		}
 	}
 }

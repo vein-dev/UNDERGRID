@@ -1,5 +1,5 @@
 import { getRemoteEvent, getRemoteFunction } from "shared/network";
-import { AdminStateSync, AtmospherePreset, PlayerEntryInfo, StageLightingControlPayload } from "shared/types";
+import { AdminStateSync, PlayerEntryInfo, StageLightingControlPayload } from "shared/types";
 import { GlobalNotificationService } from "./GlobalNotificationService";
 
 type StateUpdateCallback = (state: AdminStateSync) => void;
@@ -13,7 +13,6 @@ export class AdminService {
 
 	private state: AdminStateSync = {
 		isQueueLocked: false,
-		activePresets: [],
 	};
 	private players: PlayerEntryInfo[] = [];
 
@@ -84,16 +83,8 @@ export class AdminService {
 		return this.players;
 	}
 
-	public isPresetActive(preset: AtmospherePreset): boolean {
-		return this.state.activePresets.includes(preset);
-	}
-
 	public sendAnnouncement(text: string): void {
 		this.adminControlEvent.FireServer("SendAnnouncement", text);
-	}
-
-	public toggleAtmospherePreset(preset: AtmospherePreset): void {
-		this.adminControlEvent.FireServer("ToggleAtmospherePreset", preset);
 	}
 
 	public setQueueLocked(locked: boolean): void {
@@ -130,6 +121,10 @@ export class AdminService {
 
 	public setStageLighting(payload: Partial<StageLightingControlPayload>): void {
 		this.adminControlEvent.FireServer("SetStageLightingControl", payload);
+	}
+
+	public giveLightingRemote(): void {
+		this.adminControlEvent.FireServer("GiveLightingRemote");
 	}
 
 	public onStateUpdated(cb: StateUpdateCallback): () => void {

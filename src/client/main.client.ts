@@ -22,6 +22,7 @@ import {
 import { AdminService } from "./services/AdminService";
 import { EmoteService } from "./services/EmoteService";
 import { GlobalNotificationService } from "./services/GlobalNotificationService";
+import { MusicPlayerService } from "./services/MusicPlayerService";
 import { TimeService } from "./services/TimeService";
 
 /**
@@ -43,6 +44,7 @@ function main() {
 	// Initialize active singleton controllers & services
 	GlobalNotificationService.getInstance();
 	AdminService.getInstance();
+	MusicPlayerService.getInstance();
 
 
 	const emoteService = EmoteService.getInstance();

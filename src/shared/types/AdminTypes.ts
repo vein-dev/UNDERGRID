@@ -12,18 +12,10 @@ export enum AdminTab {
 	PlayerManagement = "PlayerManagement",
 }
 
-/** Stage and venue atmosphere lighting/effect presets. */
-export enum AtmospherePreset {
-	Spotlight = "Spotlight",
-	Strobe = "Strobe",
-	Blackout = "Blackout",
-	FogMachine = "FogMachine",
-}
-
-/** Synchronized admin state for monitoring and controls. */
+// SYNC: AtmospherePreset dihapus — kontrol lighting hanya via StageLightMode
+// untuk mencegah konflik mode (strobo gagal jalan karena preset override MusicSync).
 export interface AdminStateSync {
 	isQueueLocked: boolean;
-	activePresets: AtmospherePreset[];
 	stageLighting?: StageLightingControlPayload;
 }
 
