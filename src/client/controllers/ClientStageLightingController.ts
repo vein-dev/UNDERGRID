@@ -75,8 +75,8 @@ export class ClientStageLightingController {
 	private kickStrobeCooldown = 0; // detik, jarak min antar burst
 	private lastSignificantKickTs = 0; // os.clock()
 	private lastConfirmedKickTs = 0; // os.clock()
-	private stmHistory: number[] = [];
-	private lastMaxStm = 0;
+	private lastBeatPhaseForKick = 0;
+	private recentStmForGate: number[] = [];
 
 	private constructor() {}
 
@@ -96,14 +96,10 @@ export class ClientStageLightingController {
 		// SYNC: Set default tuning attributes (hanya jika belum ada — biar admin bisa override manual)
 		const lightingFolder = Workspace.FindFirstChild("Lighting");
 		if (lightingFolder) {
-			if (lightingFolder.GetAttribute("TuneKickThreshold1") === undefined)
-				lightingFolder.SetAttribute("TuneKickThreshold1", 1.07);
-			if (lightingFolder.GetAttribute("TuneKickThreshold2") === undefined)
-				lightingFolder.SetAttribute("TuneKickThreshold2", 1.12);
-			if (lightingFolder.GetAttribute("TuneLoudnessMin1") === undefined)
-				lightingFolder.SetAttribute("TuneLoudnessMin1", 200);
-			if (lightingFolder.GetAttribute("TuneLoudnessMin2") === undefined)
-				lightingFolder.SetAttribute("TuneLoudnessMin2", 220);
+			if (lightingFolder.GetAttribute("TuneKickGate") === undefined)
+				lightingFolder.SetAttribute("TuneKickGate", 1.05);
+			if (lightingFolder.GetAttribute("TuneStrobeGate") === undefined)
+				lightingFolder.SetAttribute("TuneStrobeGate", 1.15);
 			if (lightingFolder.GetAttribute("TuneStrobeCooldown") === undefined)
 				lightingFolder.SetAttribute("TuneStrobeCooldown", 0.12);
 		}
@@ -378,9 +374,9 @@ export class ClientStageLightingController {
 			this.kickStrobeTimer = 0;
 			this.kickStrobeCooldown = 0;
 			this.lastConfirmedKickTs = 0;
-			this.stmHistory = [];
+			this.recentStmForGate = [];
+			this.lastBeatPhaseForKick = 0;
 			this.lastLoudness = 0;
-			this.lastMaxStm = 0;
 			const lightingFolder = Workspace.FindFirstChild("Lighting");
 			const debugEnabled = lightingFolder?.GetAttribute("DebugEnabled") === true;
 			if (lightingFolder && debugEnabled) {
@@ -544,7 +540,7 @@ export class ClientStageLightingController {
 		const leadBarPhase = isBeforeFirstBeat ? 0 : (leadAdjustedTime % barDuration) / barDuration;
 		const leadTotalBeats = isBeforeFirstBeat ? 0 : leadAdjustedTime / beatDuration;
 
-		// ─── 3. KICK DETECTION = PHASE-GATED & DYNAMIC LOUDNESS SCALING ───
+		// ─── 3. BEAT-TRIGGERED, LOUDNESS-GATED KICK FLASH ───
 		let rawLoudness = 0;
 		if (activeSound && activeSound.IsPlaying) {
 			rawLoudness = activeSound.PlaybackLoudness;
@@ -553,122 +549,60 @@ export class ClientStageLightingController {
 		this.shortEnergy += (rawLoudness - this.shortEnergy) * math.clamp(dt * 18.0, 0, 1);
 		this.mediumEnergy += (rawLoudness - this.mediumEnergy) * math.clamp(dt * 2.8, 0, 1);
 
-		const deltaLoudness = rawLoudness - this.lastLoudness;
-		this.lastLoudness = rawLoudness;
-
-		// SYNC: Gate cover downbeat (0.0) DAN half-beat (0.5) — wajib untuk double-kick hardcore.
-		// Window 0.10 di tiap posisi = ~38ms di 155 BPM, cukup lebar untuk toleransi timing.
-		const atDownbeat = beatPhase < 0.10 || beatPhase > 0.90;
-		const atHalfBeat = math.abs(beatPhase - 0.5) < 0.10;
-		const isDownbeatZone = atDownbeat || atHalfBeat;
-
 		const shortToMedium = this.shortEnergy / math.max(this.mediumEnergy, 1);
 
-		// SYNC: Threshold naik — peak stm lagu user ~1.20, false positive muncul di 1.07.
-		// Set T1=1.10 (50% mendekati peak) dan T2=1.15 (75% mendekati peak).
-		const tuneT1 = (lightingFolder?.GetAttribute("TuneKickThreshold1") as number) ?? 1.07;
-		const tuneT2 = (lightingFolder?.GetAttribute("TuneKickThreshold2") as number) ?? 1.12;
-		const tuneLoud1 = (lightingFolder?.GetAttribute("TuneLoudnessMin1") as number) ?? 200;
-		const tuneLoud2 = (lightingFolder?.GetAttribute("TuneLoudnessMin2") as number) ?? 220;
-		const tuneStrobeCd = (lightingFolder?.GetAttribute("TuneStrobeCooldown") as number) ?? 0.12;
-
-		// SYNC: Expose debug untuk verifikasi
-		if (lightingFolder && debugEnabled) {
-			lightingFolder.SetAttribute("DebugRawLoudness", math.floor(rawLoudness));
-			lightingFolder.SetAttribute("DebugShortEnergy", math.floor(this.shortEnergy));
-			lightingFolder.SetAttribute("DebugMediumEnergy", math.floor(this.mediumEnergy));
-			lightingFolder.SetAttribute("DebugShortToMedium", math.floor(shortToMedium * 1000) / 1000);
-		}
-
-		// SYNC: Peak-hold 3 frame — single spike dalam 3 frame tetap trigger.
-		// Confidence gate dihapus karena terlalu lambat untuk kick hardcore.
-		this.stmHistory.push(shortToMedium);
-		if (this.stmHistory.size() > 3) this.stmHistory.shift();
-
+		// SYNC: Peak-hold 5 frame buat gate loudness (anti aliasing 30Hz)
+		this.recentStmForGate.push(shortToMedium);
+		if (this.recentStmForGate.size() > 5) this.recentStmForGate.shift();
 		let maxRecentStm = 0;
-		for (const v of this.stmHistory) if (v > maxRecentStm) maxRecentStm = v;
+		for (const v of this.recentStmForGate) if (v > maxRecentStm) maxRecentStm = v;
 
-		// SYNC: Rising-edge detection — cegah double trigger dari peak-hold 3 frame.
-		const prevMaxStm = this.lastMaxStm;
-		this.lastMaxStm = maxRecentStm;
+		// SYNC: Beat rising edge — timing akurat dari TimePosition
+		const prevBeatPhase = this.lastBeatPhaseForKick;
+		const isNewBeatNow = prevBeatPhase > 0.5 && beatPhase < 0.5;
+		this.lastBeatPhaseForKick = beatPhase;
 
-		const isSignificantKick = isDownbeatZone
-			&& maxRecentStm > tuneT1
-			&& prevMaxStm <= tuneT1
-			&& rawLoudness > tuneLoud1;
+		// SYNC: Tuning
+		const tuneGate = (lightingFolder?.GetAttribute("TuneKickGate") as number) ?? 1.05;
+		const tuneStrobeCd = (lightingFolder?.GetAttribute("TuneStrobeCooldown") as number) ?? 0.12;
+		const tuneStrobeGate = (lightingFolder?.GetAttribute("TuneStrobeGate") as number) ?? 1.15;
 
-		const isBigKick = isSignificantKick
-			&& maxRecentStm > tuneT2
-			&& rawLoudness > tuneLoud2;
-
-		if (lightingFolder && debugEnabled) {
-			lightingFolder.SetAttribute("DebugIsSignificantKick", isSignificantKick);
-			lightingFolder.SetAttribute("DebugIsBigKick", isBigKick);
-			lightingFolder.SetAttribute("DebugAutoStrobeCd", math.floor(this.autoStrobeCooldown * 1000) / 1000);
-			lightingFolder.SetAttribute("DebugKickStrobeCd", math.floor(this.kickStrobeCooldown * 1000) / 1000);
-			lightingFolder.SetAttribute("DebugKickDensity", math.floor(this.kickDensity * 100) / 100);
-			lightingFolder.SetAttribute("DebugAutoStrobeTimer", math.floor(this.autoStrobeTimer * 1000) / 1000);
-			lightingFolder.SetAttribute("DebugMaxRecentStm", math.floor(maxRecentStm * 1000) / 1000);
-			lightingFolder.SetAttribute("DebugHasRecentKick", clockNow - this.lastConfirmedKickTs < beatDuration);
-			lightingFolder.SetAttribute(
-				"DebugLastConfirmedKickAgo",
-				math.floor((clockNow - this.lastConfirmedKickTs) * 100) / 100,
-			);
-			lightingFolder.SetAttribute("DebugAtDownbeat", atDownbeat);
-			lightingFolder.SetAttribute("DebugAtHalfBeat", atHalfBeat);
-		}
-
-		const currentBeatIndex = math.floor(totalBeats);
-		const isNewBeat = currentBeatIndex !== this.lastBeatIndex && !isBeforeFirstBeat;
-
-		// SYNC: Tier 3: Drop impact (strobo burst panjang — existing behavior)
-		const isSuddenDropImpact = isNewBeat && ((deltaLoudness > 45 && rawLoudness > 120) || deltaLoudness > 60);
-		// SYNC: Threshold naik 3.5 → 4.5 karena kickDensity cuma naik dari kick beneran.
-		// Drum roll asli (blast beat, double kick) tetap ke-detect, kick single tidak.
-		const isDrumRollSurge = this.kickDensity >= 4.5;
-
-		// SYNC: Update motor nudge intensity & density (pertahankan pergerakan motor)
-		// SYNC: kickDensity hanya naik dari kick beneran, BUKAN tiap beat.
-		// isNewBeat cuma update motor nudge intensity, bukan density.
-		if ((isSignificantKick || isNewBeat) && !isBeforeFirstBeat && clockNow - this.lastKickTimestamp >= 0.12) {
-			this.lastBeatIndex = currentBeatIndex;
-			this.lastKickTimestamp = clockNow;
-
-			const loudnessScale = rawLoudness > 15 ? math.clamp((rawLoudness - 15) / 100, 0.3, 1.3) : 0.25;
-
-			this.kickIntensity = 1.0 * loudnessScale;
-
-			// SYNC: Density HANYA dari kick beneran
-			if (isSignificantKick) {
-				this.kickDensity = math.min(6.0, this.kickDensity + 1.0 * loudnessScale);
+		// SYNC: TRIGGER — timing dari beat, gate dari loudness
+		if (isNewBeatNow && !isBeforeFirstBeat) {
+			// Cek apakah ada kick "baru-baru ini" via peak-hold loudness
+			if (maxRecentStm > tuneGate) {
+				// Intensity dari loudness (dinamis)
+				const intensity = math.clamp((maxRecentStm - 1.0) * 5.0, 0.4, 1.0);
+				this.kickFlash = intensity;
+				this.lastConfirmedKickTs = clockNow;
+				this.kickIntensity = math.clamp((rawLoudness - 15) / 100, 0.3, 1.3);
+				this.kickDensity = math.min(6.0, this.kickDensity + 1.0);
 			}
+			// Kalau maxRecentStm <= tuneGate → beat kalem, skip. No flash.
 		}
 
-		// SYNC: Cooldown 30ms — kick interval double-kick hardcore minimal 193ms, ini aman.
-		if (isSignificantKick && clockNow - this.lastSignificantKickTs >= 0.03) {
-			this.lastSignificantKickTs = clockNow;
-			this.lastConfirmedKickTs = clockNow;
-			this.kickFlash = 1.0;
-		}
-
-		// SYNC: Kick strobo independent dari auto strobe — jangan digate oleh autoStrobeCooldown
-		// karena di hardcore, isDrumRollSurge trigger terus dan block kick strobo selamanya.
-		if (isBigKick && this.kickStrobeCooldown <= 0) {
+		// SYNC: Kick strobo burst — beat dengan loudness tinggi
+		if (isNewBeatNow && maxRecentStm > tuneStrobeGate && this.kickStrobeCooldown <= 0) {
 			this.kickStrobeTimer = 0.08;
 			this.kickStrobeCooldown = tuneStrobeCd;
-			// SYNC: Reset auto strobe agar kick strobo menang di priority cascade
 			this.autoStrobeTimer = 0;
-			this.lastConfirmedKickTs = clockNow; // SYNC: refresh juga
+			this.lastConfirmedKickTs = clockNow;
 		}
 
-		// Decay semua timer
-		this.kickFlash = math.max(0, this.kickFlash - dt * 12); // ~80ms decay
+		// Decay (sedikit lebih lambat biar visual kelihatan)
+		this.kickFlash = math.max(0, this.kickFlash - dt * 8);
 		this.kickStrobeTimer = math.max(0, this.kickStrobeTimer - dt);
 		this.kickStrobeCooldown = math.max(0, this.kickStrobeCooldown - dt);
-
 		this.kickIntensity = math.max(0, this.kickIntensity - dt * 7.5);
 		this.kickDensity = math.max(0, this.kickDensity - dt * 1.0);
 		this.lastDropImpact = math.max(0, this.lastDropImpact - dt * 4.0);
+
+		// Debug
+		if (lightingFolder && debugEnabled) {
+			lightingFolder.SetAttribute("DebugMaxRecentStm", math.floor(maxRecentStm * 1000) / 1000);
+			lightingFolder.SetAttribute("DebugIsNewBeat", isNewBeatNow);
+			lightingFolder.SetAttribute("DebugShortToMedium", math.floor(shortToMedium * 1000) / 1000);
+		}
 
 		// ─── 4. BEAT-LOCKED STROBE BURST TRIGGERS ───
 		// Siklus birama untuk koreografi & fill musikal (8 bars = 32 beats) menggunakan lead time
@@ -687,6 +621,10 @@ export class ClientStageLightingController {
 		// SYNC: Drum roll strobe HANYA trigger di DOWNBEAT (beatPhase < 0.08) supaya sync ke kick.
 		// Jangan trigger random saat akumulasi KickDensity.
 		const isAtBeatStart = beatPhase < 0.08;
+
+		const isNewBeat = isNewBeatNow;
+		const isSuddenDropImpact = isNewBeat && maxRecentStm > 1.30;
+		const isDrumRollSurge = this.kickDensity >= 4.5 && maxRecentStm > 1.15;
 
 		if (this.autoStrobeCooldown <= 0 && !isBeforeFirstBeat && hasRecentKick) {
 			if (isSuddenDropImpact) {
