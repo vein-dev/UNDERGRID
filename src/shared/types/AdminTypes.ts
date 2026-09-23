@@ -7,7 +7,7 @@ import { StageLightingControlPayload } from "./StageLightingTypes";
 /** Tab identifiers for the modular Admin Panel. */
 export enum AdminTab {
 	MusicMaster = "MusicMaster",
-	StageFx = "StageFx",
+	Announcement = "Announcement",
 	TimeControl = "TimeControl",
 	PlayerManagement = "PlayerManagement",
 }

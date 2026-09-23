@@ -1,6 +1,7 @@
 import { AppNotificationOptions, ChatMessage } from "shared/types";
 import { ExternalDynamicIslandView } from "../ui/views/ExternalDynamicIslandView";
 import { NotificationBannerView } from "../ui/views/NotificationBannerView";
+import { AnnouncementOverlayView } from "../ui/views/AnnouncementOverlayView";
 
 /**
  * Global Notification Service.
@@ -105,20 +106,10 @@ export class GlobalNotificationService {
 	}
 
 	/**
-	 * Shows an admin / broadcast announcement (does not open phone).
+	 * Shows an admin / broadcast announcement (fullscreen blur overlay, 5 detik).
 	 */
-	public showAnnouncement(text: string, title = "PENGUMUMAN"): void {
-		this.show({
-			title: title,
-			message: text,
-			subtext: "Now",
-			badgeIcon: "megaphone",
-			badgeColor: Color3.fromHex("#808080"),
-			hideBadge: true,
-			duration: 15.0,
-			isUrgent: true,
-			// onClick is intentionally undefined so it only dismisses without opening phone
-		});
+	public showAnnouncement(text: string, title = "PENGUMUMAN PANGGUNG"): void {
+		AnnouncementOverlayView.getInstance().show(text, 5.0);
 	}
 
 	/**

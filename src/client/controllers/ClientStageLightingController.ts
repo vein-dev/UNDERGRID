@@ -55,28 +55,10 @@ export class ClientStageLightingController {
 	private isInitialized = false;
 	private fixtures: ClientFixture[] = [];
 
-	// Dynamic Beat & Energy Tracking
-	private lastLoudness = 0;
-	private shortEnergy = 0;
-	private mediumEnergy = 0;
-	private kickIntensity = 0;
-	private kickDensity = 0;
-	private lastKickTimestamp = 0;
-	private lastBeatIndex = -1;
-
-	// Strobe Engine
-	private autoStrobeTimer = 0;
-	private autoStrobeCooldown = 0;
-	private lastDropImpact = 0;
-
-	// SYNC: Kick-Reactive Dynamic Lighting State
-	private kickFlash = 0; // 0.0 - 1.0, decay cepat (~80ms)
-	private kickStrobeTimer = 0; // detik, durasi burst
-	private kickStrobeCooldown = 0; // detik, jarak min antar burst
-	private lastSignificantKickTs = 0; // os.clock()
-	private lastConfirmedKickTs = 0; // os.clock()
-	private lastBeatPhaseForKick = 0;
-	private recentStmForGate: number[] = [];
+	private currentActiveMode: StageLightMode = StageLightMode.MusicSync;
+	private previousActiveMode: StageLightMode = StageLightMode.MusicSync;
+	private modeTransitionStartTime: number = 0;
+	private readonly MODE_CROSSFADE_DURATION: number = 1.8;
 
 	private constructor() {}
 
@@ -93,16 +75,7 @@ export class ClientStageLightingController {
 
 		this.indexLocalFixtures();
 
-		// SYNC: Set default tuning attributes (hanya jika belum ada — biar admin bisa override manual)
-		const lightingFolder = Workspace.FindFirstChild("Lighting");
-		if (lightingFolder) {
-			if (lightingFolder.GetAttribute("TuneKickGate") === undefined)
-				lightingFolder.SetAttribute("TuneKickGate", 1.05);
-			if (lightingFolder.GetAttribute("TuneStrobeGate") === undefined)
-				lightingFolder.SetAttribute("TuneStrobeGate", 1.15);
-			if (lightingFolder.GetAttribute("TuneStrobeCooldown") === undefined)
-				lightingFolder.SetAttribute("TuneStrobeCooldown", 0.12);
-		}
+
 
 		// Dengarkan jika ada fixture StageLight baru yang di-stream atau ditambahkan
 		CollectionService.GetInstanceAddedSignal("StageLight").Connect(() => {
@@ -316,6 +289,67 @@ export class ClientStageLightingController {
 		}
 	}
 
+	/**
+	 * Menghitung target offset [Pan, Tilt] untuk mode panggung tertentu
+	 */
+	private getModeOffset(
+		mode: StageLightMode,
+		f: ClientFixture,
+		leadBarPhase: number,
+		leadTotalBeats: number,
+		totalFixtures: number,
+		currentMusicPatternIdx: number,
+		nextMusicPatternIdx: number,
+		isMusicCrossfading: boolean,
+		smoothMusicCrossfade: number,
+	): [number, number] {
+		switch (mode) {
+			case StageLightMode.SpotlightCenter:
+				// Fokus panggung ke mic (tidak ada offset gerak tambahan)
+				return [0, 0];
+
+			case StageLightMode.Wave:
+				// Pola Wave mengalir
+				return this.evaluateMusicalPattern(2, f, leadBarPhase, leadTotalBeats, totalFixtures);
+
+			case StageLightMode.Circle:
+				// Pola Orbit / Circle
+				return this.evaluateMusicalPattern(0, f, leadBarPhase, leadTotalBeats, totalFixtures);
+
+			case StageLightMode.Ballyhoo:
+				// Pola Ballyhoo / Scissor Cross
+				return this.evaluateMusicalPattern(1, f, leadBarPhase, leadTotalBeats, totalFixtures);
+
+			case StageLightMode.Off:
+				return [0, 0];
+
+			case StageLightMode.MusicSync:
+			default: {
+				const [p1Pan, p1Tilt] = this.evaluateMusicalPattern(
+					currentMusicPatternIdx,
+					f,
+					leadBarPhase,
+					leadTotalBeats,
+					totalFixtures,
+				);
+				if (isMusicCrossfading) {
+					const [p2Pan, p2Tilt] = this.evaluateMusicalPattern(
+						nextMusicPatternIdx,
+						f,
+						leadBarPhase,
+						leadTotalBeats,
+						totalFixtures,
+					);
+					return [
+						p1Pan + (p2Pan - p1Pan) * smoothMusicCrossfade,
+						p1Tilt + (p2Tilt - p1Tilt) * smoothMusicCrossfade,
+					];
+				}
+				return [p1Pan, p1Tilt];
+			}
+		}
+	}
+
 	private getLightingState(): {
 		isSyncActive: boolean;
 		brightness: number;
@@ -338,7 +372,7 @@ export class ClientStageLightingController {
 		const beamEnabled = attrBeam ?? adminState?.beamEnabled ?? true;
 		const strobeSpeed = attrStrobe ?? adminState?.strobeSpeed ?? 0;
 
-		const isSyncActive = mode === StageLightMode.MusicSync || isMusicSync === true || mode === undefined;
+		const isSyncActive = true;
 
 		return { isSyncActive, brightness, beamEnabled, strobeSpeed, mode };
 	}
@@ -347,98 +381,52 @@ export class ClientStageLightingController {
 		const clockNow = os.clock();
 
 		// ─── 0. FIXTURE INDEX CHECK ───
-		// SYNC: Hanya re-index jika benar-benar kosong. Reference stale di-handle
-		// per-fixture di dalam loop rendering (Section 7) — jangan clear array di sini,
-		// karena akan reset motor state & spot reference setiap frame.
 		if (this.fixtures.size() === 0) {
 			this.indexLocalFixtures();
 			if (this.fixtures.size() === 0) return;
 		}
 
-		const { isSyncActive, brightness, beamEnabled, strobeSpeed, mode } = this.getLightingState();
-		const isManualStrobe = strobeSpeed > 0 || mode === StageLightMode.Strobe;
-		if (!isSyncActive && !isManualStrobe) return;
+		const { brightness, beamEnabled, strobeSpeed, mode } = this.getLightingState();
 
-		if (isManualStrobe) {
-			this.autoStrobeTimer = 0;
-			this.autoStrobeCooldown = 0;
+		// ─── SMOOTH MODE TRANSITION TRACKER ───
+		if (mode !== this.currentActiveMode) {
+			this.previousActiveMode = this.currentActiveMode;
+			this.currentActiveMode = mode;
+			this.modeTransitionStartTime = clockNow;
 		}
+
+		const modeTransitionElapsed = clockNow - this.modeTransitionStartTime;
+		const modeTransitionT = math.clamp(modeTransitionElapsed / this.MODE_CROSSFADE_DURATION, 0, 1);
+		// S-Curve smoothing (Smoothstep)
+		const smoothModeBlend = modeTransitionT * modeTransitionT * (3 - 2 * modeTransitionT);
 
 		const activeSound = this.getActiveMusicSound();
 		const isMusicPlaying = activeSound !== undefined && activeSound.IsPlaying;
 
-		// ─── JIKA MUSIK TIDAK SEDANG DIPUTAR & BUKAN STROBE MANUAL: Parkir perlahan ke Mic ───
-		if (!isMusicPlaying && !isManualStrobe) {
-			this.lastBeatIndex = -1;
-			this.kickFlash = 0;
-			this.kickStrobeTimer = 0;
-			this.kickStrobeCooldown = 0;
-			this.lastConfirmedKickTs = 0;
-			this.recentStmForGate = [];
-			this.lastBeatPhaseForKick = 0;
-			this.lastLoudness = 0;
-			const lightingFolder = Workspace.FindFirstChild("Lighting");
-			const debugEnabled = lightingFolder?.GetAttribute("DebugEnabled") === true;
-			if (lightingFolder && debugEnabled) {
-				lightingFolder.SetAttribute("DebugSongTime", 0);
-				lightingFolder.SetAttribute("DebugBeatPhase", 0);
-				lightingFolder.SetAttribute("DebugBarPhase", 0);
-				lightingFolder.SetAttribute("DebugAudioLatency", AUDIO_OUTPUT_LATENCY_SEC);
-				lightingFolder.SetAttribute("DebugKickFlash", 0);
-				lightingFolder.SetAttribute("DebugKickStrobeTimer", 0);
-				lightingFolder.SetAttribute("DebugRawLoudness", 0);
-				lightingFolder.SetAttribute("DebugShortEnergy", 0);
-				lightingFolder.SetAttribute("DebugMediumEnergy", 0);
-				lightingFolder.SetAttribute("DebugShortToMedium", 0);
-				lightingFolder.SetAttribute("DebugIsSignificantKick", false);
-				lightingFolder.SetAttribute("DebugIsBigKick", false);
-				lightingFolder.SetAttribute("DebugAutoStrobeCd", 0);
-				lightingFolder.SetAttribute("DebugKickStrobeCd", 0);
-				lightingFolder.SetAttribute("DebugKickDensity", 0);
-				lightingFolder.SetAttribute("DebugAutoStrobeTimer", 0);
-				lightingFolder.SetAttribute("DebugHasRecentKick", false);
-				lightingFolder.SetAttribute("DebugLastConfirmedKickAgo", 0);
-				lightingFolder.SetAttribute("DebugLastStrobeSource", "none");
-				lightingFolder.SetAttribute("DebugAtDownbeat", false);
-				lightingFolder.SetAttribute("DebugAtHalfBeat", false);
-				lightingFolder.SetAttribute("DebugFirstBrightness", this.fixtures[0]?.spot ? this.fixtures[0].spot.Brightness : -1);
-				lightingFolder.SetAttribute("DebugSpotExists0", this.fixtures[0]?.spot !== undefined);
-				lightingFolder.SetAttribute("DebugBeamExists0", this.fixtures[0]?.beam !== undefined);
-				lightingFolder.SetAttribute(
-					"DebugBodyChildsCount",
-					(() => {
-						const body = this.fixtures[0]?.model.FindFirstChild("Body");
-						return body ? body.GetChildren().size() : -1;
-					})(),
-				);
+		// ─── JIKA MUSIK TIDAK SEDANG DIPUTAR: Parkir perlahan ke Mic ───
+		if (!isMusicPlaying) {
+			const parkSpeed = dt * 3.5;
+			const isStrobeActive = strobeSpeed > 0;
+			let isIdleStrobeOn = true;
+			if (isStrobeActive) {
+				const idleStrobeHz = strobeSpeed === 1 ? 2.5 : strobeSpeed === 2 ? 5.0 : strobeSpeed === 3 ? 10.0 : 20.0;
+				const phase = (clockNow * idleStrobeHz) % 1.0;
+				isIdleStrobeOn = phase < 0.35;
 			}
 
-			const parkSpeed = dt * 4.0;
+			const targetBrightness = this.currentActiveMode === StageLightMode.Off ? 0 : 1.2;
+
 			for (const f of this.fixtures) {
 				if (!f.model.Parent) continue;
+
+				// Self-heal reference
 				if (f.spot === undefined || !f.spot.IsDescendantOf(game)) {
 					const body = f.model.FindFirstChild("Body");
 					const beam1 = body?.FindFirstChild("Beam1");
 					f.spot = beam1?.FindFirstChildOfClass("SpotLight");
 					f.beam = beam1?.FindFirstChildOfClass("Beam");
 					f.lens = body?.FindFirstChild("Lens") as BasePart | undefined;
-
-					if (f.spot) {
-						f.spot.Face = Enum.NormalId.Front;
-						f.spot.Range = 28;
-						f.spot.Angle = 55;
-						f.spot.Shadows = true;
-					}
-					if (f.beam) {
-						f.beam.Width0 = 0.9;
-						f.beam.Width1 = 9.5;
-						f.beam.LightEmission = 1;
-						f.beam.LightInfluence = 0;
-						if (f.beam.Attachment0) f.beam.Attachment0.Position = new Vector3(0, 0, -0.2);
-						if (f.beam.Attachment1) f.beam.Attachment1.Position = new Vector3(0, 0, -18);
-					}
 				}
-
 				if (f.panMotor === undefined || !f.panMotor.IsDescendantOf(game)) {
 					const mf = f.model.FindFirstChild("Motor");
 					f.panMotor = mf?.FindFirstChild("Pan") as Motor6D | undefined;
@@ -458,12 +446,27 @@ export class ClientStageLightingController {
 
 				if (f.spot) {
 					f.currentBrightness =
-						f.currentBrightness + (1.2 - f.currentBrightness) * math.clamp(parkSpeed, 0, 1);
-					f.spot.Brightness = f.currentBrightness;
-					f.spot.Enabled = true;
+						f.currentBrightness + (targetBrightness - f.currentBrightness) * math.clamp(parkSpeed, 0, 1);
+
+					let spotB = f.currentBrightness;
+					let spotBeam = beamEnabled && this.currentActiveMode !== StageLightMode.Off;
+
+					if (isStrobeActive) {
+						if (isIdleStrobeOn) {
+							spotB = math.max(0.5, spotB * 1.35);
+						} else {
+							spotB = 0;
+							spotBeam = false;
+						}
+					}
+
+					f.spot.Brightness = spotB;
+					f.spot.Enabled = spotB > 0.05;
+					if (f.beam) f.beam.Enabled = spotBeam;
+					if (f.lens) {
+						f.lens.Material = (spotB > 0.05 && spotBeam) ? Enum.Material.Neon : Enum.Material.SmoothPlastic;
+					}
 				}
-				if (f.beam) f.beam.Enabled = beamEnabled;
-				if (f.lens) f.lens.Material = Enum.Material.Neon;
 			}
 			return;
 		}
@@ -473,234 +476,73 @@ export class ClientStageLightingController {
 		const currentTrack = musicService.getCurrentTrack();
 		const baseBpm = currentTrack?.bpm ?? 128;
 		const playbackSpeed = activeSound ? activeSound.PlaybackSpeed : 1.0;
-		// SYNC: effectiveBpm hanya untuk motor slew-rate smoothing & UI, JANGAN double-count di beatDuration!
 		const effectiveBpm = math.clamp(baseBpm * playbackSpeed, 40, 260);
 
-		// SYNC: beatDuration menggunakan baseBpm karena Sound.TimePosition sudah diskalakan oleh PlaybackSpeed
 		const beatDuration = 60 / baseBpm;
 		const barDuration = beatDuration * 4; // Birama 4/4 standar
 
 		const rawSongTime = activeSound ? activeSound.TimePosition : clockNow;
 		const trackOffset = currentTrack?.beatOffset ?? currentTrack?.firstBeatOffset ?? 0;
-		// SYNC: Kurangi output latency hardware speaker (~80ms) & per-track downbeat offset
 		const totalOffset = AUDIO_OUTPUT_LATENCY_SEC + trackOffset;
 		const isBeforeFirstBeat = activeSound !== undefined && rawSongTime < totalOffset;
 		const songTime = isBeforeFirstBeat ? 0 : math.max(0, rawSongTime - totalOffset);
 
 		const totalBeats = isBeforeFirstBeat ? 0 : songTime / beatDuration;
-
-		// Fase birama & subdivisi musikal deterministik (0.0 s/d 1.0)
-		const beatPhase = isBeforeFirstBeat ? 0 : (songTime % beatDuration) / beatDuration; // 0.0 s/d 1.0 (Quarter note)
-		const barPhase = isBeforeFirstBeat ? 0 : (songTime % barDuration) / barDuration; // 0.0 s/d 1.0 (4 beats)
-		const eighthPhase = isBeforeFirstBeat ? 0 : (songTime % (beatDuration * 0.5)) / (beatDuration * 0.5); // 0.0 s/d 1.0 (Eighth note)
-		const sixteenthPhase = isBeforeFirstBeat ? 0 : (songTime % (beatDuration * 0.25)) / (beatDuration * 0.25); // 0.0 s/d 1.0 (16th note)
-
-		// SYNC: Expose real-time debug timing metrics untuk kalibrasi cepat (Section 10 & Test D)
-		const lightingFolder = Workspace.FindFirstChild("Lighting");
-		const debugEnabled = lightingFolder?.GetAttribute("DebugEnabled") === true;
-		if (lightingFolder && debugEnabled) {
-			lightingFolder.SetAttribute("DebugSongTime", math.floor(songTime * 1000) / 1000);
-			lightingFolder.SetAttribute("DebugBeatPhase", math.floor(beatPhase * 1000) / 1000);
-			lightingFolder.SetAttribute("DebugBarPhase", math.floor(barPhase * 1000) / 1000);
-			lightingFolder.SetAttribute("DebugAudioLatency", AUDIO_OUTPUT_LATENCY_SEC);
-			lightingFolder.SetAttribute("DebugKickFlash", math.floor(this.kickFlash * 100) / 100);
-			lightingFolder.SetAttribute("DebugKickStrobeTimer", math.floor(this.kickStrobeTimer * 1000) / 1000);
-
-			const firstFixture = this.fixtures[0];
-			if (firstFixture && (firstFixture.spot === undefined || !firstFixture.spot.IsDescendantOf(game))) {
-				const body = firstFixture.model.FindFirstChild("Body");
-				const beam1 = body?.FindFirstChild("Beam1");
-				firstFixture.spot = beam1?.FindFirstChildOfClass("SpotLight");
-				firstFixture.beam = beam1?.FindFirstChildOfClass("Beam");
-				firstFixture.lens = body?.FindFirstChild("Lens") as BasePart | undefined;
-			}
-
-			lightingFolder.SetAttribute("DebugFixtureCount", this.fixtures.size());
-			lightingFolder.SetAttribute("DebugFirstSpotExists", firstFixture?.spot !== undefined);
-			lightingFolder.SetAttribute("DebugFirstSpotBrightness", firstFixture?.spot ? firstFixture.spot.Brightness : -1);
-			lightingFolder.SetAttribute("DebugFirstBrightness", firstFixture?.spot ? firstFixture.spot.Brightness : -1);
-			lightingFolder.SetAttribute("DebugFirstPanMotorExists", firstFixture?.panMotor !== undefined);
-			lightingFolder.SetAttribute("DebugSpotExists0", this.fixtures[0]?.spot !== undefined);
-			lightingFolder.SetAttribute("DebugBeamExists0", this.fixtures[0]?.beam !== undefined);
-			lightingFolder.SetAttribute(
-				"DebugBodyChildsCount",
-				(() => {
-					const body = this.fixtures[0]?.model.FindFirstChild("Body");
-					return body ? body.GetChildren().size() : -1;
-				})(),
-			);
-		}
+		const beatPhase = isBeforeFirstBeat ? 0 : (songTime % beatDuration) / beatDuration;
+		const barPhase = isBeforeFirstBeat ? 0 : (songTime % barDuration) / barDuration;
 
 		// ─── 2. MOTOR SLEW RATE & LEAD PREDICTION / COMPENSATED TIMING ───
-		// Menghitung kompensasi fase (lookahead/lead phase) agar keterlambatan inersia motor tereliminasi:
-		// Slew-rate low-pass filter menghasilkan time delay tau ≈ 1 / motorSlewRate
 		const motorSlewRate = 8.0 + (effectiveBpm / 60) * 4.0;
 		const motorLeadTime = 1 / motorSlewRate;
 		const leadAdjustedTime = isBeforeFirstBeat ? 0 : songTime + motorLeadTime;
 		const leadBarPhase = isBeforeFirstBeat ? 0 : (leadAdjustedTime % barDuration) / barDuration;
 		const leadTotalBeats = isBeforeFirstBeat ? 0 : leadAdjustedTime / beatDuration;
 
-		// ─── 3. BEAT-TRIGGERED, LOUDNESS-GATED KICK FLASH ───
-		let rawLoudness = 0;
-		if (activeSound && activeSound.IsPlaying) {
-			rawLoudness = activeSound.PlaybackLoudness;
-		}
-
-		this.shortEnergy += (rawLoudness - this.shortEnergy) * math.clamp(dt * 18.0, 0, 1);
-		this.mediumEnergy += (rawLoudness - this.mediumEnergy) * math.clamp(dt * 2.8, 0, 1);
-
-		const shortToMedium = this.shortEnergy / math.max(this.mediumEnergy, 1);
-
-		// SYNC: Peak-hold 5 frame buat gate loudness (anti aliasing 30Hz)
-		this.recentStmForGate.push(shortToMedium);
-		if (this.recentStmForGate.size() > 5) this.recentStmForGate.shift();
-		let maxRecentStm = 0;
-		for (const v of this.recentStmForGate) if (v > maxRecentStm) maxRecentStm = v;
-
-		// SYNC: Beat rising edge — timing akurat dari TimePosition
-		const prevBeatPhase = this.lastBeatPhaseForKick;
-		const isNewBeatNow = prevBeatPhase > 0.5 && beatPhase < 0.5;
-		this.lastBeatPhaseForKick = beatPhase;
-
-		// SYNC: Tuning
-		const tuneGate = (lightingFolder?.GetAttribute("TuneKickGate") as number) ?? 1.05;
-		const tuneStrobeCd = (lightingFolder?.GetAttribute("TuneStrobeCooldown") as number) ?? 0.12;
-		const tuneStrobeGate = (lightingFolder?.GetAttribute("TuneStrobeGate") as number) ?? 1.15;
-
-		// SYNC: TRIGGER — timing dari beat, gate dari loudness
-		if (isNewBeatNow && !isBeforeFirstBeat) {
-			// Cek apakah ada kick "baru-baru ini" via peak-hold loudness
-			if (maxRecentStm > tuneGate) {
-				// Intensity dari loudness (dinamis)
-				const intensity = math.clamp((maxRecentStm - 1.0) * 5.0, 0.4, 1.0);
-				this.kickFlash = intensity;
-				this.lastConfirmedKickTs = clockNow;
-				this.kickIntensity = math.clamp((rawLoudness - 15) / 100, 0.3, 1.3);
-				this.kickDensity = math.min(6.0, this.kickDensity + 1.0);
-			}
-			// Kalau maxRecentStm <= tuneGate → beat kalem, skip. No flash.
-		}
-
-		// SYNC: Kick strobo burst — beat dengan loudness tinggi
-		if (isNewBeatNow && maxRecentStm > tuneStrobeGate && this.kickStrobeCooldown <= 0) {
-			this.kickStrobeTimer = 0.08;
-			this.kickStrobeCooldown = tuneStrobeCd;
-			this.autoStrobeTimer = 0;
-			this.lastConfirmedKickTs = clockNow;
-		}
-
-		// Decay (sedikit lebih lambat biar visual kelihatan)
-		this.kickFlash = math.max(0, this.kickFlash - dt * 8);
-		this.kickStrobeTimer = math.max(0, this.kickStrobeTimer - dt);
-		this.kickStrobeCooldown = math.max(0, this.kickStrobeCooldown - dt);
-		this.kickIntensity = math.max(0, this.kickIntensity - dt * 7.5);
-		this.kickDensity = math.max(0, this.kickDensity - dt * 1.0);
-		this.lastDropImpact = math.max(0, this.lastDropImpact - dt * 4.0);
-
-		// Debug
-		if (lightingFolder && debugEnabled) {
-			lightingFolder.SetAttribute("DebugMaxRecentStm", math.floor(maxRecentStm * 1000) / 1000);
-			lightingFolder.SetAttribute("DebugIsNewBeat", isNewBeatNow);
-			lightingFolder.SetAttribute("DebugShortToMedium", math.floor(shortToMedium * 1000) / 1000);
-		}
-
-		// ─── 4. BEAT-LOCKED STROBE BURST TRIGGERS ───
-		// Siklus birama untuk koreografi & fill musikal (8 bars = 32 beats) menggunakan lead time
+		// ─── 3. MULTI-CHOREOGRAPHY SELECTION & INTERPOLATION ───
 		const barsPerPattern = 8;
 		const totalBars = leadAdjustedTime / barDuration;
 		const barInCycle = totalBars % barsPerPattern;
-		const isPhraseTurnaround = barInCycle >= 7.75; // 1 beat terakhir di bar ke-8
-
-		if (this.autoStrobeCooldown > 0) {
-			this.autoStrobeCooldown = math.max(0, this.autoStrobeCooldown - dt);
-		}
-
-		// SYNC: Semua auto strobe WAJIB gate ke hasRecentKick — no kick, no strobe.
-		// Track source untuk debugging.
-		const hasRecentKick = clockNow - this.lastConfirmedKickTs < beatDuration;
-		// SYNC: Drum roll strobe HANYA trigger di DOWNBEAT (beatPhase < 0.08) supaya sync ke kick.
-		// Jangan trigger random saat akumulasi KickDensity.
-		const isAtBeatStart = beatPhase < 0.08;
-
-		const isNewBeat = isNewBeatNow;
-		const isSuddenDropImpact = isNewBeat && maxRecentStm > 1.30;
-		const isDrumRollSurge = this.kickDensity >= 4.5 && maxRecentStm > 1.15;
-
-		if (this.autoStrobeCooldown <= 0 && !isBeforeFirstBeat && hasRecentKick) {
-			if (isSuddenDropImpact) {
-				this.lastDropImpact = 1.0;
-				this.autoStrobeTimer = beatDuration * 2.0;
-				this.autoStrobeCooldown = beatDuration * 8.0;
-				if (lightingFolder && debugEnabled) lightingFolder.SetAttribute("DebugLastStrobeSource", "drop");
-			} else if (isDrumRollSurge && this.kickDensity >= 4.5 && isAtBeatStart) {
-				this.autoStrobeTimer = beatDuration * 1.5;
-				this.autoStrobeCooldown = beatDuration * 6.0;
-				if (lightingFolder && debugEnabled) lightingFolder.SetAttribute("DebugLastStrobeSource", "roll");
-			} else if (isPhraseTurnaround && this.kickDensity >= 2.0) {
-				this.autoStrobeTimer = beatDuration * 1.0;
-				this.autoStrobeCooldown = beatDuration * 4.0;
-				if (lightingFolder && debugEnabled) lightingFolder.SetAttribute("DebugLastStrobeSource", "turnaround");
-			}
-		} else if (this.autoStrobeCooldown <= 0 && !hasRecentKick) {
-			if (lightingFolder && debugEnabled) lightingFolder.SetAttribute("DebugLastStrobeSource", "none");
-		}
-
-		if (this.autoStrobeTimer > 0) {
-			this.autoStrobeTimer = math.max(0, this.autoStrobeTimer - dt);
-		}
-
-		const isStrobeActive = isManualStrobe || this.autoStrobeTimer > 0;
-
-		// ─── 5. OPTICAL SHUTTER CUT CALCULATION ───
-		let isShutterOpen = true;
-
-		if (isManualStrobe) {
-			// Kecepatan strobo manual terkunci pada fraksi birama musik
-			switch (strobeSpeed) {
-				case 1: // Slow (Quarter note / 1 beat)
-					isShutterOpen = beatPhase < 0.55;
-					break;
-				case 2: // Med (Eighth note / 1/2 beat)
-					isShutterOpen = eighthPhase < 0.55;
-					break;
-				case 3: // Fast (16th note / 1/4 beat)
-					isShutterOpen = sixteenthPhase < 0.55;
-					break;
-				case 4: // Hyper (32th note / 1/8 beat)
-				default: {
-					const thirtySecondPhase = isBeforeFirstBeat
-						? 0
-						: (songTime % (beatDuration * 0.125)) / (beatDuration * 0.125);
-					isShutterOpen = thirtySecondPhase < 0.55;
-					break;
-				}
-			}
-		} else if (isStrobeActive) {
-			// SYNC: Flash serempak (bukan alternate ganjil-genap) supaya visual jelas strobo.
-			if (this.lastDropImpact > 0.1) {
-				isShutterOpen = sixteenthPhase < 0.55;
-			} else {
-				isShutterOpen = eighthPhase < 0.55;
-			}
-		}
-
-		// ─── 6. MULTI-CHOREOGRAPHY SELECTION & INTERPOLATION (LEAD COMPENSATED) ───
-		// Berganti pola secara harmonis setiap 8 birama lagu (32 beats)
 		const currentPatternIdx = math.floor(totalBars / barsPerPattern) % TOTAL_PATTERNS;
 		const nextPatternIdx = (currentPatternIdx + 1) % TOTAL_PATTERNS;
 
-		const isCrossfading = barInCycle >= barsPerPattern - 1; // 1 bar terakhir untuk crossfade halus
+		const isCrossfading = barInCycle >= barsPerPattern - 1;
 		const crossfadeT = isCrossfading ? barInCycle - (barsPerPattern - 1) : 0;
 		const smoothCrossfade = crossfadeT * crossfadeT * (3 - 2 * crossfadeT);
 
-		// ─── 7. PHYSICAL MOTOR SLEW & LIGHTING UPDATE ───
-		const total = this.fixtures.size();
+		// ─── 4. OPTICAL SHUTTER STROBE TIMING ───
+		let isStrobeFlash = true;
+		if (strobeSpeed > 0) {
+			const subDiv = strobeSpeed === 1 ? 1 : strobeSpeed === 2 ? 0.5 : strobeSpeed === 3 ? 0.25 : 0.125;
+			const subPhase = (songTime / (beatDuration * subDiv)) % 1.0;
+			isStrobeFlash = subPhase < 0.35; // 35% ON flash, 65% OFF
+		}
+
+		// Interpolasikan brightness jika transisi dari/ke mode Off
 		const baseBrightness = brightness;
+		const prevModeBrightness = this.previousActiveMode === StageLightMode.Off ? 0 : baseBrightness;
+		const currModeBrightness = this.currentActiveMode === StageLightMode.Off ? 0 : baseBrightness;
+		const modeBlendedBrightness = prevModeBrightness + (currModeBrightness - prevModeBrightness) * smoothModeBlend;
+
+		let finalBrightness = modeBlendedBrightness;
+		let finalBeam = beamEnabled && this.currentActiveMode !== StageLightMode.Off;
+
+		if (strobeSpeed > 0) {
+			if (isStrobeFlash) {
+				finalBrightness = math.max(0.5, modeBlendedBrightness * 1.35);
+				finalBeam = beamEnabled;
+			} else {
+				finalBrightness = 0;
+				finalBeam = false;
+			}
+		}
+
+		// ─── 5. PHYSICAL MOTOR SLEW & LIGHTING UPDATE ───
+		const total = this.fixtures.size();
 
 		for (const f of this.fixtures) {
 			if (!f.model.Parent) continue;
-			// SYNC: Per-fixture self-heal — refetch reference nil TANPA clear array.
-			// Jauh lebih murah dari full re-index, dan tidak reset motor state.
+
+			// Per-fixture self-heal
 			if (f.spot === undefined || !f.spot.IsDescendantOf(game)) {
 				const body = f.model.FindFirstChild("Body");
 				const beam1 = body?.FindFirstChild("Beam1");
@@ -735,37 +577,41 @@ export class ClientStageLightingController {
 
 			const [basePan, baseTilt] = this.getMicAim(f);
 
-			// Gunakan leadBarPhase & leadTotalBeats agar motor tiba tepat di puncak (downbeat)
-			const [p1Pan, p1Tilt] = this.evaluateMusicalPattern(
-				currentPatternIdx,
+			// Evaluasi offset mode sebelumnya dan mode saat ini
+			const [prevPan, prevTilt] = this.getModeOffset(
+				this.previousActiveMode,
 				f,
 				leadBarPhase,
 				leadTotalBeats,
 				total,
+				currentPatternIdx,
+				nextPatternIdx,
+				isCrossfading,
+				smoothCrossfade,
 			);
-			let targetOffsetPan = p1Pan;
-			let targetOffsetTilt = p1Tilt;
+			const [currPan, currTilt] = this.getModeOffset(
+				this.currentActiveMode,
+				f,
+				leadBarPhase,
+				leadTotalBeats,
+				total,
+				currentPatternIdx,
+				nextPatternIdx,
+				isCrossfading,
+				smoothCrossfade,
+			);
 
-			if (isCrossfading) {
-				const [p2Pan, p2Tilt] = this.evaluateMusicalPattern(
-					nextPatternIdx,
-					f,
-					leadBarPhase,
-					leadTotalBeats,
-					total,
-				);
-				targetOffsetPan = p1Pan + (p2Pan - p1Pan) * smoothCrossfade;
-				targetOffsetTilt = p1Tilt + (p2Tilt - p1Tilt) * smoothCrossfade;
-			}
+			// Transisi halus antar mode (smooth crossfade)
+			const targetOffsetPan = prevPan + (currPan - prevPan) * smoothModeBlend;
+			const targetOffsetTilt = prevTilt + (currTilt - prevTilt) * smoothModeBlend;
 
-			const isOdd = f.column % 2 === 1;
-			const kickNudge = this.kickIntensity * (isOdd ? 0.04 : -0.04);
-
-			f.targetPan = basePan + targetOffsetPan + kickNudge;
+			f.targetPan = basePan + targetOffsetPan;
 			f.targetTilt = baseTilt + targetOffsetTilt;
 
-			f.currentPan = f.currentPan + (f.targetPan - f.currentPan) * math.clamp(dt * motorSlewRate, 0, 1);
-			f.currentTilt = f.currentTilt + (f.targetTilt - f.currentTilt) * math.clamp(dt * motorSlewRate, 0, 1);
+			// Slew motor yang stabil dan mulus tanpa patah
+			const effectiveSlew = math.clamp(motorSlewRate * (0.6 + 0.4 * smoothModeBlend), 4, 14);
+			f.currentPan = f.currentPan + (f.targetPan - f.currentPan) * math.clamp(dt * effectiveSlew, 0, 1);
+			f.currentTilt = f.currentTilt + (f.targetTilt - f.currentTilt) * math.clamp(dt * effectiveSlew, 0, 1);
 
 			const safeTilt = math.clamp(f.currentTilt, -0.92, -0.52);
 
@@ -773,61 +619,15 @@ export class ClientStageLightingController {
 			if (f.tiltMotor) f.tiltMotor.C0 = BASE_TILT_C0.mul(CFrame.Angles(0, 0, safeTilt));
 
 			if (f.spot) {
-				if (isStrobeActive) {
-					// ─── Priority 1: FULL STROBE (SYNC: Flash serempak — hilangkan alternate) ───
-					const fixtureOpen = isShutterOpen;
-
-					if (fixtureOpen) {
-						f.spot.Brightness = math.min(9.5, baseBrightness * 2.2);
-						f.spot.Enabled = true;
-
-						if (f.beam) {
-							f.beam.Enabled = beamEnabled;
-							f.beam.Width1 = 12.0;
-						}
-						if (f.lens) f.lens.Material = Enum.Material.Neon;
-					} else {
-						// Blackout cut tajam (shutter tertutup)
-						f.spot.Brightness = 0;
-						f.spot.Enabled = false;
-
-						if (f.beam) {
-							f.beam.Enabled = false;
-						}
-						if (f.lens) f.lens.Material = Enum.Material.SmoothPlastic;
-					}
-				} else if (this.kickStrobeTimer > 0) {
-					// ─── Priority 2: KICK STROBE BURST ───
-					// SYNC: Optical shutter burst 3-4 frame pada kick sangat besar
-					const isShutterOpen = sixteenthPhase < 0.55;
-					if (isShutterOpen) {
-						f.spot.Brightness = math.min(9.5, baseBrightness * 2.4);
-						f.spot.Enabled = true;
-						if (f.beam) {
-							f.beam.Enabled = beamEnabled;
-							f.beam.Width1 = 13.0;
-						}
-						if (f.lens) f.lens.Material = Enum.Material.Neon;
-					} else {
-						f.spot.Brightness = 0;
-						f.spot.Enabled = false;
-						if (f.beam) f.beam.Enabled = false;
-						if (f.lens) f.lens.Material = Enum.Material.SmoothPlastic;
-					}
-				} else {
-					// ─── Priority 3: REGULAR GROOVE + KICK FLASH ───
-					// SYNC: Flash brightness jelas (~80ms decay) pada setiap kick signifikan
-					const flashBoost = this.kickFlash * 1.5; // up to +1.5x
-					const brightnessMultiplier = 0.82 + flashBoost; // 0.82 - 2.32
-					f.currentBrightness = baseBrightness * brightnessMultiplier;
-					f.spot.Brightness = math.min(8.5, f.currentBrightness);
-					f.spot.Enabled = true;
-
-					if (f.beam) {
-						f.beam.Enabled = beamEnabled;
-						f.beam.Width1 = 9.5 * (0.95 + this.kickFlash * 0.45);
-					}
-					if (f.lens) f.lens.Material = Enum.Material.Neon;
+				f.currentBrightness = finalBrightness;
+				f.spot.Brightness = finalBrightness;
+				f.spot.Enabled = finalBrightness > 0.05;
+				if (f.beam) {
+					f.beam.Enabled = finalBeam;
+					f.beam.Width1 = 9.5;
+				}
+				if (f.lens) {
+					f.lens.Material = (finalBrightness > 0.05 && finalBeam) ? Enum.Material.Neon : Enum.Material.SmoothPlastic;
 				}
 			}
 		}

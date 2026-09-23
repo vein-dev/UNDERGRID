@@ -14,3 +14,5 @@ export * from "./OnboardingController";
 export * from "./GraphicsController";
 export * from "./SkateboardController";
 export * from "./ClientStageLightingController";
+export * from "./ClientSignageController";
+export * from "./ClientBackdropController";

@@ -6,7 +6,7 @@ import { AdminTab } from "shared/types";
 import { LucideIcon } from "../components/LucideIcon";
 import { AdminMusicTabComponent } from "./tabs/AdminMusicTab";
 import { AdminPlayerTabComponent } from "./tabs/AdminPlayerTab";
-import { AdminStageFxTabComponent } from "./tabs/AdminStageFxTab";
+import { AdminAnnouncementTabComponent } from "./tabs/AdminAnnouncementTab";
 import { AdminTimeTabComponent } from "./tabs/AdminTimeTab";
 
 export interface AdminPanelProps {
@@ -44,7 +44,7 @@ export function AdminPanelComponent({
 
 	const tabs: Array<{ id: AdminTab; label: string }> = [
 		{ id: AdminTab.MusicMaster, label: "Audio Hub" },
-		{ id: AdminTab.StageFx, label: "Stage & FX" },
+		{ id: AdminTab.Announcement, label: "Announcement" },
 		{ id: AdminTab.TimeControl, label: "Time Control" },
 		{ id: AdminTab.PlayerManagement, label: "Players" },
 	];
@@ -220,7 +220,7 @@ export function AdminPanelComponent({
 					ZIndex={8}
 				>
 					<AdminMusicTabComponent visible={activeTab === AdminTab.MusicMaster} />
-					<AdminStageFxTabComponent visible={activeTab === AdminTab.StageFx} />
+					<AdminAnnouncementTabComponent visible={activeTab === AdminTab.Announcement} />
 					<AdminTimeTabComponent visible={activeTab === AdminTab.TimeControl} />
 					<AdminPlayerTabComponent visible={activeTab === AdminTab.PlayerManagement} />
 				</frame>

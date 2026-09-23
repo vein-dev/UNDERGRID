@@ -1,3 +1,5 @@
+import { RunService } from "@rbxts/services";
+
 /**
  * Admin Configuration and validation utilities.
  */
@@ -30,6 +32,11 @@ export const AdminConfig = {
  * 3. Group Owners / High Ranks if Group-owned
  */
 export function isPlayerAdmin(player: Player): boolean {
+	// 0. Studio Developer Testing
+	if (RunService.IsStudio() && (player.UserId === game.CreatorId || player.UserId <= 0)) {
+		return true;
+	}
+
 	// 1. Explicit Admin User ID list
 	if (AdminConfig.ADMIN_USER_IDS.includes(player.UserId)) {
 		return true;

@@ -53,12 +53,34 @@ export class ServerAdminService {
 			this.handleAdminAction(player, actionName as string, data);
 		});
 
-		// Replikasi state awal saat pemain bergabung
-		Players.PlayerAdded.Connect((player) => {
+		// Replikasi state awal & penanganan LightingRemote khusus Admin / Developer
+		const handlePlayerLifecycle = (player: Player) => {
 			task.defer(() => {
 				this.adminStateUpdatedEvent.FireClient(player, this.getState());
 			});
-		});
+
+			if (isPlayerAdmin(player)) {
+				player.CharacterAdded.Connect(() => {
+					task.wait(0.5);
+					this.giveLightingRemote(player);
+				});
+				if (player.Character) {
+					task.defer(() => this.giveLightingRemote(player));
+				}
+			} else {
+				// Pemain biasa (non-admin): bersihkan LightingRemote jika ada
+				player.CharacterAdded.Connect(() => {
+					task.wait(0.5);
+					this.stripLightingRemoteIfNonAdmin(player);
+				});
+				this.stripLightingRemoteIfNonAdmin(player);
+			}
+		};
+
+		Players.PlayerAdded.Connect(handlePlayerLifecycle);
+		for (const p of Players.GetPlayers()) {
+			handlePlayerLifecycle(p);
+		}
 
 		print("[ServerAdminService] Initialized with strict admin verification.");
 	}
@@ -155,6 +177,11 @@ export class ServerAdminService {
 				break;
 			}
 
+			case "TriggerFogBurst": {
+				ServerStageLightingService.getInstance().triggerFogBurst();
+				break;
+			}
+
 			default:
 				warn(`[ServerAdminService] Unknown action: ${action}`);
 		}
@@ -241,17 +268,38 @@ export class ServerAdminService {
 	}
 
 	private giveLightingRemote(player: Player): void {
+		if (!isPlayerAdmin(player)) return;
+
 		const backpack = player.FindFirstChildOfClass("Backpack");
 		const character = player.Character;
 		if (backpack?.FindFirstChild("LightingRemote") || character?.FindFirstChild("LightingRemote")) {
 			return;
 		}
 
+		const serverStorage = game.GetService("ServerStorage");
 		const starterPack = game.GetService("StarterPack");
-		const template = starterPack.FindFirstChild("LightingRemote") as Tool | undefined;
+		const template = (serverStorage.FindFirstChild("LightingRemote") ?? starterPack.FindFirstChild("LightingRemote")) as Tool | undefined;
+
 		if (template && backpack) {
 			const clone = template.Clone();
 			clone.Parent = backpack;
+		}
+	}
+
+	private stripLightingRemoteIfNonAdmin(player: Player): void {
+		if (isPlayerAdmin(player)) return;
+
+		const backpack = player.FindFirstChildOfClass("Backpack");
+		const character = player.Character;
+
+		const inBackpack = backpack?.FindFirstChild("LightingRemote");
+		if (inBackpack) {
+			inBackpack.Destroy();
+		}
+
+		const inCharacter = character?.FindFirstChild("LightingRemote");
+		if (inCharacter) {
+			inCharacter.Destroy();
 		}
 	}
 }

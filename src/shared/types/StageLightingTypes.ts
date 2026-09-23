@@ -40,6 +40,10 @@ export interface StageLightingControlPayload {
 	isRainbow: boolean;
 	isPulse: boolean;
 	isMusicSync: boolean;
+	fogEnabled?: boolean; // toggle on/off
+	fogIntensity?: number; // 0.0 - 1.0, default 0.5
+	backdropPreset?: string; // preset id from BACKDROP_GIF_PRESETS or "off"
+	backdropBrightness?: number; // 0 to 5, default 2.0
 }
 
 export interface StageLightState {

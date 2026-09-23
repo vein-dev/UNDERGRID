@@ -196,15 +196,6 @@ export const DEFAULT_SMARTPHONE_CONFIG: SmartphoneConfig = {
 			soundId: "rbxassetid://124673215456249",
 			coverColor: Color3.fromHex("#1db954"),
 		},
-		{
-			id: "track_4",
-			title: "Mberot",
-			artist: "Putra Mandala",
-			soundId: "rbxassetid://94616406011407",
-			coverColor: Color3.fromHex("#ff758f"),
-			pitch: 2,
-			bpm: 70,
-		},
 	],
 };
 

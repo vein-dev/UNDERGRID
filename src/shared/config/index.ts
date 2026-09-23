@@ -5,3 +5,4 @@ export * from "./EmoteConfig";
 export * from "./MovementConfig";
 export * from "./SkateboardConfig";
 export * from "./TimeConfig";
+export * from "./StageBackdropConfig";

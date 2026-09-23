@@ -16,6 +16,8 @@ import {
 	GraphicsController,
 	SkateboardController,
 	ClientStageLightingController,
+	ClientSignageController,
+	ClientBackdropController,
 } from "./controllers";
 
 
@@ -78,6 +80,8 @@ function main() {
 	FootstepController.getInstance();
 	SkateboardController.getInstance().init();
 	ClientStageLightingController.getInstance().init();
+	ClientSignageController.getInstance().init();
+	ClientBackdropController.getInstance().init();
 
 	print("[Client] All controllers initialized successfully.");
 

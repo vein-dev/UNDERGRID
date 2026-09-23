@@ -5,6 +5,7 @@ import {
 	SkateboardClientComponent,
 	SmartphoneClientComponent,
 } from "client/components";
+import { isPlayerAdmin } from "shared/config";
 
 /**
  * Client singleton controller responsible for binding OOP components
@@ -74,6 +75,10 @@ export class ToolController {
 		} else if (tool.Name === "Skateboard") {
 			component = new SkateboardClientComponent(tool);
 		} else if (tool.Name === "LightingRemote" || tool.Name === "LightingController") {
+			if (!isPlayerAdmin(this.player)) {
+				tool.Destroy();
+				return;
+			}
 			component = new LightingRemoteClientComponent(tool);
 		}
 

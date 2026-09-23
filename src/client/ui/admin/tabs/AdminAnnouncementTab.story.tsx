@@ -1,10 +1,10 @@
 import { CreateGenericStory } from "@rbxts/ui-labs";
-import { AdminStageFxTab } from "./AdminStageFxTab";
+import { AdminAnnouncementTab } from "./AdminAnnouncementTab";
 
 const story = CreateGenericStory(
 	{
-		name: "Admin Stage & FX Tab",
-		summary: "Tab 2: Stage & FX controls including smoke machine, lasers, confetti, and broadcast banner",
+		name: "Admin Announcement Tab",
+		summary: "Tab: Push Announcement & Server Broadcast Banner",
 		controls: {},
 	},
 	(props) => {
@@ -19,7 +19,7 @@ const story = CreateGenericStory(
 		corner.CornerRadius = new UDim(0, 16);
 		corner.Parent = tabWrapper;
 
-		const tab = new AdminStageFxTab(tabWrapper);
+		const tab = new AdminAnnouncementTab(tabWrapper);
 		tab.setVisible(true);
 
 		return () => {

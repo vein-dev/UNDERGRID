@@ -5,9 +5,9 @@ import { AdminPanelView } from "./AdminPanelView";
 const story = CreateGenericStory(
 	{
 		name: "Admin Controller (Full Modal)",
-		summary: "Modular Admin Panel with tabs for Audio Hub, Stage & FX, and Player Management",
+		summary: "Modular Admin Panel with tabs for Audio Hub, Announcement, and Player Management",
 		controls: {
-			selectedTab: Choose([AdminTab.MusicMaster, AdminTab.StageFx, AdminTab.PlayerManagement], 1),
+			selectedTab: Choose([AdminTab.MusicMaster, AdminTab.Announcement, AdminTab.PlayerManagement], 1),
 		},
 	},
 	(props) => {

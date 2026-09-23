@@ -29,7 +29,13 @@ export class ServerStageLightingService {
 		isRainbow: false,
 		isPulse: false,
 		isMusicSync: false,
+		fogEnabled: false,
+		fogIntensity: 0.5,
+		backdropPreset: "gif_cyber_grid",
+		backdropBrightness: 2.0,
 	};
+
+	private fogEmitters: ParticleEmitter[] = [];
 
 	private animationTime = 0;
 	private strobeTimer = 0;
@@ -52,6 +58,13 @@ export class ServerStageLightingService {
 		this.isInitialized = true;
 
 		this.loadFixtures();
+		this.ensureFogSetup();
+
+		// Re-scan jika ada fog machine baru di-tag
+		CollectionService.GetInstanceAddedSignal("FogMachine").Connect(() => {
+			this.ensureFogSetup();
+		});
+
 		this.setMode(this.controlState.mode);
 
 		// Sambungkan Heartbeat loop untuk update animasi motor, warna, dan efek
@@ -258,6 +271,20 @@ export class ServerStageLightingService {
 				this.controlState.mode = StageLightMode.MusicSync;
 			}
 		}
+		if (payload.fogEnabled !== undefined) {
+			this.controlState.fogEnabled = payload.fogEnabled;
+			this.applyFog();
+		}
+		if (payload.fogIntensity !== undefined) {
+			this.controlState.fogIntensity = payload.fogIntensity;
+			this.applyFog();
+		}
+		if (payload.backdropPreset !== undefined) {
+			this.controlState.backdropPreset = payload.backdropPreset;
+		}
+		if (payload.backdropBrightness !== undefined) {
+			this.controlState.backdropBrightness = payload.backdropBrightness;
+		}
 		this.syncAttributes();
 	}
 
@@ -269,6 +296,110 @@ export class ServerStageLightingService {
 			folder.SetAttribute("StageLightingBrightness", this.controlState.brightness);
 			folder.SetAttribute("StageLightingBeamEnabled", this.controlState.beamEnabled);
 			folder.SetAttribute("StageLightingStrobeSpeed", this.controlState.strobeSpeed);
+			folder.SetAttribute("StageLightingFogEnabled", this.controlState.fogEnabled ?? false);
+			folder.SetAttribute("StageLightingFogIntensity", this.controlState.fogIntensity ?? 0.5);
+			folder.SetAttribute("StageLightingBackdropPreset", this.controlState.backdropPreset ?? "gif_cyber_grid");
+			folder.SetAttribute("StageLightingBackdropBrightness", this.controlState.backdropBrightness ?? 2.0);
+		}
+
+		// Sinkronkan juga langsung ke model Backdrop di workspace jika ada
+		const targetModel = Workspace.FindFirstChild("3dModel");
+		const backdropPart = targetModel ? targetModel.FindFirstChild("Backdrop") : undefined;
+		if (backdropPart && backdropPart.IsA("BasePart")) {
+			if (this.controlState.backdropPreset !== undefined) {
+				backdropPart.SetAttribute("Preset", this.controlState.backdropPreset);
+			}
+			if (this.controlState.backdropBrightness !== undefined) {
+				backdropPart.SetAttribute("Brightness", this.controlState.backdropBrightness);
+			}
+		}
+	}
+
+	private ensureFogSetup(): void {
+		this.fogEmitters.clear();
+		const tagged = CollectionService.GetTagged("FogMachine");
+
+		if (tagged.size() === 0) {
+			warn("[ServerStageLightingService] No FogMachine tagged instances found.");
+			return;
+		}
+
+		for (const child of tagged) {
+			let targetPart: BasePart | undefined;
+			if (child.IsA("BasePart")) {
+				targetPart = child;
+			} else if (child.IsA("Model")) {
+				targetPart = child.PrimaryPart ?? (child.FindFirstChildWhichIsA("BasePart") as BasePart | undefined);
+			}
+
+			if (!targetPart) continue;
+
+			// Cari atau create Attachment
+			let attachment = targetPart.FindFirstChild("FogAttachment") as Attachment | undefined;
+			if (!attachment) {
+				attachment = new Instance("Attachment");
+				attachment.Name = "FogAttachment";
+				attachment.Parent = targetPart;
+			}
+			// SYNC: Selalu reset posisi & orientasi biar konsisten
+			attachment.Position = new Vector3(0, 0, 0);
+			attachment.Orientation = new Vector3(0, 0, 0);
+
+			// Cari atau create ParticleEmitter
+			let emitter = attachment.FindFirstChild("FogEmitter") as ParticleEmitter | undefined;
+			if (!emitter) {
+				emitter = new Instance("ParticleEmitter");
+				emitter.Name = "FogEmitter";
+				emitter.Parent = attachment;
+			}
+
+			// SYNC: Selalu set property (biar konsisten walau emitter udah ada)
+			emitter.Texture = "rbxasset://textures/particles/smoke_main.dds"; // internal Roblox, dijamin works
+			emitter.Rate = 20;
+			emitter.Lifetime = new NumberRange(3, 6);
+			emitter.Speed = new NumberRange(3, 8);
+			emitter.SpreadAngle = new Vector2(15, 15);
+			emitter.Size = new NumberSequence([
+				new NumberSequenceKeypoint(0, 5),
+				new NumberSequenceKeypoint(0.5, 15),
+				new NumberSequenceKeypoint(1, 25),
+			]);
+			emitter.Transparency = new NumberSequence([
+				new NumberSequenceKeypoint(0, 0.3),
+				new NumberSequenceKeypoint(0.3, 0.5),
+				new NumberSequenceKeypoint(1, 1),
+			]);
+			emitter.Color = new ColorSequence(Color3.fromRGB(220, 220, 230));
+			emitter.LightEmission = 0.1;
+			emitter.LightInfluence = 0.8;
+			emitter.RotSpeed = new NumberRange(-20, 20);
+			emitter.Acceleration = new Vector3(0, 2, 0);
+			emitter.Drag = 3;
+			emitter.ZOffset = 1;
+			emitter.EmissionDirection = Enum.NormalId.Top;
+			emitter.Enabled = false; // default off — kontrol via UI
+
+			this.fogEmitters.push(emitter);
+		}
+
+		print(`[ServerStageLightingService] Fog: found ${this.fogEmitters.size()} emitters.`);
+	}
+
+	private applyFog(): void {
+		const enabled = this.controlState.fogEnabled ?? false;
+		const intensity = this.controlState.fogIntensity ?? 0.5;
+
+		for (const emitter of this.fogEmitters) {
+			emitter.Enabled = enabled;
+			if (enabled) {
+				emitter.Rate = 5 + intensity * 25; // 5 - 30 partikel/detik
+			}
+		}
+	}
+
+	public triggerFogBurst(): void {
+		for (const emitter of this.fogEmitters) {
+			emitter.Emit(30); // burst 30 partikel, works walau Enabled=false
 		}
 	}
 

@@ -1,6 +1,6 @@
 import { getRemoteEvent, getRemoteFunction } from "shared/network";
 import { AdminStateSync, PlayerEntryInfo, StageLightingControlPayload } from "shared/types";
-import { GlobalNotificationService } from "./GlobalNotificationService";
+import { AnnouncementOverlayView } from "client/ui/views/AnnouncementOverlayView";
 
 type StateUpdateCallback = (state: AdminStateSync) => void;
 type AnnouncementCallback = (text: string) => void;
@@ -49,10 +49,10 @@ export class AdminService {
 			}
 		});
 
-		// Listen for broadcast announcements
+		// Listen for broadcast announcements - Khusus tampil di Fullscreen Blur Overlay 5 detik
 		this.adminAnnouncementBroadcast.OnClientEvent.Connect((rawText: unknown) => {
 			if (typeIs(rawText, "string")) {
-				GlobalNotificationService.getInstance().showAnnouncement(rawText as string);
+				AnnouncementOverlayView.getInstance().show(rawText as string, 5.0);
 				for (const cb of this.announcementCallbacks) cb(rawText as string);
 			}
 		});
@@ -121,6 +121,10 @@ export class AdminService {
 
 	public setStageLighting(payload: Partial<StageLightingControlPayload>): void {
 		this.adminControlEvent.FireServer("SetStageLightingControl", payload);
+	}
+
+	public triggerFogBurst(): void {
+		this.adminControlEvent.FireServer("TriggerFogBurst");
 	}
 
 	public giveLightingRemote(): void {

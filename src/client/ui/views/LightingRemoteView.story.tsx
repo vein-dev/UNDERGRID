@@ -4,7 +4,7 @@ import { LightingRemoteView } from "./LightingRemoteView";
 const story = CreateGenericStory(
 	{
 		name: "Lighting Remote HUD",
-		summary: "Floating DMX Stage Lighting Remote HUD with Live Modes, Colors, Strobe, and Trim",
+		summary: "Floating DMX Stage Lighting Remote HUD with Live Modes, Colors, Beam, Strobe, and Fog Machine Controls",
 		controls: {
 			visible: Boolean(true),
 		},

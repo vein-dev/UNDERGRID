@@ -368,19 +368,6 @@ export class ExternalDynamicIslandView {
 		});
 	}
 
-	public showAnnouncement(text: string, title = "PENGUMUMAN"): void {
-		this.show({
-			title: title,
-			message: text,
-			subtext: "",
-			icon: "rbxassetid://10734950309",
-			badgeIcon: "megaphone",
-			badgeColor: Color3.fromHex("#2a2a2a"),
-			duration: 6.0,
-			isUrgent: true,
-		});
-	}
-
 	public dismiss(): void {
 		if (this.dismissThread) {
 			task.cancel(this.dismissThread);

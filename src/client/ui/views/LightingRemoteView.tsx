@@ -1,6 +1,6 @@
-import React, { useEffect, useState } from "@rbxts/react";
+import React, { useEffect, useRef, useState } from "@rbxts/react";
 import ReactRoblox, { Root } from "@rbxts/react-roblox";
-import { Players } from "@rbxts/services";
+import { Players, UserInputService } from "@rbxts/services";
 import { AdminService } from "client/services/AdminService";
 import { Fonts } from "../Typography";
 import { LucideIcon } from "../components/LucideIcon";
@@ -8,8 +8,9 @@ import {
 	StageLightMode,
 	StageLightingControlPayload,
 } from "shared/types";
+import { BACKDROP_GIF_PRESETS } from "shared/config";
 
-type RemoteTab = "modes" | "colors" | "beam" | "trim";
+type RemoteTab = "modes" | "colors" | "beam" | "fog" | "backdrop";
 
 export interface LightingRemoteComponentProps {
 	visible: boolean;
@@ -21,6 +22,165 @@ export function LightingRemoteComponent({ visible, onClose }: LightingRemoteComp
 	const [adminState, setAdminState] = useState(() => adminService.getState());
 	const [activeTab, setActiveTab] = useState<RemoteTab>("modes");
 	const [isCollapsed, setIsCollapsed] = useState(false);
+	const [isFogDragging, setIsFogDragging] = useState(false);
+	const [fogIntensityVal, setFogIntensityVal] = useState<number | undefined>(undefined);
+	const fogTrackRef = useRef<Frame>();
+	const lastSentFogRef = useRef<number>(0.5);
+
+	const [isBackdropBrightnessDragging, setIsBackdropBrightnessDragging] = useState(false);
+	const [backdropBrightnessPercentVal, setBackdropBrightnessPercentVal] = useState<number | undefined>(undefined);
+	const backdropBrightnessTrackRef = useRef<Frame>();
+	const lastSentBackdropBrightnessRef = useRef<number>(2.0);
+
+	const [isBrightnessDragging, setIsBrightnessDragging] = useState(false);
+	const [brightnessPercentVal, setBrightnessPercentVal] = useState<number | undefined>(undefined);
+	const brightnessTrackRef = useRef<Frame>();
+	const lastSentBrightnessRef = useRef<number>(2.5);
+
+	const MAX_BRIGHTNESS = 3.5;
+
+	const updateBrightnessFromInput = (inputX: number, forceSend = false) => {
+		const track = brightnessTrackRef.current;
+		if (!track) return;
+		const trackX = track.AbsolutePosition.X;
+		const trackWidth = track.AbsoluteSize.X;
+		if (trackWidth <= 0) return;
+
+		const relativeX = inputX - trackX;
+		const ratio = math.clamp(relativeX / trackWidth, 0, 1);
+		const newPercent = math.clamp(math.floor(ratio * 100 + 0.5), 1, 100);
+		setBrightnessPercentVal(newPercent);
+
+		const targetBrightnessVal = math.floor(((newPercent / 100) * MAX_BRIGHTNESS) * 100 + 0.5) / 100;
+		if (forceSend || math.abs(targetBrightnessVal - lastSentBrightnessRef.current) >= 0.08) {
+			lastSentBrightnessRef.current = targetBrightnessVal;
+			adminService.setStageLighting({ brightness: targetBrightnessVal });
+		}
+	};
+
+	useEffect(() => {
+		if (!isBrightnessDragging) return;
+
+		const moveConn = UserInputService.InputChanged.Connect((input) => {
+			if (
+				input.UserInputType === Enum.UserInputType.MouseMovement ||
+				input.UserInputType === Enum.UserInputType.Touch
+			) {
+				updateBrightnessFromInput(input.Position.X, false);
+			}
+		});
+
+		const endConn = UserInputService.InputEnded.Connect((input) => {
+			if (
+				input.UserInputType === Enum.UserInputType.MouseButton1 ||
+				input.UserInputType === Enum.UserInputType.Touch
+			) {
+				setIsBrightnessDragging(false);
+				updateBrightnessFromInput(input.Position.X, true);
+				setBrightnessPercentVal(undefined);
+			}
+		});
+
+		return () => {
+			moveConn.Disconnect();
+			endConn.Disconnect();
+		};
+	}, [isBrightnessDragging]);
+
+	const updateFogFromInput = (inputX: number, forceSend = false) => {
+		const track = fogTrackRef.current;
+		if (!track) return;
+		const trackX = track.AbsolutePosition.X;
+		const trackWidth = track.AbsoluteSize.X;
+		if (trackWidth <= 0) return;
+
+		const relativeX = inputX - trackX;
+		const ratio = math.clamp(relativeX / trackWidth, 0, 1);
+		const newIntensity = math.floor(ratio * 100 + 0.5) / 100;
+		setFogIntensityVal(newIntensity);
+
+		if (forceSend || math.abs(newIntensity - lastSentFogRef.current) >= 0.05) {
+			lastSentFogRef.current = newIntensity;
+			adminService.setStageLighting({ fogIntensity: newIntensity });
+		}
+	};
+
+	useEffect(() => {
+		if (!isFogDragging) return;
+
+		const moveConn = UserInputService.InputChanged.Connect((input) => {
+			if (
+				input.UserInputType === Enum.UserInputType.MouseMovement ||
+				input.UserInputType === Enum.UserInputType.Touch
+			) {
+				updateFogFromInput(input.Position.X, false);
+			}
+		});
+
+		const endConn = UserInputService.InputEnded.Connect((input) => {
+			if (
+				input.UserInputType === Enum.UserInputType.MouseButton1 ||
+				input.UserInputType === Enum.UserInputType.Touch
+			) {
+				setIsFogDragging(false);
+				updateFogFromInput(input.Position.X, true);
+				setFogIntensityVal(undefined);
+			}
+		});
+
+		return () => {
+			moveConn.Disconnect();
+			endConn.Disconnect();
+		};
+	}, [isFogDragging]);
+
+	const updateBackdropBrightnessFromInput = (inputX: number, forceSend = false) => {
+		const track = backdropBrightnessTrackRef.current;
+		if (!track) return;
+		const trackX = track.AbsolutePosition.X;
+		const trackWidth = track.AbsoluteSize.X;
+		if (trackWidth <= 0) return;
+
+		const relativeX = inputX - trackX;
+		const ratio = math.clamp(relativeX / trackWidth, 0, 1);
+		const newPercent = math.clamp(math.floor(ratio * 100 + 0.5), 0, 100);
+		setBackdropBrightnessPercentVal(newPercent);
+
+		const targetVal = math.floor(((newPercent / 100) * 4.0) * 100 + 0.5) / 100;
+		if (forceSend || math.abs(targetVal - lastSentBackdropBrightnessRef.current) >= 0.1) {
+			lastSentBackdropBrightnessRef.current = targetVal;
+			adminService.setStageLighting({ backdropBrightness: targetVal });
+		}
+	};
+
+	useEffect(() => {
+		if (!isBackdropBrightnessDragging) return;
+
+		const moveConn = UserInputService.InputChanged.Connect((input) => {
+			if (
+				input.UserInputType === Enum.UserInputType.MouseMovement ||
+				input.UserInputType === Enum.UserInputType.Touch
+			) {
+				updateBackdropBrightnessFromInput(input.Position.X, false);
+			}
+		});
+
+		const endConn = UserInputService.InputEnded.Connect((input) => {
+			if (
+				input.UserInputType === Enum.UserInputType.MouseButton1 ||
+				input.UserInputType === Enum.UserInputType.Touch
+			) {
+				setIsBackdropBrightnessDragging(false);
+				updateBackdropBrightnessFromInput(input.Position.X, true);
+				setBackdropBrightnessPercentVal(undefined);
+			}
+		});
+
+		return () => {
+			moveConn.Disconnect();
+			endConn.Disconnect();
+		};
+	}, [isBackdropBrightnessDragging]);
 
 	useEffect(() => {
 		const unsub = adminService.onStateUpdated((newState) => {
@@ -43,10 +203,14 @@ export function LightingRemoteComponent({ visible, onClose }: LightingRemoteComp
 		isRainbow: false,
 		isPulse: false,
 		isMusicSync: true,
+		fogEnabled: false,
+		fogIntensity: 0.5,
 	};
 
-	const currentPanDeg = math.floor(math.deg(stageLighting.panAngle) + 0.5);
-	const currentTiltDeg = math.floor(math.deg(stageLighting.tiltAngle) + 0.5);
+	const currentFogIntensity = fogIntensityVal ?? stageLighting.fogIntensity ?? 0.5;
+	const currentBrightnessPercent =
+		brightnessPercentVal ??
+		math.clamp(math.floor(((stageLighting.brightness ?? 2.5) / MAX_BRIGHTNESS) * 100 + 0.5), 1, 100);
 
 	const motionModes: Array<{ mode: StageLightMode; label: string; icon: string }> = [
 		{ mode: StageLightMode.MusicSync, label: "Sync Musik", icon: "music" },
@@ -68,33 +232,20 @@ export function LightingRemoteComponent({ visible, onClose }: LightingRemoteComp
 		{ name: "Pink", hex: "#ec4899", color: Color3.fromRGB(236, 72, 153) },
 	];
 
-	const stageTrimPresets = [
-		{ label: "Center", panDeg: 0, tiltDeg: 0 },
-		{ label: "Kiri", panDeg: -12, tiltDeg: 0 },
-		{ label: "Kanan", panDeg: 12, tiltDeg: 0 },
-		{ label: "Depan", panDeg: 0, tiltDeg: 6 },
-		{ label: "Dalam", panDeg: 0, tiltDeg: -6 },
-	];
-
 	const speedPresets = [
 		{ label: "Kalem", val: 0.02 },
 		{ label: "Normal", val: 0.04 },
 		{ label: "Cepat", val: 0.08 },
 	];
 
-	const brightnessPresets = [
-		{ label: "0%", val: 0 },
-		{ label: "30%", val: 1.0 },
-		{ label: "70%", val: 2.2 },
-		{ label: "100%", val: 3.5 },
-	];
+
 
 	const strobePresets = [
 		{ label: "Off", speed: 0 },
-		{ label: "Slow", speed: 1 },
-		{ label: "Med", speed: 2 },
-		{ label: "Fast", speed: 3 },
-		{ label: "Hyper", speed: 4 },
+		{ label: "Beat (1/4)", speed: 1 },
+		{ label: "1/8", speed: 2 },
+		{ label: "1/16", speed: 3 },
+		{ label: "32nd", speed: 4 },
 	];
 
 	// ─── Render Minimized Status Pill ──────────────────────────────────────────
@@ -316,7 +467,8 @@ export function LightingRemoteComponent({ visible, onClose }: LightingRemoteComp
 						{ id: "modes", label: "Modes", icon: "activity" },
 						{ id: "colors", label: "Colors", icon: "palette" },
 						{ id: "beam", label: "Beam", icon: "sun" },
-						{ id: "trim", label: "Aim", icon: "compass" },
+						{ id: "fog", label: "Fog", icon: "cloud" },
+						{ id: "backdrop", label: "Screen", icon: "image" },
 					] as Array<{ id: RemoteTab; label: string; icon: string }>
 				).map((tab, idx) => {
 					const isActive = activeTab === tab.id;
@@ -324,13 +476,13 @@ export function LightingRemoteComponent({ visible, onClose }: LightingRemoteComp
 						<textbutton
 							key={`tab_${tab.id}`}
 							LayoutOrder={idx}
-							Size={new UDim2(0.25, 0, 1, 0)}
+							Size={new UDim2(0.2, 0, 1, 0)}
 							BackgroundColor3={isActive ? Color3.fromHex("#3b82f6") : Color3.fromRGB(0, 0, 0)}
 							BackgroundTransparency={isActive ? 0.2 : 1}
 							Text={tab.label}
 							TextColor3={isActive ? Color3.fromHex("#ffffff") : Color3.fromHex("#94a3b8")}
 							Font={isActive ? Fonts.Bold : Fonts.Medium}
-							TextSize={10}
+							TextSize={9}
 							Event={{
 								MouseButton1Click: () => setActiveTab(tab.id),
 							}}
@@ -620,78 +772,117 @@ export function LightingRemoteComponent({ visible, onClose }: LightingRemoteComp
 							<uicorner CornerRadius={new UDim(0, 10)} />
 						</textbutton>
 
-						{/* Brightness Presets */}
-						<textlabel
-							LayoutOrder={3}
-							Size={new UDim2(1, 0, 0, 14)}
-							BackgroundTransparency={1}
-							Text="TINGKAT KECERAHAN (BRIGHTNESS)"
-							TextColor3={Color3.fromHex("#94a3b8")}
-							Font={Fonts.Bold}
-							TextSize={10}
-							TextXAlignment={Enum.TextXAlignment.Left}
-						/>
-						<frame LayoutOrder={4} Size={new UDim2(1, 0, 0, 32)} BackgroundTransparency={1}>
-							<uilistlayout
-								FillDirection={Enum.FillDirection.Horizontal}
-								Padding={new UDim(0, 6)}
-								SortOrder={Enum.SortOrder.LayoutOrder}
+						{/* Brightness Slider (Intensitas 1 - 100) */}
+						<frame LayoutOrder={3} Size={new UDim2(1, 0, 0, 14)} BackgroundTransparency={1}>
+							<uilistlayout FillDirection={Enum.FillDirection.Horizontal} />
+							<textlabel
+								Size={new UDim2(0.7, 0, 1, 0)}
+								BackgroundTransparency={1}
+								Text="TINGKAT KECERAHAN (BRIGHTNESS)"
+								TextColor3={Color3.fromHex("#94a3b8")}
+								Font={Fonts.Bold}
+								TextSize={10}
+								TextXAlignment={Enum.TextXAlignment.Left}
 							/>
-							{brightnessPresets.map((bp, idx) => {
-								const isCur = math.abs(stageLighting.brightness - bp.val) < 0.3;
-								return (
-									<textbutton
-										key={`bright_${bp.label}`}
-										LayoutOrder={idx}
-										Size={new UDim2(0.25, -5, 1, 0)}
-										BackgroundColor3={isCur ? Color3.fromHex("#ca8a04") : Color3.fromHex("#1f2937")}
-										BackgroundTransparency={isCur ? 0.2 : 0.6}
-										Text={bp.label}
-										TextColor3={Color3.fromHex("#ffffff")}
-										Font={isCur ? Fonts.Bold : Fonts.Regular}
-										TextSize={10}
-										Event={{
-											MouseButton1Click: () => {
-												adminService.setStageLighting({ brightness: bp.val });
-											},
-										}}
-									>
-										<uicorner CornerRadius={new UDim(0, 8)} />
-									</textbutton>
-								);
-							})}
+							<textlabel
+								Size={new UDim2(0.3, 0, 1, 0)}
+								BackgroundTransparency={1}
+								Text={`${currentBrightnessPercent}%`}
+								TextColor3={Color3.fromHex("#eab308")}
+								Font={Fonts.Bold}
+								TextSize={10}
+								TextXAlignment={Enum.TextXAlignment.Right}
+							/>
 						</frame>
 
-						{/* Strobe Presets */}
+						{/* Slider Track and Thumb */}
+						<frame LayoutOrder={4} Size={new UDim2(1, 0, 0, 28)} BackgroundTransparency={1}>
+							<frame
+								key="RemoteBrightnessTrack"
+								ref={brightnessTrackRef}
+								AnchorPoint={new Vector2(0, 0.5)}
+								Position={new UDim2(0, 0, 0.5, 0)}
+								Size={new UDim2(1, 0, 0, 8)}
+								BackgroundColor3={Color3.fromHex("#1f2937")}
+							>
+								<uicorner CornerRadius={new UDim(1, 0)} />
+								<frame
+									key="RemoteBrightnessFill"
+									Size={new UDim2(currentBrightnessPercent / 100, 0, 1, 0)}
+									BackgroundColor3={Color3.fromHex("#ca8a04")}
+								>
+									<uicorner CornerRadius={new UDim(1, 0)} />
+								</frame>
+								<frame
+									key="RemoteBrightnessThumb"
+									AnchorPoint={new Vector2(0.5, 0.5)}
+									Position={new UDim2(currentBrightnessPercent / 100, 0, 0.5, 0)}
+									Size={new UDim2(0, 18, 0, 18)}
+									BackgroundColor3={Color3.fromHex("#ffffff")}
+								>
+									<uicorner CornerRadius={new UDim(1, 0)} />
+									<uistroke Color={Color3.fromHex("#ca8a04")} Thickness={2} />
+								</frame>
+							</frame>
+
+							{/* Hitbox Button for Drag & Click */}
+							<textbutton
+								key="RemoteBrightnessHitbox"
+								Position={new UDim2(0, 0, 0, 0)}
+								Size={new UDim2(1, 0, 1, 0)}
+								BackgroundTransparency={1}
+								Text=""
+								AutoButtonColor={false}
+								ZIndex={5}
+								Event={{
+									InputBegan: (_, input) => {
+										if (
+											input.UserInputType === Enum.UserInputType.MouseButton1 ||
+											input.UserInputType === Enum.UserInputType.Touch
+										) {
+											setIsBrightnessDragging(true);
+											updateBrightnessFromInput(input.Position.X, true);
+										}
+									},
+								}}
+							/>
+						</frame>
+
+						{/* Strobe Speed Presets */}
 						<textlabel
 							LayoutOrder={5}
 							Size={new UDim2(1, 0, 0, 14)}
 							BackgroundTransparency={1}
-							Text="STROBE LIGHT (KEDIP CEPAT)"
+							Text="KEDIP STROBE SPEED:"
 							TextColor3={Color3.fromHex("#94a3b8")}
 							Font={Fonts.Bold}
-							TextSize={10}
+							TextSize={9}
 							TextXAlignment={Enum.TextXAlignment.Left}
 						/>
-						<frame LayoutOrder={6} Size={new UDim2(1, 0, 0, 32)} BackgroundTransparency={1}>
+						<frame LayoutOrder={6} Size={new UDim2(1, 0, 0, 30)} BackgroundTransparency={1}>
 							<uilistlayout
 								FillDirection={Enum.FillDirection.Horizontal}
 								Padding={new UDim(0, 5)}
 								SortOrder={Enum.SortOrder.LayoutOrder}
 							/>
 							{strobePresets.map((stp, idx) => {
-								const isCur = stageLighting.strobeSpeed === stp.speed;
+								const isSelected = stageLighting.strobeSpeed === stp.speed;
 								return (
 									<textbutton
-										key={`strobe_${stp.label}`}
+										key={`strobe_${stp.speed}`}
 										LayoutOrder={idx}
 										Size={new UDim2(0.2, -4, 1, 0)}
-										BackgroundColor3={isCur ? Color3.fromHex("#7c3aed") : Color3.fromHex("#1f2937")}
-										BackgroundTransparency={isCur ? 0.2 : 0.6}
+										BackgroundColor3={
+											isSelected ? Color3.fromHex("#ffcc00") : Color3.fromHex("#202020")
+										}
+										BackgroundTransparency={isSelected ? 0 : 0.4}
 										Text={stp.label}
-										TextColor3={Color3.fromHex("#ffffff")}
-										Font={isCur ? Fonts.Bold : Fonts.Regular}
-										TextSize={10}
+										TextColor3={
+											isSelected ? Color3.fromHex("#000000") : Color3.fromHex("#ffffff")
+										}
+										Font={Fonts.Bold}
+										TextSize={9}
+										AutoButtonColor={false}
 										Event={{
 											MouseButton1Click: () => {
 												adminService.setStageLighting({ strobeSpeed: stp.speed });
@@ -699,6 +890,13 @@ export function LightingRemoteComponent({ visible, onClose }: LightingRemoteComp
 										}}
 									>
 										<uicorner CornerRadius={new UDim(0, 8)} />
+										{isSelected && (
+											<uistroke
+												Color={Color3.fromHex("#ffe066")}
+												Thickness={1.2}
+												ApplyStrokeMode={Enum.ApplyStrokeMode.Border}
+											/>
+										)}
 									</textbutton>
 								);
 							})}
@@ -706,163 +904,436 @@ export function LightingRemoteComponent({ visible, onClose }: LightingRemoteComp
 					</>
 				)}
 
-				{/* ───────── TAB 4: STAGE TRIM & AIM ───────── */}
-				{activeTab === "trim" && (
+				{/* ───────── TAB 4: FOG MACHINE ───────── */}
+				{activeTab === "fog" && (
 					<>
 						<textlabel
 							LayoutOrder={1}
 							Size={new UDim2(1, 0, 0, 14)}
 							BackgroundTransparency={1}
-							Text="STAGE TRIM PRESETS"
+							Text="MESIN ASAP PANGGUNG (FOG MACHINE)"
 							TextColor3={Color3.fromHex("#94a3b8")}
 							Font={Fonts.Bold}
 							TextSize={10}
 							TextXAlignment={Enum.TextXAlignment.Left}
 						/>
-						{/* Presets */}
-						<frame LayoutOrder={2} Size={new UDim2(1, 0, 0, 72)} BackgroundTransparency={1}>
-							<uigridlayout
-								CellSize={new UDim2(0.333, -5, 0, 32)}
-								CellPadding={new UDim2(0, 6, 0, 6)}
+
+						{/* On/Off and Burst Buttons */}
+						<frame LayoutOrder={2} Size={new UDim2(1, 0, 0, 36)} BackgroundTransparency={1}>
+							<uilistlayout FillDirection={Enum.FillDirection.Horizontal} Padding={new UDim(0, 8)} />
+							{/* Toggle Fog On/Off */}
+							<textbutton
+								LayoutOrder={1}
+								Size={new UDim2(0.5, -4, 1, 0)}
+								BackgroundColor3={
+									stageLighting.fogEnabled
+										? Color3.fromHex("#0284c7")
+										: Color3.fromHex("#1f2937")
+								}
+								BackgroundTransparency={stageLighting.fogEnabled ? 0.2 : 0.6}
+								Text={stageLighting.fogEnabled ? "FOG: AKTIF" : "FOG: MATI"}
+								TextColor3={Color3.fromHex("#ffffff")}
+								Font={Fonts.Bold}
+								TextSize={11}
+								AutoButtonColor={true}
+								Event={{
+									MouseButton1Click: () => {
+										adminService.setStageLighting({
+											fogEnabled: !stageLighting.fogEnabled,
+										});
+									},
+								}}
+							>
+								<uicorner CornerRadius={new UDim(0, 10)} />
+								<uistroke
+									Color={stageLighting.fogEnabled ? Color3.fromHex("#38bdf8") : Color3.fromRGB(255, 255, 255)}
+									Transparency={stageLighting.fogEnabled ? 0.3 : 0.9}
+									Thickness={1}
+								/>
+							</textbutton>
+
+							{/* Trigger Burst */}
+							<textbutton
+								LayoutOrder={2}
+								Size={new UDim2(0.5, -4, 1, 0)}
+								BackgroundColor3={Color3.fromHex("#7c3aed")}
+								BackgroundTransparency={0.2}
+								Text="BURST ASAP"
+								TextColor3={Color3.fromHex("#ffffff")}
+								Font={Fonts.Bold}
+								TextSize={11}
+								AutoButtonColor={true}
+								Event={{
+									MouseButton1Click: () => {
+										adminService.triggerFogBurst();
+									},
+								}}
+							>
+								<uicorner CornerRadius={new UDim(0, 10)} />
+								<uistroke
+									Color={Color3.fromHex("#a78bfa")}
+									Transparency={0.4}
+									Thickness={1}
+								/>
+							</textbutton>
+						</frame>
+
+						{/* Fog Intensity Label & Value */}
+						<frame LayoutOrder={3} Size={new UDim2(1, 0, 0, 14)} BackgroundTransparency={1}>
+							<uilistlayout FillDirection={Enum.FillDirection.Horizontal} />
+							<textlabel
+								Size={new UDim2(0.7, 0, 1, 0)}
+								BackgroundTransparency={1}
+								Text="INTENSITAS ASAP"
+								TextColor3={Color3.fromHex("#94a3b8")}
+								Font={Fonts.Bold}
+								TextSize={10}
+								TextXAlignment={Enum.TextXAlignment.Left}
+							/>
+							<textlabel
+								Size={new UDim2(0.3, 0, 1, 0)}
+								BackgroundTransparency={1}
+								Text={`${math.floor(currentFogIntensity * 100 + 0.5)}%`}
+								TextColor3={Color3.fromHex("#38bdf8")}
+								Font={Fonts.Bold}
+								TextSize={10}
+								TextXAlignment={Enum.TextXAlignment.Right}
+							/>
+						</frame>
+
+						{/* Slider Track and Thumb */}
+						<frame LayoutOrder={4} Size={new UDim2(1, 0, 0, 28)} BackgroundTransparency={1}>
+							<frame
+								key="RemoteFogTrack"
+								ref={fogTrackRef}
+								AnchorPoint={new Vector2(0, 0.5)}
+								Position={new UDim2(0, 0, 0.5, 0)}
+								Size={new UDim2(1, 0, 0, 8)}
+								BackgroundColor3={Color3.fromHex("#1f2937")}
+							>
+								<uicorner CornerRadius={new UDim(1, 0)} />
+								<frame
+									key="RemoteFogFill"
+									Size={new UDim2(currentFogIntensity, 0, 1, 0)}
+									BackgroundColor3={Color3.fromHex("#0284c7")}
+								>
+									<uicorner CornerRadius={new UDim(1, 0)} />
+								</frame>
+								<frame
+									key="RemoteFogThumb"
+									AnchorPoint={new Vector2(0.5, 0.5)}
+									Position={new UDim2(currentFogIntensity, 0, 0.5, 0)}
+									Size={new UDim2(0, 18, 0, 18)}
+									BackgroundColor3={Color3.fromHex("#ffffff")}
+								>
+									<uicorner CornerRadius={new UDim(1, 0)} />
+									<uistroke Color={Color3.fromHex("#0284c7")} Thickness={2} />
+								</frame>
+							</frame>
+
+							{/* Hitbox Button for Drag & Click */}
+							<textbutton
+								key="RemoteFogHitbox"
+								Position={new UDim2(0, 0, 0, 0)}
+								Size={new UDim2(1, 0, 1, 0)}
+								BackgroundTransparency={1}
+								Text=""
+								AutoButtonColor={false}
+								ZIndex={5}
+								Event={{
+									InputBegan: (_, input) => {
+										if (
+											input.UserInputType === Enum.UserInputType.MouseButton1 ||
+											input.UserInputType === Enum.UserInputType.Touch
+										) {
+											setIsFogDragging(true);
+											updateFogFromInput(input.Position.X, true);
+										}
+									},
+								}}
+							/>
+						</frame>
+					</>
+				)}
+
+				{/* ─── TAB 5: BACKDROP (ANIMATED GIF / SCREEN) ─── */}
+				{activeTab === "backdrop" && (
+					<>
+						{/* Info / Title Header */}
+						<frame LayoutOrder={1} Size={new UDim2(1, 0, 0, 22)} BackgroundTransparency={1}>
+							<uilistlayout
+								FillDirection={Enum.FillDirection.Horizontal}
+								VerticalAlignment={Enum.VerticalAlignment.Center}
 								SortOrder={Enum.SortOrder.LayoutOrder}
 							/>
-							{stageTrimPresets.map((tp, idx) => {
+							<textlabel
+								Size={new UDim2(0.7, 0, 1, 0)}
+								BackgroundTransparency={1}
+								Text="STAGE BACKDROP (ANIMATED GIF)"
+								TextColor3={Color3.fromHex("#94a3b8")}
+								Font={Fonts.Bold}
+								TextSize={10}
+								TextXAlignment={Enum.TextXAlignment.Left}
+							/>
+							<textlabel
+								Size={new UDim2(0.3, 0, 1, 0)}
+								BackgroundTransparency={1}
+								Text="INSTANT SWITCH"
+								TextColor3={Color3.fromHex("#38bdf8")}
+								Font={Fonts.Bold}
+								TextSize={9}
+								TextXAlignment={Enum.TextXAlignment.Right}
+							/>
+						</frame>
+
+						{/* Grid Preset Buttons */}
+						<frame
+							LayoutOrder={2}
+							Size={new UDim2(1, 0, 0, 0)}
+							AutomaticSize={Enum.AutomaticSize.Y}
+							BackgroundTransparency={1}
+						>
+							<uigridlayout
+								CellSize={new UDim2(0.485, 0, 0, 48)}
+								CellPadding={new UDim2(0.03, 0, 0, 6)}
+								SortOrder={Enum.SortOrder.LayoutOrder}
+							/>
+							{BACKDROP_GIF_PRESETS.map((preset, idx) => {
+								const currentPresetId = stageLighting.backdropPreset ?? "gif_cyber_grid";
+								const isSelected = currentPresetId === preset.id;
+								const accent = preset.accentColor ?? Color3.fromHex("#00e5ff");
+
 								return (
 									<textbutton
-										key={`trim_${tp.label}`}
-										LayoutOrder={idx}
-										BackgroundColor3={Color3.fromHex("#1f2937")}
-										BackgroundTransparency={0.5}
-										Text={tp.label}
-										TextColor3={Color3.fromHex("#ffffff")}
-										Font={Fonts.Medium}
-										TextSize={10}
+										key={`backdrop_${preset.id}`}
+										LayoutOrder={idx + 1}
+										BackgroundColor3={isSelected ? Color3.fromHex("#0f172a") : Color3.fromHex("#111827")}
+										BackgroundTransparency={0.25}
+										Text=""
+										AutoButtonColor={false}
 										Event={{
 											MouseButton1Click: () => {
-												adminService.setStageLighting({
-													panAngle: math.rad(tp.panDeg),
-													tiltAngle: math.rad(tp.tiltDeg),
-												});
+												adminService.setStageLighting({ backdropPreset: preset.id });
 											},
 										}}
 									>
 										<uicorner CornerRadius={new UDim(0, 8)} />
+										<uistroke
+											Color={isSelected ? accent : Color3.fromHex("#374151")}
+											Transparency={isSelected ? 0.2 : 0.6}
+											Thickness={isSelected ? 1.5 : 1}
+										/>
+										<uipadding
+											PaddingLeft={new UDim(0, 8)}
+											PaddingRight={new UDim(0, 8)}
+											PaddingTop={new UDim(0, 4)}
+											PaddingBottom={new UDim(0, 4)}
+										/>
+										<uilistlayout
+											FillDirection={Enum.FillDirection.Vertical}
+											VerticalAlignment={Enum.VerticalAlignment.Center}
+											SortOrder={Enum.SortOrder.LayoutOrder}
+										/>
+										<frame Size={new UDim2(1, 0, 0, 16)} BackgroundTransparency={1}>
+											<uilistlayout
+												FillDirection={Enum.FillDirection.Horizontal}
+												VerticalAlignment={Enum.VerticalAlignment.Center}
+												Padding={new UDim(0, 4)}
+											/>
+											<frame
+												Size={new UDim2(0, 8, 0, 8)}
+												BackgroundColor3={isSelected ? accent : Color3.fromHex("#6b7280")}
+												BorderSizePixel={0}
+											>
+												<uicorner CornerRadius={new UDim(1, 0)} />
+											</frame>
+											<textlabel
+												Size={new UDim2(1, -12, 1, 0)}
+												BackgroundTransparency={1}
+												Text={preset.name}
+												TextColor3={isSelected ? Color3.fromHex("#ffffff") : Color3.fromHex("#d1d5db")}
+												Font={Fonts.Bold}
+												TextSize={11}
+												TextXAlignment={Enum.TextXAlignment.Left}
+											/>
+										</frame>
+										<textlabel
+											Size={new UDim2(1, 0, 0, 12)}
+											BackgroundTransparency={1}
+											Text={`${preset.totalFrames} F • ${preset.fps} FPS`}
+											TextColor3={Color3.fromHex("#94a3b8")}
+											Font={Fonts.Regular}
+											TextSize={9}
+											TextXAlignment={Enum.TextXAlignment.Left}
+										/>
 									</textbutton>
 								);
 							})}
+
+							{/* Tombol Blackout / OFF */}
+							{(() => {
+								const currentPresetId = stageLighting.backdropPreset ?? "gif_cyber_grid";
+								const isOff = currentPresetId === "off";
+
+								return (
+									<textbutton
+										key="backdrop_off"
+										LayoutOrder={99}
+										BackgroundColor3={isOff ? Color3.fromHex("#450a0a") : Color3.fromHex("#111827")}
+										BackgroundTransparency={0.25}
+										Text=""
+										AutoButtonColor={false}
+										Event={{
+											MouseButton1Click: () => {
+												adminService.setStageLighting({ backdropPreset: "off" });
+											},
+										}}
+									>
+										<uicorner CornerRadius={new UDim(0, 8)} />
+										<uistroke
+											Color={isOff ? Color3.fromHex("#ef4444") : Color3.fromHex("#374151")}
+											Transparency={isOff ? 0.2 : 0.6}
+											Thickness={isOff ? 1.5 : 1}
+										/>
+										<uipadding
+											PaddingLeft={new UDim(0, 8)}
+											PaddingRight={new UDim(0, 8)}
+											PaddingTop={new UDim(0, 4)}
+											PaddingBottom={new UDim(0, 4)}
+										/>
+										<uilistlayout
+											FillDirection={Enum.FillDirection.Vertical}
+											VerticalAlignment={Enum.VerticalAlignment.Center}
+											SortOrder={Enum.SortOrder.LayoutOrder}
+										/>
+										<frame Size={new UDim2(1, 0, 0, 16)} BackgroundTransparency={1}>
+											<uilistlayout
+												FillDirection={Enum.FillDirection.Horizontal}
+												VerticalAlignment={Enum.VerticalAlignment.Center}
+												Padding={new UDim(0, 4)}
+											/>
+											<frame
+												Size={new UDim2(0, 8, 0, 8)}
+												BackgroundColor3={isOff ? Color3.fromHex("#ef4444") : Color3.fromHex("#6b7280")}
+												BorderSizePixel={0}
+											>
+												<uicorner CornerRadius={new UDim(1, 0)} />
+											</frame>
+											<textlabel
+												Size={new UDim2(1, -12, 1, 0)}
+												BackgroundTransparency={1}
+												Text="Screen Off"
+												TextColor3={isOff ? Color3.fromHex("#ffffff") : Color3.fromHex("#d1d5db")}
+												Font={Fonts.Bold}
+												TextSize={11}
+												TextXAlignment={Enum.TextXAlignment.Left}
+											/>
+										</frame>
+										<textlabel
+											Size={new UDim2(1, 0, 0, 12)}
+											BackgroundTransparency={1}
+											Text="Blackout Display"
+											TextColor3={Color3.fromHex("#94a3b8")}
+											Font={Fonts.Regular}
+											TextSize={9}
+											TextXAlignment={Enum.TextXAlignment.Left}
+										/>
+									</textbutton>
+								);
+							})()}
 						</frame>
 
-						{/* Manual Nudge Direction Pad */}
-						<textlabel
-							LayoutOrder={3}
-							Size={new UDim2(1, 0, 0, 14)}
-							BackgroundTransparency={1}
-							Text={`MANUAL NUDGE (Pan: ${currentPanDeg}° | Tilt: ${currentTiltDeg}°)`}
-							TextColor3={Color3.fromHex("#94a3b8")}
-							Font={Fonts.Bold}
-							TextSize={9}
-							TextXAlignment={Enum.TextXAlignment.Left}
-						/>
-						<frame LayoutOrder={4} Size={new UDim2(1, 0, 0, 64)} BackgroundTransparency={1}>
-							<uilistlayout
-								FillDirection={Enum.FillDirection.Vertical}
-								Padding={new UDim(0, 6)}
-								SortOrder={Enum.SortOrder.LayoutOrder}
-							/>
-							{/* Pan Controls */}
-							<frame LayoutOrder={1} Size={new UDim2(1, 0, 0, 28)} BackgroundTransparency={1}>
-								<uilistlayout
-									FillDirection={Enum.FillDirection.Horizontal}
-									Padding={new UDim(0, 6)}
-									SortOrder={Enum.SortOrder.LayoutOrder}
-								/>
-								<textbutton
-									LayoutOrder={1}
-									Size={new UDim2(0.5, -3, 1, 0)}
-									BackgroundColor3={Color3.fromHex("#374151")}
-									BackgroundTransparency={0.4}
-									Text="◂ Pan Kiri (-5°)"
-									TextColor3={Color3.fromHex("#ffffff")}
-									Font={Fonts.Regular}
-									TextSize={10}
-									Event={{
-										MouseButton1Click: () => {
-											adminService.setStageLighting({
-												panAngle: stageLighting.panAngle - math.rad(5),
-											});
-										},
-									}}
-								>
-									<uicorner CornerRadius={new UDim(0, 8)} />
-								</textbutton>
-								<textbutton
-									LayoutOrder={2}
-									Size={new UDim2(0.5, -3, 1, 0)}
-									BackgroundColor3={Color3.fromHex("#374151")}
-									BackgroundTransparency={0.4}
-									Text="Pan Kanan (+5°) ▸"
-									TextColor3={Color3.fromHex("#ffffff")}
-									Font={Fonts.Regular}
-									TextSize={10}
-									Event={{
-										MouseButton1Click: () => {
-											adminService.setStageLighting({
-												panAngle: stageLighting.panAngle + math.rad(5),
-											});
-										},
-									}}
-								>
-									<uicorner CornerRadius={new UDim(0, 8)} />
-								</textbutton>
-							</frame>
+						{/* Brightness Section Header */}
+						{(() => {
+							const currentBrightness = stageLighting.backdropBrightness ?? 2.0;
+							const currentPercent =
+								backdropBrightnessPercentVal !== undefined
+									? backdropBrightnessPercentVal
+									: math.clamp(math.floor((currentBrightness / 4.0) * 100 + 0.5), 0, 100);
 
-							{/* Tilt Controls */}
-							<frame LayoutOrder={2} Size={new UDim2(1, 0, 0, 28)} BackgroundTransparency={1}>
-								<uilistlayout
-									FillDirection={Enum.FillDirection.Horizontal}
-									Padding={new UDim(0, 6)}
-									SortOrder={Enum.SortOrder.LayoutOrder}
-								/>
-								<textbutton
-									LayoutOrder={1}
-									Size={new UDim2(0.5, -3, 1, 0)}
-									BackgroundColor3={Color3.fromHex("#374151")}
-									BackgroundTransparency={0.4}
-									Text="▴ Tilt Atas (-3°)"
-									TextColor3={Color3.fromHex("#ffffff")}
-									Font={Fonts.Regular}
-									TextSize={10}
-									Event={{
-										MouseButton1Click: () => {
-											adminService.setStageLighting({
-												tiltAngle: stageLighting.tiltAngle - math.rad(3),
-											});
-										},
-									}}
-								>
-									<uicorner CornerRadius={new UDim(0, 8)} />
-								</textbutton>
-								<textbutton
-									LayoutOrder={2}
-									Size={new UDim2(0.5, -3, 1, 0)}
-									BackgroundColor3={Color3.fromHex("#374151")}
-									BackgroundTransparency={0.4}
-									Text="▾ Tilt Bawah (+3°)"
-									TextColor3={Color3.fromHex("#ffffff")}
-									Font={Fonts.Regular}
-									TextSize={10}
-									Event={{
-										MouseButton1Click: () => {
-											adminService.setStageLighting({
-												tiltAngle: stageLighting.tiltAngle + math.rad(3),
-											});
-										},
-									}}
-								>
-									<uicorner CornerRadius={new UDim(0, 8)} />
-								</textbutton>
-							</frame>
-						</frame>
+							return (
+								<>
+									<frame LayoutOrder={3} Size={new UDim2(1, 0, 0, 22)} BackgroundTransparency={1}>
+										<uilistlayout
+											FillDirection={Enum.FillDirection.Horizontal}
+											VerticalAlignment={Enum.VerticalAlignment.Center}
+											SortOrder={Enum.SortOrder.LayoutOrder}
+										/>
+										<textlabel
+											Size={new UDim2(0.7, 0, 1, 0)}
+											BackgroundTransparency={1}
+											Text="KECERAHAN EMISI LED BACKDROP"
+											TextColor3={Color3.fromHex("#94a3b8")}
+											Font={Fonts.Bold}
+											TextSize={10}
+											TextXAlignment={Enum.TextXAlignment.Left}
+										/>
+										<textlabel
+											Size={new UDim2(0.3, 0, 1, 0)}
+											BackgroundTransparency={1}
+											Text={`${currentPercent}%`}
+											TextColor3={Color3.fromHex("#38bdf8")}
+											Font={Fonts.Bold}
+											TextSize={10}
+											TextXAlignment={Enum.TextXAlignment.Right}
+										/>
+									</frame>
+
+									{/* Backdrop Brightness Slider Track and Thumb */}
+									<frame LayoutOrder={4} Size={new UDim2(1, 0, 0, 28)} BackgroundTransparency={1}>
+										<frame
+											key="RemoteBackdropBrightnessTrack"
+											ref={backdropBrightnessTrackRef}
+											AnchorPoint={new Vector2(0, 0.5)}
+											Position={new UDim2(0, 0, 0.5, 0)}
+											Size={new UDim2(1, 0, 0, 8)}
+											BackgroundColor3={Color3.fromHex("#1f2937")}
+										>
+											<uicorner CornerRadius={new UDim(1, 0)} />
+											<frame
+												key="RemoteBackdropBrightnessFill"
+												Size={new UDim2(currentPercent / 100, 0, 1, 0)}
+												BackgroundColor3={Color3.fromHex("#0284c7")}
+											>
+												<uicorner CornerRadius={new UDim(1, 0)} />
+											</frame>
+											<frame
+												key="RemoteBackdropBrightnessThumb"
+												AnchorPoint={new Vector2(0.5, 0.5)}
+												Position={new UDim2(currentPercent / 100, 0, 0.5, 0)}
+												Size={new UDim2(0, 18, 0, 18)}
+												BackgroundColor3={Color3.fromHex("#ffffff")}
+											>
+												<uicorner CornerRadius={new UDim(1, 0)} />
+												<uistroke Color={Color3.fromHex("#0284c7")} Thickness={2} />
+											</frame>
+										</frame>
+
+										{/* Hitbox Button for Drag & Click */}
+										<textbutton
+											key="RemoteBackdropBrightnessHitbox"
+											Position={new UDim2(0, 0, 0, 0)}
+											Size={new UDim2(1, 0, 1, 0)}
+											BackgroundTransparency={1}
+											Text=""
+											AutoButtonColor={false}
+											ZIndex={5}
+											Event={{
+												InputBegan: (_, input) => {
+													if (
+														input.UserInputType === Enum.UserInputType.MouseButton1 ||
+														input.UserInputType === Enum.UserInputType.Touch
+													) {
+														setIsBackdropBrightnessDragging(true);
+														updateBackdropBrightnessFromInput(input.Position.X, true);
+													}
+												},
+											}}
+										/>
+									</frame>
+								</>
+							);
+						})()}
 					</>
 				)}
 			</scrollingframe>
