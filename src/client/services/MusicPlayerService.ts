@@ -34,6 +34,7 @@ export class MusicPlayerService {
 	private queue: MusicQueueItem[] = [];
 	private sound: Sound;
 	private pitchEffect: PitchShiftSoundEffect;
+	private equalizerEffect: EqualizerSoundEffect;
 	private heartbeatConn?: RBXScriptConnection;
 
 	private isUserAdmin = false;
@@ -76,6 +77,15 @@ export class MusicPlayerService {
 		this.pitchEffect.Octave = 1.0;
 		this.pitchEffect.Enabled = false;
 		this.pitchEffect.Parent = this.sound;
+
+		// Equalizer effect to restore bass lost by PitchShiftSoundEffect phase cancellation
+		this.equalizerEffect = new Instance("EqualizerSoundEffect");
+		this.equalizerEffect.Name = "BypassBassCorrection";
+		this.equalizerEffect.LowGain = 0;
+		this.equalizerEffect.MidGain = 0;
+		this.equalizerEffect.HighGain = 0;
+		this.equalizerEffect.Enabled = false;
+		this.equalizerEffect.Parent = this.sound;
 
 		this.applyTrackPitch(this.currentTrack);
 
@@ -123,7 +133,8 @@ export class MusicPlayerService {
 			return this.lastServerTimePosition;
 		}
 		const elapsed = math.max(0, Workspace.GetServerTimeNow() - this.lastServerTimestamp);
-		return this.lastServerTimePosition + elapsed;
+		const speed = this.sound.PlaybackSpeed > 0 ? this.sound.PlaybackSpeed : 1.0;
+		return this.lastServerTimePosition + elapsed * speed;
 	}
 
 	private applyServerSync(payload: GlobalMusicSyncData): void {
@@ -149,9 +160,9 @@ export class MusicPlayerService {
 				this.sound.SoundId = payload.currentTrack.soundId;
 			}
 
-			// Only set TimePosition if sound is already loaded
+			// Only set TimePosition if sound is already loaded and drift exceeds tolerance
 			if (this.sound.IsLoaded && this.sound.TimeLength > 0) {
-				if (math.abs(this.sound.TimePosition - expectedPosition) > 0.8) {
+				if (math.abs(this.sound.TimePosition - expectedPosition) > 2.0) {
 					this.sound.TimePosition = math.clamp(expectedPosition, 0, this.sound.TimeLength);
 				}
 			}
@@ -171,17 +182,60 @@ export class MusicPlayerService {
 	}
 
 	/**
-	 * Normalizes pitch for tracks that were pitch-shifted in Audacity to bypass copyright filters.
-	 * Formula: Octave = 2 ^ (-semitones / 12)
+	 * Normalizes pitch for tracks that were pitch-shifted in Audacity to bypass copyright filters,
+	 * or adjusts playback speed for pure resampling bypass (with optional Equalizer compensation).
 	 */
 	private applyTrackPitch(track?: TrackData): void {
-		const semitones = track?.pitch ?? 0;
-		if (semitones !== 0) {
+		if (!track) {
+			this.sound.PlaybackSpeed = 1.0;
+			this.pitchEffect.Octave = 1.0;
+			this.pitchEffect.Enabled = false;
+			this.equalizerEffect.LowGain = 0;
+			this.equalizerEffect.HighGain = 0;
+			this.equalizerEffect.Enabled = false;
+			return;
+		}
+
+		const semitones = track.pitch ?? 0;
+		const mode = track.pitchCorrectionMode ?? "pitchShift";
+
+		// 1. Configure PlaybackSpeed (resampling / tempo correction)
+		if (track.playbackSpeed !== undefined) {
+			this.sound.PlaybackSpeed = track.playbackSpeed;
+		} else if (track.speed !== undefined && track.speed !== 1) {
+			this.sound.PlaybackSpeed = 1 / track.speed;
+		} else if (semitones !== 0 && mode === "playbackSpeed") {
+			// Pure resampling mode using semitones
+			this.sound.PlaybackSpeed = math.pow(2, -semitones / 12);
+		} else {
+			this.sound.PlaybackSpeed = 1.0;
+		}
+
+		// 2. Configure PitchShiftSoundEffect (if pitch semitones are set and not using pure playbackSpeed mode)
+		if (semitones !== 0 && mode !== "playbackSpeed") {
 			this.pitchEffect.Octave = math.clamp(math.pow(2, -semitones / 12), 0.5, 2.0);
 			this.pitchEffect.Enabled = true;
 		} else {
 			this.pitchEffect.Octave = 1.0;
 			this.pitchEffect.Enabled = false;
+		}
+
+		// Apply equalizer compensation if explicitly configured or gentle default if pitchShift is active
+		const isPitchShiftActive = this.pitchEffect.Enabled;
+		const defaultBassBoost = isPitchShiftActive ? 1 : 0;
+		const defaultTrebleBoost = isPitchShiftActive ? 2 : 0;
+
+		const bassBoost = track.bassBoost ?? defaultBassBoost;
+		const trebleBoost = track.trebleBoost ?? defaultTrebleBoost;
+
+		if (bassBoost !== 0 || trebleBoost !== 0) {
+			this.equalizerEffect.LowGain = bassBoost;
+			this.equalizerEffect.HighGain = trebleBoost;
+			this.equalizerEffect.Enabled = true;
+		} else {
+			this.equalizerEffect.LowGain = 0;
+			this.equalizerEffect.HighGain = 0;
+			this.equalizerEffect.Enabled = false;
 		}
 	}
 
@@ -190,7 +244,7 @@ export class MusicPlayerService {
 			if (this.state === MusicPlayerState.Playing) {
 				if (this.sound.IsLoaded && this.sound.TimeLength > 0) {
 					const expected = this.getEstimatedServerPosition();
-					if (math.abs(this.sound.TimePosition - expected) > 1.0) {
+					if (math.abs(this.sound.TimePosition - expected) > 2.0) {
 						this.sound.TimePosition = math.clamp(expected, 0, this.sound.TimeLength);
 					}
 					if (!this.sound.IsPlaying) {
@@ -226,7 +280,9 @@ export class MusicPlayerService {
 
 	// ─── Song Queueing (Available to all Players) ──────────────────────────────
 
-	public async requestQueueSong(track: TrackData | { soundId: string; title?: string; artist?: string }): Promise<QueueSongResult> {
+	public async requestQueueSong(
+		track: TrackData | { soundId: string; title?: string; artist?: string },
+	): Promise<QueueSongResult> {
 		try {
 			const result = this.queueFunction.InvokeServer(track) as QueueSongResult;
 			return result ?? { success: false, message: "No response from server" };
@@ -351,4 +407,3 @@ export class MusicPlayerService {
 		MusicPlayerService.instance = undefined;
 	}
 }
-

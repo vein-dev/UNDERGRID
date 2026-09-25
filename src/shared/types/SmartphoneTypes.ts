@@ -19,6 +19,32 @@ export interface TrackData {
 	 * Client akan otomatis menurunkannya kembali (pitch shift) agar musik terdengar normal.
 	 */
 	pitch?: number;
+	/**
+	 * Penguatan frekuensi bass (dalam dB, misal: 5 atau 6 untuk +5 dB / +6 dB via EqualizerSoundEffect).
+	 * Berguna untuk mengompensasi hilangnya frekuensi rendah akibat pemrosesan PitchShiftSoundEffect.
+	 */
+	bassBoost?: number;
+	/**
+	 * Penguatan frekuensi treble / nada tinggi (dalam dB, misal: 2 untuk +2 dB via EqualizerSoundEffect).
+	 * Berguna untuk mengembalikan kerenyahan simbal, petikan gitar, dan vokal agar tidak terdengar mendem.
+	 */
+	trebleBoost?: number;
+	/**
+	 * Mode koreksi pitch:
+	 * - "pitchShift": Menggunakan PitchShiftSoundEffect (tempo konstan, bass dikompensasi via Equalizer)
+	 * - "playbackSpeed": Mengubah PlaybackSpeed (suara 100% bersih tanpa DSP grains, tempo sedikit berubah)
+	 * Default: "pitchShift".
+	 */
+	pitchCorrectionMode?: "pitchShift" | "playbackSpeed";
+	/**
+	 * Pengali kecepatan putar saat lagu di-upload untuk bypass (misal: 1.12 untuk dipercepat 1.12x).
+	 * Client akan otomatis memutar pada PlaybackSpeed = 1 / speed agar tempo & nada kembali normal secara murni.
+	 */
+	speed?: number;
+	/**
+	 * Nilai langsung Sound.PlaybackSpeed (misal: 0.89). Alternatif langsung dari prop speed.
+	 */
+	playbackSpeed?: number;
 	/** Beats per minute untuk sinkronisasi panggung konser & lighting (default 128 jika tidak disetel). */
 	bpm?: number;
 	/** Offset waktu (dalam detik) sampai ketukan pertama/downbeat lagu terdengar (default 0). */
@@ -187,14 +213,73 @@ export const DEFAULT_SMARTPHONE_CONFIG: SmartphoneConfig = {
 			title: "Embrace",
 			artist: "Miika",
 			soundId: "rbxassetid://138786500301466",
-			coverColor: Color3.fromHex("#a1b91d"),
+			coverColor: Color3.fromHex("#b91d32"),
 		},
 		{
 			id: "track_3",
 			title: "Numb, But I Still Feel It",
 			artist: "Title Fight",
 			soundId: "rbxassetid://124673215456249",
-			coverColor: Color3.fromHex("#1db954"),
+			coverColor: Color3.fromHex("#36d8d0"),
+		},
+		{
+			id: "track_4",
+			title: "When will this all end",
+			artist: "Conversation Without Talk",
+			soundId: "rbxassetid://122394268784187",
+			coverColor: Color3.fromHex("#b92097"),
+		},
+		{
+			id: "track_5",
+			title: "Hurt",
+			artist: "Remoire",
+			soundId: "rbxassetid://85625315784654",
+			speed: 1.12,
+			coverColor: Color3.fromHex("#98b920"),
+		},
+		{
+			id: "track_6",
+			title: "Ripple Water Shine",
+			artist: "Pianos Become The Teeth",
+			soundId: "rbxassetid://117842599729476",
+			coverColor: Color3.fromHex("#b92020"),
+			speed: 1.12,
+		},
+		{
+			id: "track_7",
+			title: "Sway",
+			artist: "COLORCODE",
+			soundId: "rbxassetid://110863294382852",
+			coverColor: Color3.fromHex("#37aad8"),
+			speed: 1.12,
+		},
+		{
+			id: "track_8",
+			title: "Melukis Memar Di Langit Ibu",
+			artist: "Rekah",
+			soundId: "rbxassetid://83086395627870",
+			coverColor: Color3.fromHex("#ce1720"),
+		},
+		{
+			id: "track_9",
+			title: "Daun dan Ranting Menuju Surga",
+			artist: "Themilo",
+			soundId: "rbxassetid://125039838178138",
+			coverColor: Color3.fromHex("#f750cd"),
+		},
+		{
+			id: "track_10",
+			title: "Penghujung Cerita",
+			artist: "Murphy Radio",
+			soundId: "rbxassetid://96255078258346",
+			coverColor: Color3.fromHex("#70ce17"),
+		},
+		{
+			id: "track_10",
+			title: "Irine",
+			artist: "HUSH",
+			soundId: "rbxassetid://101005199328200",
+			coverColor: Color3.fromHex("#eb9007"),
 		},
 	],
 };
