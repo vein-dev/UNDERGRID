@@ -71,6 +71,12 @@ export class StageCameraController {
 				this.camera = Workspace.CurrentCamera;
 			}
 		});
+
+		this.localPlayer.CharacterAdded.Connect(() => {
+			if (this.state.mode === "default") {
+				task.defer(() => this.restoreCamera());
+			}
+		});
 	}
 
 	public static getInstance(): StageCameraController {
@@ -138,20 +144,17 @@ export class StageCameraController {
 			this.startRenderLoop();
 			this.notifyState();
 		} else if (!payload.enabled || payload.mode === "default") {
-			if (this.state.mode !== "default" || this.state.shake !== "none") {
-				this.state.mode = "default";
-				this.state.shake = "none";
-				this.state.targetUserId = undefined;
-				this.state.targetName = undefined;
-				this.state.fov = 70;
-				this.state.faceDistance = 4.0;
-				this.state.orbitSpeed = 0.5;
-				this.state.fixedCamIndex = 1;
+			const wasBroadcasting = this.state.mode !== "default" || this.renderConnection !== undefined;
 
+			this.state.mode = "default";
+			this.state.shake = "none";
+
+			if (wasBroadcasting) {
 				this.stopRenderLoop();
 				this.restoreCamera();
-				this.notifyState();
 			}
+
+			this.notifyState();
 		}
 	}
 
@@ -162,8 +165,11 @@ export class StageCameraController {
 		if (!this.state.broadcastEnabled) return;
 
 		const isBroadcasting = this.state.mode !== "default" || this.state.shake !== "none";
+		// Jangan kirim siaran jika kamera panggung belum aktif (mode default)
+		if (!isBroadcasting) return;
+
 		AdminService.getInstance().setStageCameraControl({
-			enabled: isBroadcasting,
+			enabled: true,
 			mode: this.state.mode,
 			shake: this.state.shake,
 			targetUserId: this.state.targetUserId,
@@ -180,6 +186,15 @@ export class StageCameraController {
 		this.notifyState();
 		if (enabled) {
 			this.syncBroadcast();
+		} else {
+			// Beritahu server untuk menghentikan siaran ke seluruh player biasa
+			AdminService.getInstance().setStageCameraControl({
+				enabled: false,
+				mode: "default",
+				shake: "none",
+				targetUserId: undefined,
+				targetName: undefined,
+			});
 		}
 	}
 
@@ -207,11 +222,27 @@ export class StageCameraController {
 	public setMode(mode: StageCameraMode): void {
 		if (this.state.mode === mode) return;
 
+		const wasBroadcasting = this.state.mode !== "default" || this.state.shake !== "none";
 		this.state.mode = mode;
 
 		if (mode === "default") {
+			this.state.shake = "none";
 			this.stopRenderLoop();
 			this.restoreCamera();
+			this.notifyState();
+
+			// Jika sebelumnya sedang menyiarkan, beritahu server untuk stop siaran ke semua penonton
+			if (wasBroadcasting && this.state.broadcastEnabled) {
+				AdminService.getInstance().setStageCameraControl({
+					enabled: false,
+					mode: "default",
+					shake: "none",
+					targetUserId: this.state.targetUserId,
+					targetName: this.state.targetName,
+					fov: this.state.fov,
+					faceDistance: this.state.faceDistance,
+				});
+			}
 		} else {
 			// If no target is set, default to LocalPlayer
 			if (this.state.targetUserId === undefined) {
@@ -219,10 +250,9 @@ export class StageCameraController {
 				this.state.targetName = this.localPlayer.DisplayName || this.localPlayer.Name;
 			}
 			this.startRenderLoop();
+			this.notifyState();
+			this.syncBroadcast();
 		}
-
-		this.notifyState();
-		this.syncBroadcast();
 	}
 
 	public setShake(shake: StageCameraShake): void {
@@ -285,22 +315,20 @@ export class StageCameraController {
 		this.restoreCamera();
 		this.notifyState();
 
-		if (this.state.broadcastEnabled) {
-			AdminService.getInstance().setStageCameraControl({
-				enabled: false,
-				mode: "default",
-				shake: "none",
-				targetUserId: undefined,
-				targetName: undefined,
-				faceDistance: 4.0,
-				fov: 70,
-				orbitSpeed: 0.5,
-			});
-		}
+		// Selalu sinkronkan penghentian ke server agar seluruh player biasa kembali normal
+		AdminService.getInstance().setStageCameraControl({
+			enabled: false,
+			mode: "default",
+			shake: "none",
+			targetUserId: undefined,
+			targetName: undefined,
+			faceDistance: 4.0,
+			fov: 70,
+			orbitSpeed: 0.5,
+		});
 	}
 
 	private setControlsSuppressed(suppressed: boolean): void {
-		if (this.isControlsSuppressed === suppressed) return;
 		this.isControlsSuppressed = suppressed;
 
 		// 1. Hotbar (StandardHotbarGui)
@@ -355,19 +383,54 @@ export class StageCameraController {
 
 	private restoreCamera(): void {
 		this.setControlsSuppressed(false);
+		if (!this.camera) {
+			this.camera = Workspace.CurrentCamera ?? (Workspace.WaitForChild("Camera") as Camera);
+		}
 		if (!this.camera) return;
 
-		this.camera.CameraType = Enum.CameraType.Custom;
 		this.camera.FieldOfView = 70;
 
 		const char = this.localPlayer.Character;
-		if (char) {
-			const hum = char.FindFirstChildOfClass("Humanoid");
-			if (hum) {
-				this.camera.CameraSubject = hum;
-				this.camera.Focus = hum.RootPart ? hum.RootPart.CFrame : char.GetPivot();
-			}
+		const hum = char?.FindFirstChildOfClass("Humanoid");
+		const rootPart = (char?.FindFirstChild("HumanoidRootPart") ?? char?.PrimaryPart) as BasePart | undefined;
+
+		// 1. Set CameraSubject DAHULU ke Humanoid pemain lokal sebelum beralih ke CameraType Custom
+		if (hum) {
+			this.camera.CameraSubject = hum;
 		}
+
+		// 2. Reposisi CFrame dan Focus tepat di belakang karakter pemain lokal
+		// agar tidak tertinggal di panggung admin atau terjebak oklusi PopperCam
+		if (rootPart) {
+			const rootCF = rootPart.CFrame;
+			const lookDir = rootCF.LookVector;
+			const focusPos = rootPart.Position.add(new Vector3(0, 1.5, 0));
+			const defaultCamPos = focusPos.sub(lookDir.mul(12)).add(new Vector3(0, 2.5, 0));
+
+			this.camera.Focus = new CFrame(focusPos);
+			this.camera.CFrame = new CFrame(defaultCamPos, focusPos);
+		} else if (char) {
+			const pivot = char.GetPivot();
+			this.camera.Focus = pivot;
+			this.camera.CFrame = pivot.add(new Vector3(0, 3, 12));
+		}
+
+		// 3. Kembalikan CameraType ke Custom bawaan Roblox
+		this.camera.CameraType = Enum.CameraType.Custom;
+
+		// 4. Pastikan di frame berikutnya (defer) CameraSubject & CameraType tetap stabil di player lokal
+		task.defer(() => {
+			if (this.state.mode === "default" && this.camera) {
+				const activeChar = this.localPlayer.Character;
+				const activeHum = activeChar?.FindFirstChildOfClass("Humanoid");
+				if (activeHum && this.camera.CameraSubject !== activeHum) {
+					this.camera.CameraSubject = activeHum;
+				}
+				if (this.camera.CameraType !== Enum.CameraType.Custom) {
+					this.camera.CameraType = Enum.CameraType.Custom;
+				}
+			}
+		});
 	}
 
 	private getTargetCharacter(): { character?: Model; head?: BasePart; rootPart?: BasePart } {

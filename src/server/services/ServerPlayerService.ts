@@ -1,4 +1,5 @@
 import { Players } from "@rbxts/services";
+import { GameConfig } from "shared/config/GameConfig";
 import { PlayerData, PlayerRole } from "shared/types";
 import { getRemoteFunction, getRemoteEvent } from "shared/network/Remotes";
 
@@ -69,6 +70,10 @@ export class ServerPlayerService {
 		};
 
 		this.playerData.set(player, data);
+
+		// Batasi jarak zoom kamera agar pemain tidak dapat zoom out terlalu jauh melihat kekosongan luar map
+		player.CameraMinZoomDistance = GameConfig.CAMERA.MIN_ZOOM_DISTANCE;
+		player.CameraMaxZoomDistance = GameConfig.CAMERA.MAX_ZOOM_DISTANCE;
 
 		// WAJIB: Pastikan Server selalu meng-instansiasi Animator resmi di dalam Humanoid agar replikasi animasi client aktif ke seluruh pemain
 		const setupCharacter = (char: Model) => {

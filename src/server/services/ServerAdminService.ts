@@ -259,10 +259,18 @@ export class ServerAdminService {
 
 			case "SetStageCameraControl": {
 				if (typeIs(data, "table")) {
+					const incoming = data as Partial<StageCameraControlPayload>;
 					this.stageCameraControlState = {
 						...this.stageCameraControlState,
-						...(data as Partial<StageCameraControlPayload>),
+						...incoming,
 					};
+					if (incoming.enabled === false) {
+						this.stageCameraControlState.enabled = false;
+						if (incoming.mode === "default") {
+							this.stageCameraControlState.mode = "default";
+							this.stageCameraControlState.shake = "none";
+						}
+					}
 					this.broadcastStateUpdate();
 				}
 				break;

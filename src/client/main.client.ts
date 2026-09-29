@@ -1,4 +1,5 @@
-import { StarterGui } from "@rbxts/services";
+import { Players, StarterGui } from "@rbxts/services";
+import { GameConfig } from "shared/config/GameConfig";
 import {
 	BackpackController,
 	CombatController,
@@ -40,6 +41,11 @@ import { StageCameraOverlayView } from "./ui/views/StageCameraOverlayView";
 function main() {
 	// Lock experience orientation to fixed LandscapeRight and disable sensor detection
 	StarterGui.ScreenOrientation = Enum.ScreenOrientation.LandscapeRight;
+
+	// Batasi jarak zoom kamera agar pemain tidak dapat zoom out terlalu jauh melihat kekosongan luar map
+	const localPlayer = Players.LocalPlayer;
+	localPlayer.CameraMinZoomDistance = GameConfig.CAMERA.MIN_ZOOM_DISTANCE;
+	localPlayer.CameraMaxZoomDistance = GameConfig.CAMERA.MAX_ZOOM_DISTANCE;
 
 	print("[Client] Starting client controllers...");
 

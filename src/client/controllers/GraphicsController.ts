@@ -56,35 +56,80 @@ export class GraphicsController {
 		pcall(() => {
 			Lighting.GlobalShadows = true;
 
-			// Jangan nonaktifkan Blur utama Lighting atau blur UI (Backpack, Announcement)
+			// Nonaktifkan flat Blur 2D yang memburamkan seluruh layar, sisakan hanya blur khusus UI saat aktif
 			for (const child of Lighting.GetChildren()) {
 				if (
 					child.IsA("BlurEffect") &&
 					child.Name !== "BackpackBlur" &&
-					child.Name !== "AnnouncementBlur" &&
-					child.Name !== "Blur"
+					child.Name !== "AnnouncementBlur"
 				) {
 					child.Enabled = false;
 					child.Size = 0;
 				}
 			}
 
-			// Kalibrasi DepthOfField agar tidak memburamkan objek/karakter dekat kamera
-			const dof = Lighting.FindFirstChildOfClass("DepthOfFieldEffect");
-			if (dof) {
-				dof.NearIntensity = 0; // Hilangkan blur di sekitar karakter pemain
-				dof.FarIntensity = 0.2;
-				dof.FocusDistance = 40;
-				dof.InFocusRadius = 60;
-				dof.Enabled = false; // Nonaktifkan secara default untuk visual jernih & tajam (HD)
+			// 1. Realistic AAA Optical Bloom (Pendaran lensa lembut pada lampu/neon tanpa mencuci warna putih)
+			let bloom = Lighting.FindFirstChildOfClass("BloomEffect");
+			if (!bloom) {
+				bloom = new Instance("BloomEffect");
+				bloom.Name = "Bloom";
+				bloom.Parent = Lighting;
 			}
+			bloom.Intensity = 0.65;
+			bloom.Size = 36;
+			bloom.Threshold = 1.70;
+			bloom.Enabled = true;
 
-			// Kalibrasi ColorCorrection jika ada
-			const cc = Lighting.FindFirstChildOfClass("ColorCorrectionEffect");
-			if (cc) {
-				// Pastikan kontras dan saturasi seimbang
-				if (cc.Contrast < 0) cc.Contrast = 0;
+			// 2. Realistic AAA DepthOfField (Focal Blur Lensa Sinematik 35mm)
+			let dof = Lighting.FindFirstChildOfClass("DepthOfFieldEffect");
+			if (!dof) {
+				dof = new Instance("DepthOfFieldEffect");
+				dof.Name = "DepthOfField";
+				dof.Parent = Lighting;
 			}
+			dof.NearIntensity = 0; // Karakter & gameplay 100% tajam dan jernih
+			dof.FocusDistance = 35;
+			dof.InFocusRadius = 25;
+			dof.FarIntensity = 0.48; // Blur latar belakang kejauhan lebih terasa (cinematic bokeh)
+			dof.Enabled = true;
+
+			// 3. Cinematic Soft God Rays (SunRays halus merata tanpa artefak garis kasar)
+			let sunRays = Lighting.FindFirstChildOfClass("SunRaysEffect");
+			if (!sunRays) {
+				sunRays = new Instance("SunRaysEffect");
+				sunRays.Name = "SunRays";
+				sunRays.Parent = Lighting;
+			}
+			sunRays.Intensity = 0.22; // Berkas sinar lembut, tidak menyilaukan atau bergerigi tajam
+			sunRays.Spread = 0.65; // Sebaran terpusat natural menghindari radial banding engine
+			sunRays.Enabled = true;
+
+			// 4. Moody Urban Atmosphere (Haze kabut halus & pembiasan cahaya sinematik)
+			let atmosphere = Lighting.FindFirstChildOfClass("Atmosphere");
+			if (!atmosphere) {
+				atmosphere = new Instance("Atmosphere");
+				atmosphere.Name = "Atmosphere";
+				atmosphere.Parent = Lighting;
+			}
+			atmosphere.Density = 0.34;
+			atmosphere.Offset = 0.15;
+			atmosphere.Haze = 0.85; // Kabut atmosferik halus merata tanpa bercak kasar
+			atmosphere.Glare = 0.18; // Pendaran lembut tanpa cincin silau berlebih
+			atmosphere.Color = new Color3(195 / 255, 170 / 255, 145 / 255);
+			atmosphere.Decay = new Color3(75 / 255, 50 / 255, 25 / 255);
+
+			// 5. Cinematic Moody Color Grading (Kontras pekat, saturasi pas, nuansa urban elegan)
+			let cc = Lighting.FindFirstChildOfClass("ColorCorrectionEffect");
+			if (!cc) {
+				cc = new Instance("ColorCorrectionEffect");
+				cc.Name = "ColorCorrection";
+				cc.Parent = Lighting;
+			}
+			cc.Brightness = 0.01;
+			cc.Contrast = 0.22;
+			cc.Saturation = 0.04;
+			cc.TintColor = new Color3(250 / 255, 246 / 255, 252 / 255);
+			cc.Enabled = true;
 		});
 	}
 

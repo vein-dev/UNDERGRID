@@ -16,14 +16,14 @@ export const TimeConfig = {
 
 	/** Konfigurasi otomatisasi lampu jalan & lampu map */
 	STREETLIGHTS: {
-		/** Jam saat lampu jalan mulai menyala */
-		TURN_ON_HOUR: 18.0,
-		/** Jam saat lampu jalan mulai padam */
+		/** Jam saat lampu jalan mulai menyala (17.75 = 17:45 sore saat petang tiba) */
+		TURN_ON_HOUR: 17.75,
+		/** Jam saat lampu jalan mulai padam (6.0 = 06:00 pagi saat fajar tiba) */
 		TURN_OFF_HOUR: 6.0,
 		/** Tag CollectionService untuk lampu otomatis */
 		COLLECTION_TAG: "AutoNightLight",
 		/** Kata kunci nama model/part lampu di workspace */
-		NAME_PATTERNS: ["streetlight", "streetlamp", "thelight", "lamp"],
+		NAME_PATTERNS: ["streetlight", "streetlamp", "thelight", "lamp", "walllamp"],
 	},
 
 	/**

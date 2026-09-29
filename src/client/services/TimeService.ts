@@ -2,9 +2,15 @@ import { CollectionService, Lighting, ReplicatedStorage, RunService, Workspace }
 import { TimeConfig } from "shared/config";
 import { LightingProfile, TimePeriod } from "shared/types";
 
+interface EmissivePartData {
+	part: BasePart;
+	originalColor: Color3;
+	originalMaterial: Enum.Material;
+}
+
 interface LampFixture {
-	light: Light;
-	part?: BasePart;
+	light?: Light;
+	emissiveParts: EmissivePartData[];
 }
 
 /**
@@ -57,7 +63,15 @@ export class TimeService {
 		// Pantau jika ada objek lampu baru ditambahkan ke map secara dinamis
 		Workspace.DescendantAdded.Connect((descendant) => {
 			if (descendant.IsA("Light")) {
-				this.registerLightFixture(descendant);
+				this.registerLightInstance(descendant);
+			} else if (descendant.IsA("Model")) {
+				const modelName = descendant.Name.lower();
+				for (const pattern of TimeConfig.STREETLIGHTS.NAME_PATTERNS) {
+					if (modelName.find(pattern)[0] !== undefined) {
+						this.registerModelFixture(descendant);
+						break;
+					}
+				}
 			}
 		});
 
@@ -175,23 +189,53 @@ export class TimeService {
 	 */
 	private scanMapLights(): void {
 		this.cachedFixtures = [];
+		const scannedModels = new Set<Instance>();
 
-		// 1. Lampu bertag CollectionService
-		for (const instance of CollectionService.GetTagged(TimeConfig.STREETLIGHTS.COLLECTION_TAG)) {
-			if (instance.IsA("Light")) {
-				this.registerLightFixture(instance);
-			} else if (instance.IsA("BasePart")) {
-				const childLight = instance.FindFirstChildOfClass("Light");
-				if (childLight) {
-					this.registerLightFixture(childLight, instance);
+		// 1. Pindai model lampu jalan berdasarkan nama pola (misal StreetLamp, lamp, wallLamp)
+		for (const desc of Workspace.GetDescendants()) {
+			if (desc.IsA("Model")) {
+				const modelName = desc.Name.lower();
+				let matchesPattern = false;
+				for (const pattern of TimeConfig.STREETLIGHTS.NAME_PATTERNS) {
+					if (modelName.find(pattern)[0] !== undefined) {
+						matchesPattern = true;
+						break;
+					}
+				}
+				if (matchesPattern || CollectionService.HasTag(desc, TimeConfig.STREETLIGHTS.COLLECTION_TAG)) {
+					this.registerModelFixture(desc);
+					scannedModels.add(desc);
 				}
 			}
 		}
 
-		// 2. Lampu dengan nama pola yang cocok di Workspace
+		// 2. Lampu bertag CollectionService yang berada di luar model di atas
+		for (const instance of CollectionService.GetTagged(TimeConfig.STREETLIGHTS.COLLECTION_TAG)) {
+			const ancestorModel = instance.FindFirstAncestorOfClass("Model");
+			if (ancestorModel && scannedModels.has(ancestorModel)) continue;
+
+			if (instance.IsA("Light")) {
+				this.registerLightInstance(instance);
+			} else if (instance.IsA("BasePart")) {
+				const childLight = instance.FindFirstChildOfClass("Light");
+				this.registerLightInstance(childLight, instance);
+			}
+		}
+
+		// 3. Lampu standalone lainnya di Workspace
 		for (const desc of Workspace.GetDescendants()) {
 			if (desc.IsA("Light")) {
-				this.registerLightFixture(desc);
+				const ancestorModel = desc.FindFirstAncestorOfClass("Model");
+				if (ancestorModel && scannedModels.has(ancestorModel)) continue;
+
+				const lightName = desc.Name.lower();
+				const parentName = desc.Parent?.Name.lower() ?? "";
+				for (const pattern of TimeConfig.STREETLIGHTS.NAME_PATTERNS) {
+					if (lightName.find(pattern)[0] !== undefined || parentName.find(pattern)[0] !== undefined) {
+						this.registerLightInstance(desc);
+						break;
+					}
+				}
 			}
 		}
 
@@ -203,50 +247,74 @@ export class TimeService {
 		print(`[TimeService] Registered ${this.cachedFixtures.size()} dynamic map light fixtures.`);
 	}
 
-	private registerLightFixture(light: Light, customPart?: BasePart): void {
-		// Hindari duplikasi
+	private registerModelFixture(model: Model): void {
+		// Hindari duplikasi jika model sudah diproses
 		for (const fixture of this.cachedFixtures) {
-			if (fixture.light === light) return;
+			if (fixture.light && fixture.light.IsDescendantOf(model)) return;
 		}
 
-		const lightName = light.Name.lower();
-		const parentName = light.Parent?.Name.lower() ?? "";
+		const emissiveParts: EmissivePartData[] = [];
+		let foundLight: Light | undefined = undefined;
 
-		let isStreetlamp = CollectionService.HasTag(light, TimeConfig.STREETLIGHTS.COLLECTION_TAG);
-		if (!isStreetlamp && light.Parent) {
-			isStreetlamp = CollectionService.HasTag(light.Parent, TimeConfig.STREETLIGHTS.COLLECTION_TAG);
-		}
+		for (const desc of model.GetDescendants()) {
+			if (desc.IsA("Light") && !foundLight) {
+				foundLight = desc;
+			}
+			if (desc.IsA("BasePart") && !desc.IsA("MeshPart")) {
+				const partName = desc.Name.lower();
+				const isBulb =
+					desc.Material === Enum.Material.Neon ||
+					(desc.Name === "Part" && desc.Transparency < 0.5) ||
+					partName.find("bulb")[0] !== undefined ||
+					partName.find("light")[0] !== undefined;
 
-		const ancestorModel = light.FindFirstAncestorOfClass("Model");
-		const modelName = ancestorModel?.Name.lower() ?? "";
-
-		// Periksa kecocokan nama jika belum bertag
-		if (!isStreetlamp) {
-			for (const pattern of TimeConfig.STREETLIGHTS.NAME_PATTERNS) {
-				if (
-					lightName.find(pattern)[0] !== undefined ||
-					parentName.find(pattern)[0] !== undefined ||
-					modelName.find(pattern)[0] !== undefined
-				) {
-					isStreetlamp = true;
-					break;
+				if (isBulb) {
+					emissiveParts.push({
+						part: desc,
+						originalColor: desc.Color,
+						originalMaterial:
+							desc.Material === Enum.Material.Neon ? Enum.Material.Neon : Enum.Material.SmoothPlastic,
+					});
 				}
 			}
 		}
 
-		if (isStreetlamp) {
-			const associatedPart = customPart ?? (light.Parent && light.Parent.IsA("BasePart") ? light.Parent : undefined);
+		if (foundLight || emissiveParts.size() > 0) {
 			this.cachedFixtures.push({
-				light,
-				part: associatedPart,
+				light: foundLight,
+				emissiveParts,
 			});
 		}
+	}
+
+	private registerLightInstance(light?: Light, customPart?: BasePart): void {
+		if (!light && !customPart) return;
+
+		// Hindari duplikasi
+		for (const fixture of this.cachedFixtures) {
+			if (fixture.light && fixture.light === light) return;
+		}
+
+		const emissiveParts: EmissivePartData[] = [];
+		const part = customPart ?? (light?.Parent && light.Parent.IsA("BasePart") ? light.Parent : undefined);
+		if (part && !part.IsA("MeshPart") && part.Transparency < 0.5) {
+			emissiveParts.push({
+				part,
+				originalColor: part.Color,
+				originalMaterial: part.Material,
+			});
+		}
+
+		this.cachedFixtures.push({
+			light,
+			emissiveParts,
+		});
 	}
 
 	private isNightTime(clockTime: number): boolean {
 		const turnOn = TimeConfig.STREETLIGHTS.TURN_ON_HOUR;
 		const turnOff = TimeConfig.STREETLIGHTS.TURN_OFF_HOUR;
-		// Malam: dari turnOn (misal 18:00) hingga turnOff (misal 06:00)
+		// Malam: dari turnOn (17:45 sore saat petang tiba) hingga turnOff (06:00 pagi saat fajar tiba)
 		return clockTime >= turnOn || clockTime < turnOff;
 	}
 
@@ -260,10 +328,19 @@ export class TimeService {
 
 	private applyStreetlightState(enabled: boolean): void {
 		for (const fixture of this.cachedFixtures) {
-			fixture.light.Enabled = enabled;
-			if (fixture.part) {
-				// Ubah material fixture menjadi Neon saat menyala dan SmoothPlastic saat mati
-				fixture.part.Material = enabled ? Enum.Material.Neon : Enum.Material.SmoothPlastic;
+			if (fixture.light) {
+				fixture.light.Enabled = enabled;
+			}
+			for (const emissive of fixture.emissiveParts) {
+				if (enabled) {
+					// Malam / Petang: Bohlam menyala berpijar Neon dengan warna hangat/terang
+					emissive.part.Material = Enum.Material.Neon;
+					emissive.part.Color = emissive.originalColor;
+				} else {
+					// Siang: Bohlam padam dingin (SmoothPlastic & warna kaca off-white abu redup)
+					emissive.part.Material = Enum.Material.SmoothPlastic;
+					emissive.part.Color = Color3.fromRGB(130, 130, 130);
+				}
 			}
 		}
 	}

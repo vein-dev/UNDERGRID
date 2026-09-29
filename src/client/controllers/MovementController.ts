@@ -61,6 +61,17 @@ export class MovementController {
 			this.onRenderStepped(dt);
 		});
 
+		// Ikat Camera Bobbing di prioritas Camera.Value + 1 agar dieksekusi tepat setelah pembaruan kamera Roblox
+		RunService.BindToRenderStep("UltimateR6CameraBobbing", Enum.RenderPriority.Camera.Value + 1, (dt) => {
+			if (!this.isCameraBobbingEnabled) return;
+			const char = this.player.Character;
+			if (!char) return;
+			const hrp = char.FindFirstChild("HumanoidRootPart") as BasePart | undefined;
+			const humanoid = char.FindFirstChild("Humanoid") as Humanoid | undefined;
+			if (!hrp || !humanoid) return;
+			this.calculateCameraBobbing(dt, hrp, humanoid);
+		});
+
 		print("[MovementController] Ultimate R6 Movement System initialized successfully.");
 	}
 
@@ -396,17 +407,14 @@ export class MovementController {
 			// Directional turning & tilt IK
 			if (this.isLeanEnabled) {
 				this.calculateR6TurningAndTilt(dt, hrp, humanoid, torso, plr.Character, tiltState, plr === this.player);
-			}
-
-			// Local player only: Camera Bobbing
-			if (plr === this.player && this.isCameraBobbingEnabled && hrp.GetAttribute("IsSkating") !== true) {
-				this.calculateCameraBobbing(dt, hrp, humanoid);
+			} else {
+				this.resetR6Joints(dt, hrp, torso, plr.Character);
 			}
 		}
 	}
 
 	/**
-	 * Logika R6 Turning & Tilt prosedural sesuai template Ultimate R6 Movement System.
+	 * Logika R6 Turning & Tilt prosedural responsif saat bergerak, berbelok, dan strafing.
 	 */
 	private calculateR6TurningAndTilt(
 		dt: number,
@@ -436,15 +444,6 @@ export class MovementController {
 		const data = this.getR6JointData(char);
 		if (!data) return;
 
-		if (hrp.GetAttribute("IsSkating") === true) {
-			const lerpFactor = math.clamp(dt * 15, 0, 1);
-			rootJoint.C0 = rootJoint.C0.Lerp(data.rootJointC0, lerpFactor);
-			neck.C0 = neck.C0.Lerp(data.neckC0, lerpFactor);
-			rightHip.C0 = rightHip.C0.Lerp(data.rightHipC0, lerpFactor);
-			leftHip.C0 = leftHip.C0.Lerp(data.leftHipC0, lerpFactor);
-			return;
-		}
-
 		const cfgTurn = MovementConfig.TURNING;
 		const cfgPunch = MovementConfig.SPRINT_PUNCH;
 
@@ -457,99 +456,100 @@ export class MovementController {
 			}
 		}
 
-		// 3. Turning logic
+		// 3. Deteksi Laju Rotasi (Yaw turning rate)
+		const currentLook = hrp.CFrame.LookVector;
+		let turnRate = 0;
+		if (tiltState.lastLookVector) {
+			const crossY = tiltState.lastLookVector.Cross(currentLook).Y;
+			turnRate = math.clamp(crossY / math.max(dt, 0.001), -8, 8);
+		}
+		tiltState.lastLookVector = currentLook;
+
 		let vel = hrp.AssemblyLinearVelocity;
-		// Jika velocity melebihi batas wajar gameplay (misal terpental keluar map/glitch physics), abaikan
 		if (vel.Magnitude > 150 || vel.X !== vel.X || vel.Y !== vel.Y || vel.Z !== vel.Z) {
 			vel = Vector3.zero;
 		}
 
 		const speed = math.max(humanoid.WalkSpeed, 0.001);
-		const rawDir = hrp.CFrame.VectorToObjectSpace(vel);
-		let dirX = rawDir.X / speed;
-		let dirZ = rawDir.Z / speed;
-		if (dirX !== dirX) dirX = 0;
-		if (dirZ !== dirZ) dirZ = 0;
+		const isMoving = humanoid.MoveDirection.Magnitude > 0.05 || vel.Magnitude > 1.5;
+		const speedFactor = isMoving ? math.clamp(vel.Magnitude / speed, 0.2, 1.5) : 0;
 
-		const rangeOfMotionRad = math.rad(cfgTurn.rangeOfMotion);
-		const rangeOfMotionTorsoRad = math.rad(cfgTurn.rangeOfMotionTorso);
-		const rangeOfMotionXZ = cfgTurn.rangeOfMotionXZ;
+		// Kemiringan lateral saat berbelok (Roll Lean)
+		const turnLean = turnRate * 0.038 * speedFactor;
 
-		const absZ = math.clamp(math.abs(dirZ), 0, 1.5);
-		let xResult = dirX * (rangeOfMotionRad - absZ * (rangeOfMotionRad / 2));
-		let xResultTorso = dirX * (rangeOfMotionTorsoRad - absZ * (rangeOfMotionTorsoRad / 2));
-		let xResultXZ = dirX * (rangeOfMotionXZ - absZ * (rangeOfMotionXZ / 2));
+		// Kemiringan lateral saat strafe menyamping (A/D)
+		const moveDirLocal = hrp.CFrame.VectorToObjectSpace(humanoid.MoveDirection);
+		const strafeLean = -moveDirLocal.X * math.rad(10) * (isMoving ? 1 : 0);
 
-		if (dirZ > 0.1) {
-			xResult *= -1;
-			xResultTorso *= -1;
-			xResultXZ *= -1;
-		}
+		const maxRollAngle = math.rad(24);
+		const targetRoll = math.clamp(turnLean + strafeLean, -maxRollAngle, maxRollAngle);
 
-		// Batasi sudut turning ke rentang aman agar tidak melipat tubuh
-		xResult = math.clamp(xResult, -rangeOfMotionRad, rangeOfMotionRad);
-		xResultTorso = math.clamp(xResultTorso, -rangeOfMotionTorsoRad, rangeOfMotionTorsoRad);
-		xResultXZ = math.clamp(xResultXZ, -0.4, 0.4);
-
-		// 4. Momentum factor blend
+		// 4. Momentum factor blend & Pitch forward/backward
 		const targetMomentumFactor = this.getTargetMomentumFactor(humanoid, hrp);
 		const blendFactor = math.min(dt * cfgTurn.momentumBlendSpeed, 1);
 		tiltState.currentMomentumFactor += (targetMomentumFactor - tiltState.currentMomentumFactor) * blendFactor;
 
-		// 5. Tilt logic
-		const momentumLocal = hrp.CFrame.VectorToObjectSpace(vel).mul(tiltState.currentMomentumFactor);
-		const momentumX = math.clamp(math.abs(momentumLocal.X), cfgTurn.minMomentum, cfgTurn.maxMomentum);
-		const momentumZ = math.clamp(math.abs(momentumLocal.Z), cfgTurn.minMomentum, cfgTurn.maxMomentum);
+		const velLocal = hrp.CFrame.VectorToObjectSpace(vel);
+		const forwardRatio = math.clamp(-velLocal.Z / speed, -1, 1);
+		const maxPitchAngle = math.rad(22);
+		const targetPitch = math.clamp(forwardRatio * tiltState.currentMomentumFactor * 10, -math.rad(14), maxPitchAngle);
 
-		const moveDirLocal = hrp.CFrame.VectorToObjectSpace(humanoid.MoveDirection);
-		const maxTiltAngle = math.rad(30);
-		const targetX = math.clamp(moveDirLocal.X * momentumX, -maxTiltAngle, maxTiltAngle);
-		const targetZ = math.clamp(moveDirLocal.Z * momentumZ, -maxTiltAngle, maxTiltAngle);
-		const targetAngles: [number, number, number] = [-targetZ, -targetX, 0];
-
+		// 5. Smoothing
 		const smoothFactor = math.min(dt * cfgTurn.smoothSpeed, 1);
-		for (let i = 0; i < 3; i++) {
-			// Anti-NaN check: jika ada nilai corrupt, reset ke 0 seketika
-			if (tiltState.currentAngles[i] !== tiltState.currentAngles[i]) {
-				tiltState.currentAngles[i] = 0;
-			}
-			tiltState.currentAngles[i] += (targetAngles[i] - tiltState.currentAngles[i]) * smoothFactor;
-			tiltState.currentAngles[i] = math.clamp(tiltState.currentAngles[i], -maxTiltAngle, maxTiltAngle);
-		}
+		if (tiltState.currentAngles[0] !== tiltState.currentAngles[0]) tiltState.currentAngles[0] = 0;
+		if (tiltState.currentAngles[1] !== tiltState.currentAngles[1]) tiltState.currentAngles[1] = 0;
+		if (tiltState.currentAngles[2] !== tiltState.currentAngles[2]) tiltState.currentAngles[2] = 0;
+
+		tiltState.currentAngles[0] += (targetPitch - tiltState.currentAngles[0]) * smoothFactor;
+		tiltState.currentAngles[1] += (targetRoll - tiltState.currentAngles[1]) * smoothFactor;
+		tiltState.currentAngles[2] = 0;
 
 		// 6. Sprint punch offset
 		const punchOffset = isLocalPlayer ? math.clamp(tiltState.punchAmount, -math.rad(35), math.rad(35)) : 0;
-		const tiltCFrame = CFrame.Angles(
-			tiltState.currentAngles[0] + punchOffset,
-			tiltState.currentAngles[1],
-			tiltState.currentAngles[2],
-		);
+		const finalPitch = tiltState.currentAngles[0] + punchOffset;
+		const finalRoll = tiltState.currentAngles[1];
 
 		// 7. Calculate target C0s
-		const rootJointResult = data.rootJointC0.mul(CFrame.Angles(0, 0, -xResultTorso)).mul(tiltCFrame);
+		// RootJoint R6: Local X = Pitch (forward/back), Local Y = Roll (left/right)
+		const rootJointResult = data.rootJointC0.mul(CFrame.Angles(finalPitch, finalRoll, 0));
 
-		const neckResult = data.neckC0
-			.mul(CFrame.Angles(0, 0, xResultTorso))
-			.mul(
-				CFrame.Angles(-tiltState.currentAngles[0] - punchOffset * 0.35, 0, -tiltState.currentAngles[2]),
-			);
+		// Neck counter-rotates agar pandangan kepala tetap stabil dan menghadap depan
+		const neckResult = data.neckC0.mul(
+			CFrame.Angles(-finalPitch * 0.45 - punchOffset * 0.35, -finalRoll * 0.5, 0),
+		);
 
-		const rightHipOffset = -math.abs(xResultXZ) + math.abs(-xResultXZ);
-		const rightHipResult = data.rightHipC0
-			.mul(new CFrame(-xResultXZ, 0, rightHipOffset))
-			.mul(CFrame.Angles(0, -xResult, 0));
-
-		const leftHipOffset = -math.abs(-xResultXZ) + math.abs(-xResultXZ);
-		const leftHipResult = data.leftHipC0
-			.mul(new CFrame(-xResultXZ, 0, leftHipOffset))
-			.mul(CFrame.Angles(0, -xResult, 0));
+		// Kaki menyangga kemiringan pinggang agar postur tetap menapak alami
+		const hipLean = -finalRoll * 0.35;
+		const rightHipResult = data.rightHipC0.mul(CFrame.Angles(0, 0, hipLean));
+		const leftHipResult = data.leftHipC0.mul(CFrame.Angles(0, 0, hipLean));
 
 		// 8. Lerp & Apply
-		const lerpTime = 1 - math.pow(cfgTurn.lerpSpeed, dt);
+		const lerpTime = math.clamp(dt * 14, 0, 1);
 		rightHip.C0 = rightHip.C0.Lerp(rightHipResult, lerpTime);
 		leftHip.C0 = leftHip.C0.Lerp(leftHipResult, lerpTime);
 		rootJoint.C0 = rootJoint.C0.Lerp(rootJointResult, lerpTime);
 		neck.C0 = neck.C0.Lerp(neckResult, lerpTime);
+	}
+
+	/**
+	 * Mengembalikan sendi karakter ke pose netral secara halus saat Body Lean dinonaktifkan.
+	 */
+	private resetR6Joints(dt: number, hrp: BasePart, torso: BasePart, char: Model): void {
+		const rootJoint = hrp.FindFirstChild("RootJoint") as Motor6D | undefined;
+		const neck = torso.FindFirstChild("Neck") as Motor6D | undefined;
+		const rightHip = torso.FindFirstChild("Right Hip") as Motor6D | undefined;
+		const leftHip = torso.FindFirstChild("Left Hip") as Motor6D | undefined;
+
+		if (!rootJoint || !neck || !rightHip || !leftHip) return;
+
+		const data = this.characterJointData.get(char);
+		if (!data) return;
+
+		const lerpFactor = math.clamp(dt * 12, 0, 1);
+		rootJoint.C0 = rootJoint.C0.Lerp(data.rootJointC0, lerpFactor);
+		neck.C0 = neck.C0.Lerp(data.neckC0, lerpFactor);
+		rightHip.C0 = rightHip.C0.Lerp(data.rightHipC0, lerpFactor);
+		leftHip.C0 = leftHip.C0.Lerp(data.leftHipC0, lerpFactor);
 	}
 
 	// Settings states
@@ -606,7 +606,7 @@ export class MovementController {
 	 * Goyangan kamera (*head bobbing*) prosedural saat berjalan dan berlari.
 	 */
 	private calculateCameraBobbing(dt: number, hrp: BasePart, humanoid: Humanoid): void {
-		if (!MovementConfig.BOBBING.enabled || !this.isCameraBobbingEnabled || hrp.GetAttribute("IsSkating") === true) return;
+		if (!this.isCameraBobbingEnabled || hrp.GetAttribute("IsSkating") === true) return;
 		const camera = Workspace.CurrentCamera;
 		if (!camera || humanoid.Health <= 0) return;
 

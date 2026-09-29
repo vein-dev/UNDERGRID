@@ -15,6 +15,7 @@ export interface PlayerTiltState {
 	currentMomentumFactor: number;
 	punchAmount: number;
 	punchActive: boolean;
+	lastLookVector?: Vector3;
 }
 
 export interface MovementStaminaState {

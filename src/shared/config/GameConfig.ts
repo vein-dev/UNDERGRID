@@ -17,4 +17,9 @@ export const GameConfig = {
 		MAX_HOTBAR_SLOTS: 9,
 		MAX_BAG_SLOTS: 30,
 	},
+
+	CAMERA: {
+		MIN_ZOOM_DISTANCE: 0.5,
+		MAX_ZOOM_DISTANCE: 32,
+	},
 } as const;

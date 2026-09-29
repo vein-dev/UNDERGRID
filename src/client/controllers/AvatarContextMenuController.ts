@@ -1,9 +1,53 @@
 import { GuiService, Players, StarterGui, UserInputService, Workspace } from "@rbxts/services";
-import { AvatarContextMenuAction, AvatarTargetPlayer } from "shared/types";
+import { EMOTE_CONFIG } from "shared/config";
+import { AvatarContextMenuAction, AvatarTargetPlayer, EmoteItem } from "shared/types";
 import { EmoteService } from "../services/EmoteService";
 import { AvatarContextMenuView } from "../ui/views/AvatarContextMenuView";
 
 const MAX_INTERACT_DISTANCE = 80;
+
+function extractAssetIdNumber(assetUrl: string): string | undefined {
+	const match = assetUrl.match("%d+")[0];
+	return match ? tostring(match) : undefined;
+}
+
+// Koleksi seluruh Asset ID numerik khusus Dance dan Pose yang diizinkan untuk di-sync
+const ALLOWED_SYNC_ANIMATION_IDS = new Set<string>();
+const ANIMATION_ID_TO_EMOTE = new Map<string, EmoteItem>();
+
+for (const dance of EMOTE_CONFIG.Dances) {
+	if (dance.animationId) {
+		const id = extractAssetIdNumber(dance.animationId);
+		if (id) {
+			ALLOWED_SYNC_ANIMATION_IDS.add(id);
+			ANIMATION_ID_TO_EMOTE.set(id, dance);
+		}
+	}
+}
+
+for (const pose of EMOTE_CONFIG.Poses) {
+	if (pose.animationId) {
+		const id = extractAssetIdNumber(pose.animationId);
+		if (id) {
+			ALLOWED_SYNC_ANIMATION_IDS.add(id);
+			ANIMATION_ID_TO_EMOTE.set(id, pose);
+		}
+	}
+}
+
+function findSyncableEmoteItem(track: AnimationTrack): EmoteItem | undefined {
+	const anim = track.Animation;
+	if (!anim || !anim.AnimationId || anim.AnimationId === "") {
+		return undefined;
+	}
+	const id = extractAssetIdNumber(anim.AnimationId);
+	if (!id) return undefined;
+	return ANIMATION_ID_TO_EMOTE.get(id);
+}
+
+function isSyncableAnimation(track: AnimationTrack): boolean {
+	return findSyncableEmoteItem(track) !== undefined;
+}
 
 /**
  * AvatarContextMenuController - Controls clicking other players in 3D world,
@@ -251,29 +295,28 @@ export class AvatarContextMenuController {
 			return;
 		}
 
-		// Find currently active track
+		// Find currently active Dance or Pose track only
 		const tracks = targetAnimator.GetPlayingAnimationTracks();
-		const activeTrack =
-			tracks.find((t) => t.Priority === Enum.AnimationPriority.Action) ??
-			tracks.find((t) => t.Priority === Enum.AnimationPriority.Movement) ??
-			tracks[0];
+		const activeTrack = tracks.find((t) => isSyncableAnimation(t));
 
 		if (activeTrack && activeTrack.Animation) {
 			this.playSyncTrack(activeTrack, target);
 		} else {
-			print(`[AvatarContextMenuController] Menunggu ${target.displayName} memainkan emote...`);
+			print(`[AvatarContextMenuController] Menunggu ${target.displayName} memainkan Dance atau Pose...`);
 		}
 
 		this.syncingUserId = target.userId;
 		this.syncedTargetPlayer = target.player;
 		this.selectTarget(target);
 
-		// Dynamic Listener: automatically follow when target changes emote!
+		// Dynamic Listener: automatically follow when target changes emote (restricted to Dance & Pose only)!
 		const animPlayedConn = targetAnimator.AnimationPlayed.Connect((newTrack) => {
 			if (newTrack.Animation && this.syncingUserId === target.userId) {
-				task.defer(() => {
-					this.playSyncTrack(newTrack, target);
-				});
+				if (isSyncableAnimation(newTrack)) {
+					task.defer(() => {
+						this.playSyncTrack(newTrack, target);
+					});
+				}
 			}
 		});
 		this.syncConnections.push(animPlayedConn);
@@ -295,14 +338,21 @@ export class AvatarContextMenuController {
 	}
 
 	private playSyncTrack(sourceTrack: AnimationTrack, target: AvatarTargetPlayer): void {
+		const matchedItem = findSyncableEmoteItem(sourceTrack);
+		if (!matchedItem || !matchedItem.animationId) return;
+
 		const localChar = this.localPlayer.Character;
 		const localHum = localChar?.FindFirstChildOfClass("Humanoid");
 		if (!localHum || localHum.Health <= 0) return;
 
-		let localAnimator = localHum.FindFirstChildOfClass("Animator");
+		// Ambil Animator resmi server (jangan buat Animator baru di client agar replikasi server aktif)
+		const localAnimator =
+			localHum.FindFirstChildOfClass("Animator") ??
+			(localHum.WaitForChild("Animator", 3) as Animator | undefined);
+
 		if (!localAnimator) {
-			localAnimator = new Instance("Animator");
-			localAnimator.Parent = localHum;
+			warn("[AvatarContextMenuController] Animator resmi server tidak ditemukan pada karakter lokal.");
+			return;
 		}
 
 		// Stop previous synced track smoothly
@@ -312,15 +362,33 @@ export class AvatarContextMenuController {
 			this.syncedTrack = undefined;
 		}
 
+		// Bersihkan instance Animation lama di local character jika ada
+		const existingAnim = localChar?.FindFirstChild("SyncAnimationInstance");
+		if (existingAnim) {
+			existingAnim.Destroy();
+		}
+
 		EmoteService.getInstance().stopEmote();
 
-		const [success, newTrack] = pcall(() => localAnimator!.LoadAnimation(sourceTrack.Animation!));
+		// Buat instance Animation BARU yang di-parent ke localChar pemain sendiri
+		// Ini adalah syarat mutlak agar Roblox Engine mereplikasi pemutaran animasi ke server dan seluruh pemain lain!
+		const animInstance = new Instance("Animation");
+		animInstance.Name = "SyncAnimationInstance";
+		animInstance.AnimationId = matchedItem.animationId;
+		animInstance.Parent = localChar;
+
+		const [success, newTrack] = pcall(() => localAnimator.LoadAnimation(animInstance));
 		if (success && newTrack) {
-			newTrack.Priority = Enum.AnimationPriority.Action4;
+			newTrack.Priority = Enum.AnimationPriority.Action;
 			newTrack.Looped = true;
-			newTrack.Play(0.15);
+			newTrack.Play(0.2);
 			newTrack.AdjustSpeed(sourceTrack.Speed);
-			newTrack.TimePosition = sourceTrack.TimePosition;
+
+			if (sourceTrack.TimePosition > 0) {
+				pcall(() => {
+					newTrack.TimePosition = sourceTrack.TimePosition;
+				});
+			}
 
 			this.syncedTrack = newTrack;
 
@@ -335,13 +403,13 @@ export class AvatarContextMenuController {
 						const playing =
 							targetAnimator
 								?.GetPlayingAnimationTracks()
-								.filter(
-									(t) =>
-										t.Priority === Enum.AnimationPriority.Action ||
-										t.Priority === Enum.AnimationPriority.Movement,
-								) ?? [];
+								.filter((t) => isSyncableAnimation(t)) ?? [];
 						if (playing.size() === 0 && this.syncedTrack) {
 							this.syncedTrack.Stop(0.2);
+							this.syncedTrack.Destroy();
+							this.syncedTrack = undefined;
+							const anim = localChar?.FindFirstChild("SyncAnimationInstance");
+							if (anim) anim.Destroy();
 						}
 					}
 				});
@@ -361,6 +429,13 @@ export class AvatarContextMenuController {
 			this.syncedTrack.Destroy();
 			this.syncedTrack = undefined;
 		}
+
+		const localChar = this.localPlayer.Character;
+		const anim = localChar?.FindFirstChild("SyncAnimationInstance");
+		if (anim) {
+			anim.Destroy();
+		}
+
 		this.syncingUserId = undefined;
 		this.syncedTargetPlayer = undefined;
 	}
