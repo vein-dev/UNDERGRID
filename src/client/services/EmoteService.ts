@@ -4,7 +4,7 @@ import { getRemoteEvent } from "shared/network";
 import { EmoteItem } from "shared/types";
 
 /**
- * EmoteService - Client service managing emote animations, auto-cancelling upon movement,
+ * EmoteService - Client service managing emote animations,
  * and rendering replicated 3D Billboard reactions above characters' heads.
  */
 export class EmoteService {
@@ -15,9 +15,10 @@ export class EmoteService {
 	private activeTrack?: AnimationTrack;
 	private activeEmoteId?: string;
 	private stateCallbacks: Array<(isPlaying: boolean, emoteId?: string) => void> = [];
+	private playbackSpeed = 1.0;
+	private speedCallbacks: Array<(speed: number) => void> = [];
 
-	private moveConnection?: RBXScriptConnection;
-	private jumpConnection?: RBXScriptConnection;
+	private diedConnection?: RBXScriptConnection;
 
 	private constructor() {
 		this.reactionEvent = getRemoteEvent("EmoteReactionEvent");
@@ -54,29 +55,15 @@ export class EmoteService {
 	}
 
 	private bindCharacter(character: Model): void {
-		this.moveConnection?.Disconnect();
-		this.jumpConnection?.Disconnect();
+		this.diedConnection?.Disconnect();
 		this.stopEmote();
 
 		const humanoid = character.WaitForChild("Humanoid") as Humanoid | undefined;
 		if (!humanoid) return;
 
-		// Cancel dance/pose when moving
-		this.moveConnection = humanoid.GetPropertyChangedSignal("MoveDirection").Connect(() => {
-			if (humanoid.MoveDirection.Magnitude > 0.05 && this.activeTrack) {
-				this.stopEmote();
-			}
-		});
-
-		// Cancel dance/pose when jumping or falling
-		this.jumpConnection = humanoid.StateChanged.Connect((_oldState, newState) => {
-			if (
-				(newState === Enum.HumanoidStateType.Jumping ||
-					newState === Enum.HumanoidStateType.Freefall) &&
-				this.activeTrack
-			) {
-				this.stopEmote();
-			}
+		// Clean up emote animation if character dies
+		this.diedConnection = humanoid.Died.Connect(() => {
+			this.stopEmote();
 		});
 	}
 
@@ -99,6 +86,28 @@ export class EmoteService {
 
 	public getActiveEmoteId(): string | undefined {
 		return this.activeEmoteId;
+	}
+
+	public getPlaybackSpeed(): number {
+		return this.playbackSpeed;
+	}
+
+	public setPlaybackSpeed(speed: number): void {
+		const clamped = math.clamp(math.round(speed * 10) / 10, 0.2, 2.0);
+		this.playbackSpeed = clamped;
+		if (this.activeTrack && this.activeTrack.IsPlaying) {
+			this.activeTrack.AdjustSpeed(clamped);
+		}
+		for (const cb of this.speedCallbacks) {
+			cb(clamped);
+		}
+	}
+
+	public onSpeedChanged(callback: (speed: number) => void): () => void {
+		this.speedCallbacks.push(callback);
+		return () => {
+			this.speedCallbacks = this.speedCallbacks.filter((cb) => cb !== callback);
+		};
 	}
 
 	public playEmote(item: EmoteItem): void {
@@ -135,6 +144,7 @@ export class EmoteService {
 			track.Priority = Enum.AnimationPriority.Action;
 			track.Looped = true;
 			track.Play(0.2);
+			track.AdjustSpeed(this.playbackSpeed);
 
 			this.activeTrack = track;
 			this.activeEmoteId = item.id;

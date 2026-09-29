@@ -6,3 +6,8 @@ export * from "./MovementConfig";
 export * from "./SkateboardConfig";
 export * from "./TimeConfig";
 export * from "./StageBackdropConfig";
+export * from "./GuitarConfig";
+export * from "./DrumstickConfig";
+export * from "./RollupDoorConfig";
+export * from "./SeatConfig";
+export * from "./DrumSeatConfig";

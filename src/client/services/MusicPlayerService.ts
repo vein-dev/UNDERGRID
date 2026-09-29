@@ -32,9 +32,9 @@ export class MusicPlayerService {
 	private currentTrack: TrackData;
 	private state: MusicPlayerState = MusicPlayerState.Idle;
 	private queue: MusicQueueItem[] = [];
-	private sound: Sound;
-	private pitchEffect: PitchShiftSoundEffect;
-	private equalizerEffect: EqualizerSoundEffect;
+	private sound!: Sound;
+	private pitchEffect!: PitchShiftSoundEffect;
+	private equalizerEffect!: EqualizerSoundEffect;
 	private heartbeatConn?: RBXScriptConnection;
 
 	private isUserAdmin = false;
@@ -59,35 +59,7 @@ export class MusicPlayerService {
 		this.currentTrack = this.config.playlist[0];
 		this.isUserAdmin = isPlayerAdmin(Players.LocalPlayer);
 
-		// Local synchronized Sound instance
-		for (const old of SoundService.GetChildren()) {
-			if (old.Name === "SmartphoneMusic") {
-				old.Destroy();
-			}
-		}
-		this.sound = new Instance("Sound");
-		this.sound.Name = "SmartphoneMusic";
-		this.sound.Volume = 0.5;
-		this.sound.Looped = false;
-		this.sound.Parent = SoundService;
-
-		// Pitch correction effect for Audacity-bypassed audio
-		this.pitchEffect = new Instance("PitchShiftSoundEffect");
-		this.pitchEffect.Name = "BypassPitchCorrection";
-		this.pitchEffect.Octave = 1.0;
-		this.pitchEffect.Enabled = false;
-		this.pitchEffect.Parent = this.sound;
-
-		// Equalizer effect to restore bass lost by PitchShiftSoundEffect phase cancellation
-		this.equalizerEffect = new Instance("EqualizerSoundEffect");
-		this.equalizerEffect.Name = "BypassBassCorrection";
-		this.equalizerEffect.LowGain = 0;
-		this.equalizerEffect.MidGain = 0;
-		this.equalizerEffect.HighGain = 0;
-		this.equalizerEffect.Enabled = false;
-		this.equalizerEffect.Parent = this.sound;
-
-		this.applyTrackPitch(this.currentTrack);
+		this.setupSoundInstance(0.5);
 
 		// Remotes
 		this.syncEvent = getRemoteEvent("MusicSyncEvent");
@@ -107,7 +79,39 @@ export class MusicPlayerService {
 		return MusicPlayerService.instance;
 	}
 
-	private initNetworkSync(): void {
+	private setupSoundInstance(volume = 0.5): void {
+		if (this.sound) {
+			this.sound.Stop();
+			this.sound.Destroy();
+		}
+		for (const old of SoundService.GetChildren()) {
+			if (old.Name === "SmartphoneMusic") {
+				old.Destroy();
+			}
+		}
+
+		this.sound = new Instance("Sound");
+		this.sound.Name = "SmartphoneMusic";
+		this.sound.Volume = volume;
+		this.sound.Looped = false;
+		this.sound.Parent = SoundService;
+
+		// Pitch correction effect for Audacity-bypassed audio
+		this.pitchEffect = new Instance("PitchShiftSoundEffect");
+		this.pitchEffect.Name = "BypassPitchCorrection";
+		this.pitchEffect.Octave = 1.0;
+		this.pitchEffect.Enabled = false;
+		this.pitchEffect.Parent = this.sound;
+
+		// Equalizer effect to restore bass lost by PitchShiftSoundEffect phase cancellation
+		this.equalizerEffect = new Instance("EqualizerSoundEffect");
+		this.equalizerEffect.Name = "BypassBassCorrection";
+		this.equalizerEffect.LowGain = 0;
+		this.equalizerEffect.MidGain = 0;
+		this.equalizerEffect.HighGain = 0;
+		this.equalizerEffect.Enabled = false;
+		this.equalizerEffect.Parent = this.sound;
+
 		// When sound finishes loading asset from Roblox CDN, sync position and play
 		this.sound.Loaded.Connect(() => {
 			if (this.state === MusicPlayerState.Playing) {
@@ -121,6 +125,35 @@ export class MusicPlayerService {
 			}
 		});
 
+		this.applyTrackPitch(this.currentTrack);
+	}
+
+	/**
+	 * Manually refreshes and resyncs the music audio playback.
+	 * Re-creates the local Sound instance and requests fresh server synchronization.
+	 */
+	public refreshAudio(): void {
+		print("[MusicPlayerService] User triggered audio refresh. Recreating sound instance...");
+		const currentVol = this.sound ? this.sound.Volume : 0.5;
+		this.setupSoundInstance(currentVol);
+
+		if (this.currentTrack) {
+			this.sound.SoundId = this.currentTrack.soundId;
+			if (this.state === MusicPlayerState.Playing) {
+				const expected = this.getEstimatedServerPosition();
+				if (this.sound.IsLoaded && this.sound.TimeLength > 0) {
+					this.sound.TimePosition = math.clamp(expected, 0, this.sound.TimeLength);
+				}
+				this.sound.Play();
+			}
+		}
+
+		// Request fresh sync from server
+		this.syncEvent.FireServer("RequestSync");
+		print("[MusicPlayerService] Audio refreshed successfully and server resync requested.");
+	}
+
+	private initNetworkSync(): void {
 		this.syncEvent.OnClientEvent.Connect((data: unknown) => {
 			if (typeIs(data, "table")) {
 				this.applyServerSync(data as unknown as GlobalMusicSyncData);

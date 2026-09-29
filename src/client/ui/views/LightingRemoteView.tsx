@@ -9,8 +9,9 @@ import {
 	StageLightingControlPayload,
 } from "shared/types";
 import { BACKDROP_GIF_PRESETS } from "shared/config";
+import { StageCameraTab } from "./StageCameraTab";
 
-type RemoteTab = "modes" | "colors" | "beam" | "fog" | "backdrop";
+type RemoteTab = "modes" | "colors" | "beam" | "fog" | "backdrop" | "camera";
 
 export interface LightingRemoteComponentProps {
 	visible: boolean;
@@ -306,7 +307,7 @@ export function LightingRemoteComponent({ visible, onClose }: LightingRemoteComp
 						LayoutOrder={1}
 						Size={new UDim2(1, 0, 0, 14)}
 						BackgroundTransparency={1}
-						Text="DMX REMOTE LIVE"
+						Text="STAGE CONTROLLER LIVE"
 						TextColor3={Color3.fromHex("#94a3b8")}
 						TextSize={9}
 						Font={Fonts.Bold}
@@ -387,7 +388,7 @@ export function LightingRemoteComponent({ visible, onClose }: LightingRemoteComp
 						<textlabel
 							Size={new UDim2(1, 0, 0, 16)}
 							BackgroundTransparency={1}
-							Text="LIGHTING REMOTE"
+							Text="STAGE CONTROLLER"
 							TextColor3={Color3.fromHex("#ffffff")}
 							TextSize={12}
 							Font={Fonts.Bold}
@@ -396,7 +397,7 @@ export function LightingRemoteComponent({ visible, onClose }: LightingRemoteComp
 						<textlabel
 							Size={new UDim2(1, 0, 0, 12)}
 							BackgroundTransparency={1}
-							Text="Live Concert DMX Controller"
+							Text="Live Concert Stage & DMX Controller"
 							TextColor3={Color3.fromHex("#94a3b8")}
 							TextSize={9}
 							Font={Fonts.Regular}
@@ -469,6 +470,7 @@ export function LightingRemoteComponent({ visible, onClose }: LightingRemoteComp
 						{ id: "beam", label: "Beam", icon: "sun" },
 						{ id: "fog", label: "Fog", icon: "cloud" },
 						{ id: "backdrop", label: "Screen", icon: "image" },
+						{ id: "camera", label: "Cam", icon: "camera" },
 					] as Array<{ id: RemoteTab; label: string; icon: string }>
 				).map((tab, idx) => {
 					const isActive = activeTab === tab.id;
@@ -476,13 +478,13 @@ export function LightingRemoteComponent({ visible, onClose }: LightingRemoteComp
 						<textbutton
 							key={`tab_${tab.id}`}
 							LayoutOrder={idx}
-							Size={new UDim2(0.2, 0, 1, 0)}
+							Size={new UDim2(1 / 6, 0, 1, 0)}
 							BackgroundColor3={isActive ? Color3.fromHex("#3b82f6") : Color3.fromRGB(0, 0, 0)}
 							BackgroundTransparency={isActive ? 0.2 : 1}
 							Text={tab.label}
 							TextColor3={isActive ? Color3.fromHex("#ffffff") : Color3.fromHex("#94a3b8")}
 							Font={isActive ? Fonts.Bold : Fonts.Medium}
-							TextSize={9}
+							TextSize={8.5}
 							Event={{
 								MouseButton1Click: () => setActiveTab(tab.id),
 							}}
@@ -1336,6 +1338,9 @@ export function LightingRemoteComponent({ visible, onClose }: LightingRemoteComp
 						})()}
 					</>
 				)}
+
+				{/* ───────── TAB 6: CAMERA CONTROLLER ───────── */}
+				{activeTab === "camera" && <StageCameraTab />}
 			</scrollingframe>
 		</frame>
 	);
@@ -1408,11 +1413,12 @@ export class LightingRemoteView {
 		this.onCloseCallbacks.forEach((cb) => cb());
 	}
 
-	public toggle(): void {
-		if (this.isVisible) {
-			this.hide();
-		} else {
+	public toggle(forceState?: boolean): void {
+		const targetState = forceState !== undefined ? forceState : !this.isVisible;
+		if (targetState) {
 			this.show();
+		} else {
+			this.hide();
 		}
 	}
 

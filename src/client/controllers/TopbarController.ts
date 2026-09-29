@@ -2,6 +2,7 @@ import { Players } from "@rbxts/services";
 import { Icon } from "@rbxts/topbar-plus";
 import { AdminPanelView } from "client/ui/admin/AdminPanelView";
 import { EmoteModalView } from "client/ui/views/EmoteModalView";
+import { LightingRemoteView } from "client/ui/views/LightingRemoteView";
 import { SettingsModalView } from "client/ui/views/SettingsModalView";
 import { isPlayerAdmin } from "shared/config";
 import { GetIconUri } from "shared/utils";
@@ -123,7 +124,7 @@ export class TopbarController {
 
 		this.icons.set("HotbarToggle", hotbarIcon);
 
-		// 4. Icon Admin Panel (Hanya untuk Player berhak Admin)
+		// 4. Icon Admin Panel & Stage Controller (Hanya untuk Player berhak Admin)
 		if (isPlayerAdmin(Players.LocalPlayer)) {
 			const adminView = AdminPanelView.getInstance();
 
@@ -156,6 +157,45 @@ export class TopbarController {
 
 			this.icons.set("Admin", adminIcon);
 			print("[TopbarController] Admin icon mounted for administrator.");
+
+			// 5. Icon Stage Controller (Terhubung dengan LightingRemoteView & keybind L)
+			const stageView = LightingRemoteView.getInstance();
+
+			const stageIcon = new Icon()
+				.setName("StageController")
+				.setCaption("Stage Controller (L)")
+				.setImage(GetIconUri("activity"))
+				.bindToggleKey(Enum.KeyCode.L);
+
+			let isSyncingStage = false;
+
+			stageIcon.bindEvent("toggled", (_self, isSelected) => {
+				if (isSyncingStage) return;
+				isSyncingStage = true;
+				stageView.toggle(isSelected);
+				isSyncingStage = false;
+			});
+
+			stageView.onOpen(() => {
+				if (isSyncingStage) return;
+				isSyncingStage = true;
+				if (!stageIcon.isSelected) {
+					stageIcon.select();
+				}
+				isSyncingStage = false;
+			});
+
+			stageView.onClose(() => {
+				if (isSyncingStage) return;
+				isSyncingStage = true;
+				if (stageIcon.isSelected) {
+					stageIcon.deselect();
+				}
+				isSyncingStage = false;
+			});
+
+			this.icons.set("StageController", stageIcon);
+			print("[TopbarController] Stage Controller icon mounted for administrator.");
 		}
 
 		// 4. Icon Settings (Terhubung dengan SettingsModalView)

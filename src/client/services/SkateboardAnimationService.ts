@@ -138,7 +138,7 @@ export class SkateboardAnimationService {
 	 */
 	public playAnimation(
 		animId: string,
-		priority: Enum.AnimationPriority = Enum.AnimationPriority.Action,
+		priority: Enum.AnimationPriority = Enum.AnimationPriority.Action2,
 		looped = false,
 		fadeTime = 0.15,
 		speed = 1.0,
@@ -189,7 +189,7 @@ export class SkateboardAnimationService {
 	public playAnimationFor(
 		animator: Animator,
 		animId: string,
-		priority: Enum.AnimationPriority = Enum.AnimationPriority.Action,
+		priority: Enum.AnimationPriority = Enum.AnimationPriority.Action2,
 		looped = false,
 		fadeTime = 0.05,
 		speed = 1.0,

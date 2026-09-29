@@ -10,3 +10,7 @@ export * from "./ServerEmoteService";
 export * from "./ServerSkateboardService";
 export * from "./ServerTimeService";
 export * from "./ServerStageLightingService";
+export * from "./ServerGuitarService";
+export * from "./ServerDrumstickService";
+export * from "./ServerRollupDoorService";
+export * from "./ServerSeatService";

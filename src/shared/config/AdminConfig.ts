@@ -11,7 +11,7 @@ export const AdminConfig = {
 	 */
 	ADMIN_USER_IDS: [
 		8895971048, // Fleurizze (Game Owner)
-		11646492325, // mlgmlgproject
+		8922570594, // Lowlow
 	] as number[],
 
 	/** Minimum rank required if game is owned by a Group */

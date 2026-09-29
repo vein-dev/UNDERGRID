@@ -43,7 +43,7 @@ export const SkateboardConfig = {
 
 	ATTACHMENT: {
 		// Posisikan papan tepat di bawah telapak kaki R6 sejajar arah hadap karakter (Z-axis)
-		boardCFrameOffset: new CFrame(0, -3.05, 0),
+		boardCFrameOffset: new CFrame(0, -3.2, 0),
 		jointName: "VisualBoard",
 		visualBoardPartName: "Board",
 		hipHeightMounted: 0.66, // Mengangkat kaki R6 agar roda papan menempel rata di atas permukaan tanah (ground flush)

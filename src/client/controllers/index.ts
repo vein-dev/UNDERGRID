@@ -16,3 +16,8 @@ export * from "./SkateboardController";
 export * from "./ClientStageLightingController";
 export * from "./ClientSignageController";
 export * from "./ClientBackdropController";
+export * from "./FlyController";
+export * from "./RollupDoorController";
+export * from "./SeatController";
+export * from "./StageCameraController";
+export * from "./AvatarContextMenuController";

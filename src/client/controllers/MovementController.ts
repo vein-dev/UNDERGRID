@@ -24,9 +24,9 @@ export class MovementController {
 	// Local player sprint punch state
 	private localTiltState?: PlayerTiltState;
 
-	// Camera bobbing state
-	private isCameraBobbingEnabled = true;
-	private isLeanEnabled = true;
+	// Camera bobbing & Body lean default state
+	private isCameraBobbingEnabled = false;
+	private isLeanEnabled = false;
 
 	private bobbingFunc1 = 0;
 	private bobbingFunc2 = 0;

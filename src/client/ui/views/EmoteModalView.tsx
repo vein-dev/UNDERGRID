@@ -15,12 +15,220 @@ export interface EmoteModalProps {
 	onAnimationFinished?: () => void;
 }
 
+interface SpeedSliderProps {
+	speed: number;
+	onChange: (newSpeed: number) => void;
+	onReset: () => void;
+	layoutOrder?: number;
+}
+
+function EmoteSpeedSlider({ speed, onChange, onReset, layoutOrder }: SpeedSliderProps) {
+	const trackRef = useRef<Frame>();
+	const isDraggingRef = useRef(false);
+
+	const minSpeed = 0.2;
+	const maxSpeed = 2.0;
+	const alpha = math.clamp((speed - minSpeed) / (maxSpeed - minSpeed), 0, 1);
+
+	const updateFromPosition = (inputX: number) => {
+		const track = trackRef.current;
+		if (!track) return;
+		const trackPos = track.AbsolutePosition.X;
+		const trackWidth = track.AbsoluteSize.X;
+		if (trackWidth <= 0) return;
+
+		const rawAlpha = math.clamp((inputX - trackPos) / trackWidth, 0, 1);
+		const calcSpeed = minSpeed + rawAlpha * (maxSpeed - minSpeed);
+		const rounded = math.clamp(math.round(calcSpeed * 10) / 10, minSpeed, maxSpeed);
+		onChange(rounded);
+	};
+
+	useEffect(() => {
+		const moveConn = UserInputService.InputChanged.Connect((input) => {
+			if (isDraggingRef.current) {
+				if (
+					input.UserInputType === Enum.UserInputType.MouseMovement ||
+					input.UserInputType === Enum.UserInputType.Touch
+				) {
+					updateFromPosition(input.Position.X);
+				}
+			}
+		});
+
+		const endConn = UserInputService.InputEnded.Connect((input) => {
+			if (
+				input.UserInputType === Enum.UserInputType.MouseButton1 ||
+				input.UserInputType === Enum.UserInputType.Touch
+			) {
+				isDraggingRef.current = false;
+			}
+		});
+
+		return () => {
+			moveConn.Disconnect();
+			endConn.Disconnect();
+		};
+	}, []);
+
+	return (
+		<frame
+			key="SpeedSliderContainer"
+			LayoutOrder={layoutOrder}
+			Size={new UDim2(1, 0, 0, 36)}
+			BackgroundColor3={Color3.fromHex("#181818")}
+			BackgroundTransparency={0.3}
+		>
+			<uicorner CornerRadius={new UDim(0, 8)} />
+			<uistroke
+				Color={Color3.fromHex("#282828")}
+				Thickness={1}
+				Transparency={0.5}
+				ApplyStrokeMode={Enum.ApplyStrokeMode.Border}
+			/>
+			<uipadding
+				PaddingLeft={new UDim(0, 10)}
+				PaddingRight={new UDim(0, 8)}
+				PaddingTop={new UDim(0, 4)}
+				PaddingBottom={new UDim(0, 4)}
+			/>
+			<uilistlayout
+				FillDirection={Enum.FillDirection.Horizontal}
+				VerticalAlignment={Enum.VerticalAlignment.Center}
+				Padding={new UDim(0, 8)}
+			/>
+
+			{/* Gauge Icon */}
+			<LucideIcon
+				name="gauge"
+				size={new UDim2(0, 14, 0, 14)}
+				color={speed !== 1.0 ? Color3.fromHex("#ffffff") : Color3.fromHex("#777777")}
+			/>
+
+			{/* Slider Interactive Track Area */}
+			<frame
+				key="TrackWrapper"
+				Size={new UDim2(1, -78, 1, 0)}
+				BackgroundTransparency={1}
+			>
+				{/* The Visual Rail */}
+				<frame
+					ref={trackRef}
+					key="Rail"
+					AnchorPoint={new Vector2(0, 0.5)}
+					Position={new UDim2(0, 0, 0.5, 0)}
+					Size={new UDim2(1, 0, 0, 4)}
+					BackgroundColor3={Color3.fromHex("#2a2a2a")}
+				>
+					<uicorner CornerRadius={new UDim(1, 0)} />
+
+					{/* Fill Bar */}
+					<frame
+						key="Fill"
+						Size={new UDim2(alpha, 0, 1, 0)}
+						BackgroundColor3={Color3.fromHex("#ffffff")}
+					>
+						<uicorner CornerRadius={new UDim(1, 0)} />
+					</frame>
+
+					{/* Knob / Thumb */}
+					<frame
+						key="Knob"
+						AnchorPoint={new Vector2(0.5, 0.5)}
+						Position={new UDim2(alpha, 0, 0.5, 0)}
+						Size={new UDim2(0, 12, 0, 12)}
+						BackgroundColor3={Color3.fromHex("#ffffff")}
+					>
+						<uicorner CornerRadius={new UDim(1, 0)} />
+						<uistroke
+							Color={Color3.fromHex("#000000")}
+							Thickness={1}
+							Transparency={0.6}
+						/>
+					</frame>
+				</frame>
+
+				{/* Hitbox for Drag & Click */}
+				<textbutton
+					key="Hitbox"
+					AnchorPoint={new Vector2(0, 0.5)}
+					Position={new UDim2(0, 0, 0.5, 0)}
+					Size={new UDim2(1, 0, 1, 0)}
+					BackgroundTransparency={1}
+					Text=""
+					Active={true}
+					ZIndex={5}
+					AutoButtonColor={false}
+					Event={{
+						InputBegan: (_, input) => {
+							if (
+								input.UserInputType === Enum.UserInputType.MouseButton1 ||
+								input.UserInputType === Enum.UserInputType.Touch
+							) {
+								isDraggingRef.current = true;
+								updateFromPosition(input.Position.X);
+							}
+						},
+					}}
+				/>
+			</frame>
+
+			{/* Digital Speed Display & Quick Reset */}
+			<textbutton
+				key="ResetBtn"
+				Size={new UDim2(0, speed !== 1.0 ? 52 : 42, 0, 24)}
+				BackgroundColor3={speed !== 1.0 ? Color3.fromHex("#252525") : Color3.fromHex("#1a1a1a")}
+				BackgroundTransparency={0.2}
+				Text=""
+				AutoButtonColor={false}
+				Event={{
+					MouseButton1Click: () => {
+						if (speed !== 1.0) {
+							onReset();
+						}
+					},
+				}}
+			>
+				<uicorner CornerRadius={new UDim(0, 6)} />
+				<uistroke
+					Color={speed !== 1.0 ? Color3.fromHex("#404040") : Color3.fromHex("#262626")}
+					Thickness={1}
+					Transparency={0.5}
+					ApplyStrokeMode={Enum.ApplyStrokeMode.Border}
+				/>
+				<uilistlayout
+					FillDirection={Enum.FillDirection.Horizontal}
+					VerticalAlignment={Enum.VerticalAlignment.Center}
+					HorizontalAlignment={Enum.HorizontalAlignment.Center}
+					Padding={new UDim(0, 3)}
+				/>
+				<textlabel
+					key="SpeedVal"
+					BackgroundTransparency={1}
+					AutomaticSize={Enum.AutomaticSize.XY}
+					Text={`${string.format("%.1f", speed)}x`}
+					TextColor3={speed !== 1.0 ? Color3.fromHex("#ffffff") : Color3.fromHex("#888888")}
+					Font={Fonts.Bold}
+					TextSize={11}
+				/>
+				{speed !== 1.0 && (
+					<LucideIcon
+						name="rotate-ccw"
+						size={new UDim2(0, 10, 0, 10)}
+						color={Color3.fromHex("#a0a0a0")}
+					/>
+				)}
+			</textbutton>
+		</frame>
+	);
+}
+
 export function EmoteModalComponent({ isOpen, onClose, onAnimationFinished }: EmoteModalProps) {
 	const [currentTab, setCurrentTab] = useState<EmoteCategory>("Dance");
 	const [searchQuery, setSearchQuery] = useState("");
 	const [activeEmoteId, setActiveEmoteId] = useState<string | undefined>(
 		EmoteService.getInstance().getActiveEmoteId(),
 	);
+	const [speed, setSpeed] = useState<number>(EmoteService.getInstance().getPlaybackSpeed());
 	const [scale, setScale] = useState(1);
 	const [targetPos, setTargetPos] = useState<UDim2>(new UDim2(0, 28, 0.5, 0));
 	const [offscreenPos, setOffscreenPos] = useState<UDim2>(new UDim2(0, -360, 0.5, 0));
@@ -82,10 +290,15 @@ export function EmoteModalComponent({ isOpen, onClose, onAnimationFinished }: Em
 			setActiveEmoteId(isPlaying ? id : undefined);
 		});
 
+		const unsubscribeSpeed = EmoteService.getInstance().onSpeedChanged((newSpeed) => {
+			setSpeed(newSpeed);
+		});
+
 		return () => {
 			conn?.Disconnect();
 			camConn.Disconnect();
 			unsubscribeEmote();
+			unsubscribeSpeed();
 		};
 	}, []);
 
@@ -212,6 +425,7 @@ export function EmoteModalComponent({ isOpen, onClose, onAnimationFinished }: Em
 				Size={new UDim2(0, 310, 0, 500)}
 				BackgroundColor3={Color3.fromHex("#141414")}
 				BackgroundTransparency={0}
+				Active={true}
 				ZIndex={2}
 			>
 				<uiscale Scale={scale} />
@@ -360,7 +574,7 @@ export function EmoteModalComponent({ isOpen, onClose, onAnimationFinished }: Em
 				<scrollingframe
 					key="ScrollContent"
 					Position={new UDim2(0, 12, 0, 128)}
-					Size={new UDim2(1, -24, 1, activeEmoteId ? -180 : -138)}
+					Size={new UDim2(1, -24, 1, activeEmoteId ? -222 : -182)}
 					BackgroundTransparency={1}
 					ScrollBarThickness={3}
 					ScrollBarImageColor3={Color3.fromHex("#444444")}
@@ -445,17 +659,34 @@ export function EmoteModalComponent({ isOpen, onClose, onAnimationFinished }: Em
 					})}
 				</scrollingframe>
 
-				{/* Stop Button */}
-				{activeEmoteId ? (
-					<frame
-						key="BottomBar"
-						Position={new UDim2(0, 12, 1, -44)}
-						Size={new UDim2(1, -24, 0, 34)}
-						BackgroundTransparency={1}
-					>
+				{/* Bottom Area: Speed Slider (tepat di atas tombol hentikan emot) & Stop Button */}
+				<frame
+					key="BottomContainer"
+					AnchorPoint={new Vector2(0, 1)}
+					Position={new UDim2(0, 12, 1, -12)}
+					Size={new UDim2(1, -24, 0, activeEmoteId ? 76 : 36)}
+					BackgroundTransparency={1}
+				>
+					<uilistlayout
+						FillDirection={Enum.FillDirection.Vertical}
+						SortOrder={Enum.SortOrder.LayoutOrder}
+						Padding={new UDim(0, 6)}
+					/>
+
+					{/* Slider tepat di atas Tombol Hentikan Emote */}
+					<EmoteSpeedSlider
+						layoutOrder={1}
+						speed={speed}
+						onChange={(val) => EmoteService.getInstance().setPlaybackSpeed(val)}
+						onReset={() => EmoteService.getInstance().setPlaybackSpeed(1.0)}
+					/>
+
+					{/* Tombol Hentikan Emote */}
+					{activeEmoteId ? (
 						<textbutton
 							key="StopBtn"
-							Size={new UDim2(1, 0, 1, 0)}
+							LayoutOrder={2}
+							Size={new UDim2(1, 0, 0, 34)}
 							BackgroundColor3={Color3.fromHex("#ff3c3c")}
 							BackgroundTransparency={0.15}
 							Text="HENTIKAN EMOTE"
@@ -471,8 +702,8 @@ export function EmoteModalComponent({ isOpen, onClose, onAnimationFinished }: Em
 						>
 							<uicorner CornerRadius={new UDim(0, 8)} />
 						</textbutton>
-					</frame>
-				) : undefined}
+					) : undefined}
+				</frame>
 			</frame>
 		</frame>
 	);

@@ -83,7 +83,16 @@ export class ServerMusicService {
 				if (this.state === MusicPlayerState.Playing && this.currentTrack) {
 					const speed = this.getTrackPlaybackSpeed(this.currentTrack);
 					const elapsed = (Workspace.GetServerTimeNow() - this.playbackStartedTimestamp) * speed;
-					if (this.sound.TimeLength > 0 && elapsed >= this.sound.TimeLength) {
+					const maxTrackDuration = this.sound.TimeLength > 0 ? this.sound.TimeLength : 180;
+					if (elapsed >= maxTrackDuration) {
+						warn(
+							`[ServerMusicService] Track "${this.currentTrack.title}" reached duration limit (${maxTrackDuration}s). Advancing...`,
+						);
+						this.onTrackEnded();
+					} else if (this.sound.TimeLength === 0 && elapsed >= 15 && this.sound.IsLoaded) {
+						warn(
+							`[ServerMusicService] Track "${this.currentTrack.title}" has 0s length. Skipping to next...`,
+						);
 						this.onTrackEnded();
 					}
 				}
@@ -93,6 +102,13 @@ export class ServerMusicService {
 		// Listen for Admin Control requests
 		this.controlEvent.OnServerEvent.Connect((player, action, position) => {
 			this.handleControlAction(player, action as MusicControlAction, position as number | undefined);
+		});
+
+		// Listen for Client Resync requests
+		this.syncEvent.OnServerEvent.Connect((player, action) => {
+			if (action === "RequestSync") {
+				this.syncToPlayer(player);
+			}
 		});
 
 		// Listen for Player Queue requests

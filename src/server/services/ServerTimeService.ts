@@ -1,4 +1,4 @@
-import { Lighting, ReplicatedStorage, RunService } from "@rbxts/services";
+import { Lighting, ReplicatedStorage, RunService, Workspace } from "@rbxts/services";
 import { TimeConfig } from "shared/config";
 import { TimePeriod, TimeStateSync } from "shared/types";
 
@@ -82,7 +82,7 @@ export class ServerTimeService {
 		ReplicatedStorage.SetAttribute("TimeScale", this.timeScale);
 		ReplicatedStorage.SetAttribute("IsTimePaused", this.isPaused);
 		ReplicatedStorage.SetAttribute("IsAdminTimeOverride", this.isAdminOverridden);
-		ReplicatedStorage.SetAttribute("TimeSyncTimestamp", os.clock());
+		ReplicatedStorage.SetAttribute("TimeSyncTimestamp", Workspace.GetServerTimeNow());
 	}
 
 	// ─── Public API ──────────────────────────────────────────────────────────
@@ -93,9 +93,8 @@ export class ServerTimeService {
 
 	public setClockTime(hour: number): void {
 		this.clockTime = math.clamp(hour, 0, 24) % 24;
-		if (!this.isAdminOverridden) {
-			Lighting.ClockTime = this.clockTime;
-		}
+		this.isAdminOverridden = false;
+		Lighting.ClockTime = this.clockTime;
 		this.publishSyncState();
 		print(`[ServerTimeService] ClockTime manually set to: ${string.format("%.2f", this.clockTime)}`);
 	}

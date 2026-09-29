@@ -125,7 +125,12 @@ export class HotbarController {
 		this.characterConnections.push(
 			character.ChildRemoved.Connect((child) => {
 				if (child.IsA("Tool")) {
-					task.defer(() => this.syncTools());
+					task.defer(() => {
+						if (!this.isToolOwned(child)) {
+							this.removeToolFromSlots(child);
+						}
+						this.refreshView();
+					});
 				}
 			}),
 		);
@@ -168,11 +173,7 @@ export class HotbarController {
 			backpack.ChildRemoved.Connect((child) => {
 				if (child.IsA("Tool")) {
 					task.defer(() => {
-						const character = this.player.Character;
-						const isInChar = character !== undefined && child.Parent === character;
-						const isInBp = child.Parent === backpack;
-
-						if (!isInChar && !isInBp) {
+						if (!this.isToolOwned(child)) {
 							this.removeToolFromSlots(child);
 						}
 						this.refreshView();
@@ -184,6 +185,20 @@ export class HotbarController {
 		task.defer(() => this.syncTools());
 	}
 
+	private isToolOwned(tool: Tool): boolean {
+		if (!tool.Parent) return false;
+		const character = this.player.Character;
+		const backpack = this.player.FindFirstChildOfClass("Backpack");
+		const storage = this.player.FindFirstChild("BackpackStorage");
+
+		return (
+			(character !== undefined && tool.IsDescendantOf(character)) ||
+			(backpack !== undefined && tool.IsDescendantOf(backpack)) ||
+			(storage !== undefined && tool.IsDescendantOf(storage)) ||
+			tool.IsDescendantOf(this.player)
+		);
+	}
+
 	/**
 	 * Scans Backpack and Character to ensure all tools are mapped to a slot.
 	 */
@@ -191,12 +206,9 @@ export class HotbarController {
 		const character = this.player.Character;
 		const backpack = this.player.FindFirstChildOfClass("Backpack");
 
-		const currentTools = new Set<Tool>();
-
 		if (backpack) {
 			for (const child of backpack.GetChildren()) {
 				if (child.IsA("Tool")) {
-					currentTools.add(child);
 					this.assignToolToSlot(child);
 				}
 			}
@@ -205,15 +217,14 @@ export class HotbarController {
 		if (character) {
 			for (const child of character.GetChildren()) {
 				if (child.IsA("Tool")) {
-					currentTools.add(child);
 					this.assignToolToSlot(child);
 				}
 			}
 		}
 
-		// Remove any slot whose tool is no longer owned by player
+		// Remove only slots whose tools are completely removed/destroyed from the player
 		for (const [slot, tool] of this.toolSlots) {
-			if (!currentTools.has(tool)) {
+			if (!this.isToolOwned(tool)) {
 				this.unbindToolEvents(tool);
 				this.toolSlots.delete(slot);
 			}
@@ -230,12 +241,17 @@ export class HotbarController {
 			if (existingTool === tool) return;
 		}
 
-		// Find first free slot (1-9)
+		// Find first free slot (1-5)
 		for (let i = 1; i <= HotbarView.MAX_SLOTS; i++) {
 			if (!this.toolSlots.has(i)) {
 				this.toolSlots.set(i, tool);
 				return;
 			}
+		}
+
+		// Priority for Admin Tool (Stage Controller): ensure it is accessible in hotbar
+		if (tool.Name === "Stage Controller" || tool.Name === "LightingRemote" || tool.Name === "LightingController") {
+			this.toolSlots.set(HotbarView.MAX_SLOTS, tool);
 		}
 	}
 
@@ -296,8 +312,7 @@ export class HotbarController {
 			// Already equipped in hand -> unequip back to backpack
 			humanoid.UnequipTools();
 		} else {
-			// Unequip currently equipped tool and equip selected one
-			humanoid.UnequipTools();
+			// Equip selected tool (Roblox automatically unequips any previously held tool cleanly)
 			humanoid.EquipTool(tool);
 		}
 

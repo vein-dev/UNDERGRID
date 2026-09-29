@@ -37,6 +37,9 @@ export function AdminTimeTabComponent({ visible }: AdminTimeTabProps) {
 
 	// Listener atribut ReplicatedStorage
 	useEffect(() => {
+		const connClock = ReplicatedStorage.GetAttributeChangedSignal("CurrentClockTime").Connect(() => {
+			setClockTimeState(timeService.getClockTime());
+		});
 		const connPause = ReplicatedStorage.GetAttributeChangedSignal("IsTimePaused").Connect(() => {
 			setIsPaused((ReplicatedStorage.GetAttribute("IsTimePaused") as boolean | undefined) ?? false);
 		});
@@ -49,6 +52,7 @@ export function AdminTimeTabComponent({ visible }: AdminTimeTabProps) {
 			);
 		});
 		return () => {
+			connClock.Disconnect();
 			connPause.Disconnect();
 			connScale.Disconnect();
 			connDuration.Disconnect();
@@ -305,6 +309,7 @@ export function AdminTimeTabComponent({ visible }: AdminTimeTabProps) {
 							ZIndex={13}
 							Event={{
 								MouseButton1Click: () => {
+									setClockTimeState(preset.hour);
 									adminService.setClockTime(preset.hour);
 								},
 							}}
@@ -451,7 +456,9 @@ export function AdminTimeTabComponent({ visible }: AdminTimeTabProps) {
 						ZIndex={13}
 						Event={{
 							MouseButton1Click: () => {
-								const target = (clockTime - 1 + 24) % 24;
+								const current = timeService.getClockTime();
+								const target = (current - 1 + 24) % 24;
+								setClockTimeState(target);
 								adminService.setClockTime(target);
 							},
 						}}
@@ -474,7 +481,9 @@ export function AdminTimeTabComponent({ visible }: AdminTimeTabProps) {
 						ZIndex={13}
 						Event={{
 							MouseButton1Click: () => {
-								const target = (clockTime + 1) % 24;
+								const current = timeService.getClockTime();
+								const target = (current + 1) % 24;
+								setClockTimeState(target);
 								adminService.setClockTime(target);
 							},
 						}}

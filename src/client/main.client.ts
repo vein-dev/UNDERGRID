@@ -18,14 +18,21 @@ import {
 	ClientStageLightingController,
 	ClientSignageController,
 	ClientBackdropController,
+	FlyController,
+	RollupDoorController,
+	SeatController,
+	StageCameraController,
+	AvatarContextMenuController,
 } from "./controllers";
 
 
 import { AdminService } from "./services/AdminService";
+import { AnimationPreloadService } from "./services/AnimationPreloadService";
 import { EmoteService } from "./services/EmoteService";
 import { GlobalNotificationService } from "./services/GlobalNotificationService";
 import { MusicPlayerService } from "./services/MusicPlayerService";
 import { TimeService } from "./services/TimeService";
+import { StageCameraOverlayView } from "./ui/views/StageCameraOverlayView";
 
 /**
  * Client Entry Point
@@ -36,7 +43,8 @@ function main() {
 
 	print("[Client] Starting client controllers...");
 
-	// 0. Inisialisasi Graphics Controller & Time Service (Siklus Waktu Dinamis)
+	// 0. Preload all animations asynchronously & Inisialisasi Graphics Controller & Time Service
+	AnimationPreloadService.getInstance().init();
 	GraphicsController.getInstance().init();
 	TimeService.getInstance().init();
 
@@ -82,6 +90,12 @@ function main() {
 	ClientStageLightingController.getInstance().init();
 	ClientSignageController.getInstance().init();
 	ClientBackdropController.getInstance().init();
+	FlyController.getInstance().init();
+	RollupDoorController.getInstance().init();
+	SeatController.getInstance().init();
+	StageCameraController.getInstance().init();
+	StageCameraOverlayView.getInstance();
+	AvatarContextMenuController.getInstance().init();
 
 	print("[Client] All controllers initialized successfully.");
 

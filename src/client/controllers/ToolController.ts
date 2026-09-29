@@ -1,11 +1,13 @@
 import { Players } from "@rbxts/services";
 import {
+	DrumstickClientComponent,
+	GuitarClientComponent,
 	IToolComponent,
 	LightingRemoteClientComponent,
 	SkateboardClientComponent,
 	SmartphoneClientComponent,
 } from "client/components";
-import { isPlayerAdmin } from "shared/config";
+import { isDrumstickTool, isGuitarTool, isPlayerAdmin } from "shared/config";
 
 /**
  * Client singleton controller responsible for binding OOP components
@@ -74,7 +76,15 @@ export class ToolController {
 			component = new SmartphoneClientComponent(tool);
 		} else if (tool.Name === "Skateboard") {
 			component = new SkateboardClientComponent(tool);
-		} else if (tool.Name === "LightingRemote" || tool.Name === "LightingController") {
+		} else if (isGuitarTool(tool.Name)) {
+			component = new GuitarClientComponent(tool);
+		} else if (isDrumstickTool(tool.Name)) {
+			component = new DrumstickClientComponent(tool);
+		} else if (
+			tool.Name === "Stage Controller" ||
+			tool.Name === "LightingRemote" ||
+			tool.Name === "LightingController"
+		) {
 			if (!isPlayerAdmin(this.player)) {
 				tool.Destroy();
 				return;

@@ -34,3 +34,6 @@ export * from "./MovementTypes";
 export * from "./SkateboardTypes";
 export * from "./TimeTypes";
 export * from "./StageLightingTypes";
+export * from "./RollupDoorTypes";
+export * from "./StageCameraTypes";
+export * from "./AvatarContextMenuTypes";

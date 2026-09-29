@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from "@rbxts/react";
 import ReactRoblox, { Root } from "@rbxts/react-roblox";
 import { Players, TweenService, UserInputService, Workspace } from "@rbxts/services";
 import { MovementController } from "client/controllers/MovementController";
+import { MusicPlayerService } from "client/services/MusicPlayerService";
 import { LucideIcon } from "../components/LucideIcon";
 import { Fonts } from "../Typography";
 
@@ -125,15 +126,188 @@ function ToggleRow({ title, description, iconName, isOn, onToggle }: ToggleRowPr
 	);
 }
 
+interface ActionRowProps {
+	title: string;
+	description: string;
+	iconName: string;
+	buttonText: string;
+	buttonIcon?: string;
+	isSuccess?: boolean;
+	isLoading?: boolean;
+	onAction: () => void;
+}
+
+function ActionRow({
+	title,
+	description,
+	iconName,
+	buttonText,
+	buttonIcon,
+	isSuccess,
+	isLoading,
+	onAction,
+}: ActionRowProps) {
+	const [isHovered, setIsHovered] = useState(false);
+	const [isBtnHovered, setIsBtnHovered] = useState(false);
+
+	return (
+		<frame
+			Size={new UDim2(1, 0, 0, 68)}
+			BackgroundColor3={isHovered ? Color3.fromHex("#1c1c20") : Color3.fromHex("#161618")}
+			BackgroundTransparency={0.1}
+			ZIndex={3}
+		>
+			<uicorner CornerRadius={new UDim(0, 12)} />
+			<uistroke Color={isHovered ? Color3.fromHex("#3a3a40") : Color3.fromHex("#26262a")} Thickness={1} />
+			<uipadding
+				PaddingLeft={new UDim(0, 14)}
+				PaddingRight={new UDim(0, 14)}
+				PaddingTop={new UDim(0, 12)}
+				PaddingBottom={new UDim(0, 12)}
+			/>
+
+			{/* Icon container */}
+			<frame
+				Position={new UDim2(0, 0, 0.5, -18)}
+				Size={new UDim2(0, 36, 0, 36)}
+				BackgroundColor3={isSuccess ? Color3.fromHex("#1c2e22") : Color3.fromHex("#222226")}
+				ZIndex={4}
+			>
+				<uicorner CornerRadius={new UDim(0, 10)} />
+				<LucideIcon
+					name={iconName}
+					size={new UDim2(0, 18, 0, 18)}
+					anchorPoint={new Vector2(0.5, 0.5)}
+					position={new UDim2(0.5, 0, 0.5, 0)}
+					color={isSuccess ? Color3.fromHex("#34c759") : Color3.fromHex("#888888")}
+					zIndex={5}
+				/>
+			</frame>
+
+			{/* Texts */}
+			<frame
+				Position={new UDim2(0, 48, 0, 0)}
+				Size={new UDim2(1, -164, 1, 0)}
+				BackgroundTransparency={1}
+				ZIndex={4}
+			>
+				<uilistlayout
+					FillDirection={Enum.FillDirection.Vertical}
+					VerticalAlignment={Enum.VerticalAlignment.Center}
+					Padding={new UDim(0, 2)}
+				/>
+				<textlabel
+					Text={title}
+					Font={Fonts.Bold}
+					TextSize={13}
+					TextColor3={Color3.fromHex("#ffffff")}
+					TextXAlignment={Enum.TextXAlignment.Left}
+					BackgroundTransparency={1}
+					AutomaticSize={Enum.AutomaticSize.XY}
+					ZIndex={5}
+				/>
+				<textlabel
+					Text={description}
+					Font={Fonts.Regular}
+					TextSize={10}
+					TextColor3={Color3.fromHex("#8e8e93")}
+					TextXAlignment={Enum.TextXAlignment.Left}
+					TextWrapped={true}
+					BackgroundTransparency={1}
+					Size={new UDim2(1, 0, 0, 24)}
+					ZIndex={5}
+				/>
+			</frame>
+
+			{/* Action Button */}
+			<textbutton
+				AnchorPoint={new Vector2(1, 0.5)}
+				Position={new UDim2(1, 0, 0.5, 0)}
+				Size={new UDim2(0, 106, 0, 32)}
+				BackgroundColor3={
+					isSuccess
+						? Color3.fromHex("#1c3825")
+						: isBtnHovered
+							? Color3.fromHex("#36363a")
+							: Color3.fromHex("#26262a")
+				}
+				BackgroundTransparency={0.1}
+				AutoButtonColor={false}
+				Text=""
+				ZIndex={5}
+				Event={{
+					MouseEnter: () => {
+						setIsHovered(true);
+						setIsBtnHovered(true);
+					},
+					MouseLeave: () => {
+						setIsHovered(false);
+						setIsBtnHovered(false);
+					},
+					Activated: onAction,
+				}}
+			>
+				<uicorner CornerRadius={new UDim(0, 8)} />
+				<uistroke
+					Color={
+						isSuccess
+							? Color3.fromHex("#34c759")
+							: isBtnHovered
+								? Color3.fromHex("#4a4a50")
+								: Color3.fromHex("#3a3a40")
+					}
+					Thickness={1}
+				/>
+				<uilistlayout
+					FillDirection={Enum.FillDirection.Horizontal}
+					HorizontalAlignment={Enum.HorizontalAlignment.Center}
+					VerticalAlignment={Enum.VerticalAlignment.Center}
+					Padding={new UDim(0, 6)}
+				/>
+				{buttonIcon ? (
+					<LucideIcon
+						name={buttonIcon}
+						size={new UDim2(0, 14, 0, 14)}
+						color={isSuccess ? Color3.fromHex("#34c759") : Color3.fromHex("#ffffff")}
+						zIndex={6}
+					/>
+				) : undefined}
+				<textlabel
+					Text={buttonText}
+					Font={Fonts.Medium}
+					TextSize={11}
+					TextColor3={isSuccess ? Color3.fromHex("#34c759") : Color3.fromHex("#ffffff")}
+					BackgroundTransparency={1}
+					AutomaticSize={Enum.AutomaticSize.XY}
+					ZIndex={6}
+				/>
+			</textbutton>
+		</frame>
+	);
+}
+
 export function SettingsModalComponent({ isOpen, onClose, onAnimationFinished }: SettingsModalProps) {
 	const movementController = MovementController.getInstance();
 	const [leanActive, setLeanActive] = useState(movementController.isLeanActive());
 	const [bobbingActive, setBobbingActive] = useState(movementController.isCameraBobbingActive());
+	const [refreshState, setRefreshState] = useState<"idle" | "refreshing" | "done">("idle");
 
 	const [scale, setScale] = useState(1);
 	const [shouldRender, setShouldRender] = useState(isOpen);
 
 	const [isCloseHovered, setIsCloseHovered] = useState(false);
+
+	const handleRefreshMusic = () => {
+		if (refreshState === "refreshing") return;
+		setRefreshState("refreshing");
+		MusicPlayerService.getInstance().refreshAudio();
+		task.delay(0.6, () => {
+			setRefreshState("done");
+			task.delay(2.0, () => {
+				setRefreshState("idle");
+			});
+		});
+	};
 
 	const panelRef = useRef<Frame>();
 	const backdropRef = useRef<TextButton>();
@@ -295,7 +469,7 @@ export function SettingsModalComponent({ isOpen, onClose, onAnimationFinished }:
 				ref={panelRef}
 				AnchorPoint={new Vector2(0.5, 0.5)}
 				Position={new UDim2(0.5, 0, 0, -420)}
-				Size={new UDim2(0, 360, 0, 390)}
+				Size={new UDim2(0, 360, 0, 430)}
 				BackgroundColor3={Color3.fromHex("#0e0e10")}
 				BackgroundTransparency={0.1}
 				Active={true}
@@ -458,9 +632,42 @@ export function SettingsModalComponent({ isOpen, onClose, onAnimationFinished }:
 						/>
 					</frame>
 
+					{/* Section Header: Audio & Music */}
+					<textlabel
+						LayoutOrder={4}
+						Text="AUDIO & MUSIK"
+						Font={Fonts.Bold}
+						TextSize={11}
+						TextColor3={Color3.fromHex("#8e8e93")}
+						TextXAlignment={Enum.TextXAlignment.Left}
+						BackgroundTransparency={1}
+						Size={new UDim2(1, 0, 0, 18)}
+						ZIndex={12}
+					/>
+
+					{/* Row 3: Refresh Audio Musik */}
+					<frame LayoutOrder={5} Size={new UDim2(1, 0, 0, 68)} BackgroundTransparency={1} ZIndex={12}>
+						<ActionRow
+							title="Refresh Audio Musik"
+							description="Muat ulang pemutar audio & sinkronkan ulang lagu jika suara terhenti."
+							iconName="music"
+							buttonText={
+								refreshState === "refreshing"
+									? "Memuat..."
+									: refreshState === "done"
+										? "Disinkronkan!"
+										: "Refresh"
+							}
+							buttonIcon={refreshState === "done" ? "check" : "refresh-cw"}
+							isSuccess={refreshState === "done"}
+							isLoading={refreshState === "refreshing"}
+							onAction={handleRefreshMusic}
+						/>
+					</frame>
+
 					{/* Information Footer */}
 					<frame
-						LayoutOrder={4}
+						LayoutOrder={6}
 						Size={new UDim2(1, 0, 0, 48)}
 						BackgroundColor3={Color3.fromHex("#141418")}
 						BackgroundTransparency={0.4}

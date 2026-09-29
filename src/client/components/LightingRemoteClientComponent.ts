@@ -3,7 +3,7 @@ import { IToolComponent } from "./IToolComponent";
 import { LightingRemoteView } from "client/ui/views/LightingRemoteView";
 
 /**
- * Client OOP Component bound to the "LightingRemote" Tool for LocalPlayer.
+ * Client OOP Component bound to the "Stage Controller" Tool for LocalPlayer.
  *
  * - Equip Tool   → Otomatis memunculkan Floating Immersive HUD.
  * - Unequip Tool → Menyembunyikan Floating HUD secara mulus.
@@ -53,7 +53,7 @@ export class LightingRemoteClientComponent implements IToolComponent {
 			this.remoteView.show();
 		}
 
-		print(`[LightingRemoteClientComponent] Initialized for tool: ${this.tool.Name}`);
+		print(`[StageControllerClientComponent] Initialized for tool: ${this.tool.Name}`);
 	}
 
 	public destroy(): void {
@@ -62,6 +62,6 @@ export class LightingRemoteClientComponent implements IToolComponent {
 		}
 		this.connections.clear();
 		this.remoteView.hide();
-		print(`[LightingRemoteClientComponent] Destroyed for tool: ${this.tool.Name}`);
+		print(`[StageControllerClientComponent] Destroyed for tool: ${this.tool.Name}`);
 	}
 }

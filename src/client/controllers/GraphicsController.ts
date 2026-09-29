@@ -56,9 +56,14 @@ export class GraphicsController {
 		pcall(() => {
 			Lighting.GlobalShadows = true;
 
-			// Nonaktifkan BlurEffect bawaan di Lighting agar layar tidak buram
+			// Jangan nonaktifkan Blur utama Lighting atau blur UI (Backpack, Announcement)
 			for (const child of Lighting.GetChildren()) {
-				if (child.IsA("BlurEffect") && child.Name !== "BackpackBlur") {
+				if (
+					child.IsA("BlurEffect") &&
+					child.Name !== "BackpackBlur" &&
+					child.Name !== "AnnouncementBlur" &&
+					child.Name !== "Blur"
+				) {
 					child.Enabled = false;
 					child.Size = 0;
 				}

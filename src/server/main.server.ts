@@ -11,6 +11,10 @@ import {
 	ServerSkateboardService,
 	ServerTimeService,
 	ServerStageLightingService,
+	ServerGuitarService,
+	ServerDrumstickService,
+	ServerRollupDoorService,
+	ServerSeatService,
 } from "./services";
 
 /**
@@ -40,6 +44,18 @@ function main() {
 
 	const skateboardService = ServerSkateboardService.getInstance();
 	skateboardService.init();
+
+	const guitarService = ServerGuitarService.getInstance();
+	guitarService.init();
+
+	const drumstickService = ServerDrumstickService.getInstance();
+	drumstickService.init();
+
+	const rollupDoorService = ServerRollupDoorService.getInstance();
+	rollupDoorService.init();
+
+	const seatService = ServerSeatService.getInstance();
+	seatService.init();
 
 	ServerMusicService.getInstance();
 	ServerChatService.getInstance();

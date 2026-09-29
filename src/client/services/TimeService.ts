@@ -88,15 +88,21 @@ export class TimeService {
 		if (override !== undefined) this.isAdminTimeOverride = override;
 
 		if (serverClock !== undefined) {
-			if (syncTimestamp !== undefined && !this.isPaused) {
-				// Kompensasi latensi waktu jaringan
-				const elapsedSec = math.max(0, os.clock() - syncTimestamp);
+			if (syncTimestamp !== undefined && syncTimestamp > 0 && !this.isPaused) {
+				// Kompensasi latensi waktu jaringan menggunakan Workspace.GetServerTimeNow()
+				const now = Workspace.GetServerTimeNow();
+				const elapsedSec = math.clamp(now - syncTimestamp, 0, 3);
 				const totalCycleSeconds = math.max(1, this.cycleDurationMinutes * 60);
 				const hoursPerSecond = (24 / totalCycleSeconds) * this.timeScale;
 				this.localClockTime = (serverClock + elapsedSec * hoursPerSecond) % 24;
 			} else {
 				this.localClockTime = serverClock;
 			}
+
+			// Terapkan langsung ke Lighting dan efek atmosfer visual
+			Lighting.ClockTime = this.localClockTime;
+			this.interpolateLighting(this.localClockTime);
+			this.updateStreetlights(this.localClockTime);
 		}
 	}
 

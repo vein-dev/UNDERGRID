@@ -1,5 +1,5 @@
 import { getRemoteEvent, getRemoteFunction } from "shared/network";
-import { AdminStateSync, PlayerEntryInfo, StageLightingControlPayload } from "shared/types";
+import { AdminStateSync, PlayerEntryInfo, StageCameraControlPayload, StageLightingControlPayload } from "shared/types";
 import { AnnouncementOverlayView } from "client/ui/views/AnnouncementOverlayView";
 
 type StateUpdateCallback = (state: AdminStateSync) => void;
@@ -127,8 +127,16 @@ export class AdminService {
 		this.adminControlEvent.FireServer("TriggerFogBurst");
 	}
 
+	public setStageCameraControl(payload: Partial<StageCameraControlPayload>): void {
+		this.adminControlEvent.FireServer("SetStageCameraControl", payload);
+	}
+
+	public giveStageController(): void {
+		this.adminControlEvent.FireServer("GiveStageController");
+	}
+
 	public giveLightingRemote(): void {
-		this.adminControlEvent.FireServer("GiveLightingRemote");
+		this.giveStageController();
 	}
 
 	public onStateUpdated(cb: StateUpdateCallback): () => void {

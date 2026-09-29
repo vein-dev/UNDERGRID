@@ -70,12 +70,17 @@ export class SkateboardController {
 	private currentSpeed = 0;
 	private smoothedSteer = 0;
 	private currentRoll = 0;
+	private currentSlopePitch = 0;
+	private currentSlopeRoll = 0;
+	private currentBoardY = SkateboardConfig.ATTACHMENT.boardCFrameOffset.Y;
 	private lastJumpTime = 0;
 	private currentExpectedAirTime = 0.35;
 	private wasGrounded = true;
 	private timeInAir = 0;
 	private raycastParams = new RaycastParams();
 	private pushPhase: "Pushing" | "Cruising" | "FakiePushing" | "FakieCruising" | "None" = "None";
+	private hasPendingTrickBoost = false;
+	private isPushAnimPlaying = false;
 
 	// Animasi Trik Papan Prosedural
 	private activeBoardTrick?: {
@@ -285,7 +290,7 @@ export class SkateboardController {
 					this.animService.stopAnimation(SkateboardConfig.ANIMATIONS.fakieIdle, 0.1);
 					this.animService.playAnimation(
 						SkateboardConfig.ANIMATIONS.fakieStop,
-						Enum.AnimationPriority.Action,
+						Enum.AnimationPriority.Action2,
 						true,
 						0.1,
 					);
@@ -309,7 +314,7 @@ export class SkateboardController {
 					this.isBraking = true;
 					this.animService.playAnimation(
 						SkateboardConfig.ANIMATIONS.stop,
-						Enum.AnimationPriority.Action,
+						Enum.AnimationPriority.Action2,
 						true,
 					);
 				} else {
@@ -351,14 +356,14 @@ export class SkateboardController {
 					if (this.currentStance === "Fakie") {
 						this.animService.playAnimation(
 							SkateboardConfig.ANIMATIONS.fakieCrouch,
-							Enum.AnimationPriority.Action,
+							Enum.AnimationPriority.Action2,
 							true,
 							0.1,
 						);
 					} else {
 						this.animService.playAnimation(
 							SkateboardConfig.ANIMATIONS.crouch,
-							Enum.AnimationPriority.Action,
+							Enum.AnimationPriority.Action2,
 							true,
 							0.1,
 						);
@@ -389,7 +394,7 @@ export class SkateboardController {
 							this.currentStance === "Fakie"
 								? SkateboardConfig.ANIMATIONS.fakieIdle
 								: SkateboardConfig.ANIMATIONS.idle;
-						this.animService.playAnimation(idleAnim, Enum.AnimationPriority.Action, true, 0.2);
+						this.animService.playAnimation(idleAnim, Enum.AnimationPriority.Action2, true, 0.2);
 					}
 				}
 			},
@@ -410,7 +415,7 @@ export class SkateboardController {
 							this.currentStance === "Fakie"
 								? SkateboardConfig.ANIMATIONS.fakieIdle
 								: SkateboardConfig.ANIMATIONS.idle;
-						this.animService.playAnimation(idleAnim, Enum.AnimationPriority.Action, true, 0.2);
+						this.animService.playAnimation(idleAnim, Enum.AnimationPriority.Action2, true, 0.2);
 					}
 				}
 			},
@@ -448,7 +453,7 @@ export class SkateboardController {
 					this.animService.stopAnimation(SkateboardConfig.ANIMATIONS.fakieIdle, 0.1);
 					this.animService.playAnimation(
 						SkateboardConfig.ANIMATIONS.fakieStop,
-						Enum.AnimationPriority.Action,
+						Enum.AnimationPriority.Action2,
 						true,
 						0.1,
 					);
@@ -462,7 +467,7 @@ export class SkateboardController {
 					this.isBraking = true;
 					this.animService.playAnimation(
 						SkateboardConfig.ANIMATIONS.stop,
-						Enum.AnimationPriority.Action,
+						Enum.AnimationPriority.Action2,
 						true,
 					);
 				} else {
@@ -499,14 +504,14 @@ export class SkateboardController {
 					if (this.currentStance === "Fakie") {
 						this.animService.playAnimation(
 							SkateboardConfig.ANIMATIONS.fakieCrouch,
-							Enum.AnimationPriority.Action,
+							Enum.AnimationPriority.Action2,
 							true,
 							0.1,
 						);
 					} else {
 						this.animService.playAnimation(
 							SkateboardConfig.ANIMATIONS.crouch,
-							Enum.AnimationPriority.Action,
+							Enum.AnimationPriority.Action2,
 							true,
 							0.1,
 						);
@@ -558,7 +563,7 @@ export class SkateboardController {
 							this.currentStance === "Fakie"
 								? SkateboardConfig.ANIMATIONS.fakieIdle
 								: SkateboardConfig.ANIMATIONS.idle;
-						this.animService.playAnimation(idleAnim, Enum.AnimationPriority.Action, true, 0.2);
+						this.animService.playAnimation(idleAnim, Enum.AnimationPriority.Action2, true, 0.2);
 					}
 				}
 			} else if (input.KeyCode === SkateboardConfig.KEYBINDS.turnRight) {
@@ -573,7 +578,7 @@ export class SkateboardController {
 							this.currentStance === "Fakie"
 								? SkateboardConfig.ANIMATIONS.fakieIdle
 								: SkateboardConfig.ANIMATIONS.idle;
-						this.animService.playAnimation(idleAnim, Enum.AnimationPriority.Action, true, 0.2);
+						this.animService.playAnimation(idleAnim, Enum.AnimationPriority.Action2, true, 0.2);
 					}
 				}
 			} else if (input.KeyCode === SkateboardConfig.KEYBINDS.ollie) {
@@ -649,7 +654,7 @@ export class SkateboardController {
 					// Langsung putar pose idle skateboard pada detik ke-0 (0ms delay)
 					this.animService.playAnimation(
 						SkateboardConfig.ANIMATIONS.idle,
-						Enum.AnimationPriority.Action,
+						Enum.AnimationPriority.Action2,
 						true,
 						0,
 					);
@@ -747,6 +752,8 @@ export class SkateboardController {
 		this.isChargingOllie = false;
 		this.queuedTrick = undefined;
 		this.isPerformingTrick = false;
+		this.hasPendingTrickBoost = false;
+		this.isPushAnimPlaying = false;
 
 		if (UserInputService.TouchEnabled) {
 			this.mobileView.show();
@@ -799,7 +806,7 @@ export class SkateboardController {
 				this.animService.setAnimator(animator);
 				this.animService.playAnimation(
 					SkateboardConfig.ANIMATIONS.idle,
-					Enum.AnimationPriority.Action,
+					Enum.AnimationPriority.Action2,
 					true,
 					0,
 				);
@@ -852,11 +859,16 @@ export class SkateboardController {
 		this.steerDirection = 0;
 		this.smoothedSteer = 0;
 		this.currentRoll = 0;
+		this.currentSlopePitch = 0;
+		this.currentSlopeRoll = 0;
+		this.currentBoardY = SkateboardConfig.ATTACHMENT.boardCFrameOffset.Y;
 		this.wasGrounded = true;
 		this.timeInAir = 0;
 		this.isChargingOllie = false;
 		this.queuedTrick = undefined;
 		this.isPerformingTrick = false;
+		this.hasPendingTrickBoost = false;
+		this.isPushAnimPlaying = false;
 		if (this.activeGrind) {
 			this.audioService.stopGrind();
 			this.activeGrind = undefined;
@@ -927,6 +939,7 @@ export class SkateboardController {
 		if (this.isChargingOllie) return;
 		this.currentState = "Pushing";
 		this.currentStance = "Regular";
+		this.pushPhase = "Pushing";
 		if (this.steerDirection === 0) {
 			this.stopTurnAnims(0.15);
 		}
@@ -934,57 +947,77 @@ export class SkateboardController {
 		this.animService.stopAnimation(SkateboardConfig.ANIMATIONS.fakiePush, 0.15);
 		this.animService.stopAnimation(SkateboardConfig.ANIMATIONS.fakieIdle, 0.15);
 
-		const maxSpeed = SkateboardConfig.PHYSICS.maxSpeed;
-		const cruisingThreshold = maxSpeed * 0.88;
+		if (this.currentSpeed < SkateboardConfig.PHYSICS.pushInitialKick) {
+			this.currentSpeed = SkateboardConfig.PHYSICS.pushInitialKick;
+		}
 
-		// Jika kecepatan sudah stabil di atas threshold:
-		if (this.currentSpeed >= cruisingThreshold) {
-			this.pushPhase = "Cruising";
-			this.animService.stopAnimation(SkateboardConfig.ANIMATIONS.startPush, 0.2);
-			if (this.steerDirection === -1) {
-				this.playTurnAnim("Left");
-			} else if (this.steerDirection === 1) {
-				this.playTurnAnim("Right");
-			} else {
-				this.animService.playAnimation(
-					SkateboardConfig.ANIMATIONS.idle,
-					Enum.AnimationPriority.Action,
-					true,
-					0.2,
-				);
-			}
-		} else {
-			// Mulai bergerak / berakselerasi: mainkan animasi startPush dengan looping
-			this.pushPhase = "Pushing";
-			if (this.currentSpeed < SkateboardConfig.PHYSICS.pushInitialKick) {
-				this.currentSpeed = SkateboardConfig.PHYSICS.pushInitialKick;
-			}
+		const isLowSpeed = math.abs(this.currentSpeed) <= 12;
+		const shouldPlayPushAnim = isLowSpeed || this.hasPendingTrickBoost || !this.isPushAnimPlaying;
+
+		if (shouldPlayPushAnim && !this.isPushAnimPlaying) {
+			this.hasPendingTrickBoost = false;
+			this.isPushAnimPlaying = true;
+			this.animService.stopAnimation(SkateboardConfig.ANIMATIONS.idle, 0.15);
+
 			this.animService.playAnimation(
 				SkateboardConfig.ANIMATIONS.startPush,
-				Enum.AnimationPriority.Action,
-				true,
-				0.25,
-				1.0,
+				Enum.AnimationPriority.Action2,
+				false,
+				0.15,
+				1.05,
 			);
-			if (this.steerDirection === -1) {
-				this.playTurnAnim("Left");
-			} else if (this.steerDirection === 1) {
-				this.playTurnAnim("Right");
+
+			const pushTrack = this.animService.getTrack(SkateboardConfig.ANIMATIONS.startPush);
+			const pushDuration = pushTrack && pushTrack.Length > 0 ? pushTrack.Length : 0.75;
+
+			task.delay(pushDuration, () => {
+				this.isPushAnimPlaying = false;
+				if (this.isMounted && this.currentState === "Pushing") {
+					this.animService.stopAnimation(SkateboardConfig.ANIMATIONS.startPush, 0.2);
+					if (this.steerDirection === -1) {
+						this.playTurnAnim("Left");
+					} else if (this.steerDirection === 1) {
+						this.playTurnAnim("Right");
+					} else {
+						this.animService.playAnimation(
+							SkateboardConfig.ANIMATIONS.idle,
+							Enum.AnimationPriority.Action2,
+							true,
+							0.2,
+						);
+					}
+				}
+			});
+		} else if (!this.isPushAnimPlaying && this.steerDirection === 0) {
+			const idleTrack = this.animService.getTrack(SkateboardConfig.ANIMATIONS.idle);
+			if (!idleTrack || !idleTrack.IsPlaying || idleTrack.WeightCurrent < 0.5) {
+				this.animService.playAnimation(
+					SkateboardConfig.ANIMATIONS.idle,
+					Enum.AnimationPriority.Action2,
+					true,
+					0.15,
+				);
 			}
+		}
+
+		if (this.steerDirection === -1) {
+			this.playTurnAnim("Left");
+		} else if (this.steerDirection === 1) {
+			this.playTurnAnim("Right");
 		}
 	}
 
 	private stopPushing(): void {
-		if (this.pushPhase === "Pushing" || this.pushPhase === "Cruising") {
-			this.pushPhase = "None";
-			this.stopPushingAnimation();
-			if (this.currentState === "Pushing") {
-				this.currentState = "Idle";
-			}
+		this.pushPhase = "None";
+		this.isPushAnimPlaying = false;
+		this.stopPushingAnimation();
+		if (this.currentState === "Pushing") {
+			this.currentState = "Idle";
 		}
 	}
 
 	private stopPushingAnimation(): void {
+		this.isPushAnimPlaying = false;
 		this.animService.stopAnimation(SkateboardConfig.ANIMATIONS.startPush, 0.25);
 		this.animService.stopAnimation(SkateboardConfig.ANIMATIONS.fakiePush, 0.25);
 
@@ -999,7 +1032,7 @@ export class SkateboardController {
 				this.currentStance === "Fakie"
 					? SkateboardConfig.ANIMATIONS.fakieIdle
 					: SkateboardConfig.ANIMATIONS.idle;
-			this.animService.playAnimation(idleAnim, Enum.AnimationPriority.Action, true, 0.25);
+			this.animService.playAnimation(idleAnim, Enum.AnimationPriority.Action2, true, 0.2);
 		}
 	}
 
@@ -1017,9 +1050,9 @@ export class SkateboardController {
 		this.animService.stopAnimation(SkateboardConfig.ANIMATIONS.fakieIdle, 0.15);
 		this.animService.playAnimation(
 			SkateboardConfig.ANIMATIONS.fakiePush,
-			Enum.AnimationPriority.Action,
+			Enum.AnimationPriority.Action2,
 			true,
-			0.25,
+			0.2,
 			1.0,
 		);
 		if (this.steerDirection === -1) {
@@ -1042,9 +1075,9 @@ export class SkateboardController {
 				} else {
 					this.animService.playAnimation(
 						SkateboardConfig.ANIMATIONS.fakieIdle,
-						Enum.AnimationPriority.Action,
+						Enum.AnimationPriority.Action2,
 						true,
-						0.25,
+						0.2,
 					);
 				}
 			} else {
@@ -1058,9 +1091,9 @@ export class SkateboardController {
 				} else {
 					this.animService.playAnimation(
 						SkateboardConfig.ANIMATIONS.idle,
-						Enum.AnimationPriority.Action,
+						Enum.AnimationPriority.Action2,
 						true,
-						0.25,
+						0.2,
 					);
 				}
 			}
@@ -1139,7 +1172,30 @@ export class SkateboardController {
 			this.trickEvent.FireServer({ trickName: "Ollie", duration: expectedAirTime });
 			this.startBoardTrick("Ollie", expectedAirTime);
 
-			this.animService.playAnimation("Ollie", Enum.AnimationPriority.Action2, false, 0.05, animSpeed);
+			this.animService.playAnimation("Ollie", Enum.AnimationPriority.Action4, false, 0.05, animSpeed);
+			const ollieTrack =
+				this.animService.getTrack("Ollie") ?? this.animService.getTrack(SkateboardConfig.ANIMATIONS.ollie);
+			if (ollieTrack) {
+				const conn = ollieTrack.Stopped.Connect(() => {
+					conn.Disconnect();
+					if (this.isMounted && !this.isPerformingTrick) {
+						if (!this.isGrounded()) {
+							this.animService.playAnimation(
+								SkateboardConfig.ANIMATIONS.inAir,
+								Enum.AnimationPriority.Action2,
+								true,
+								0.1,
+							);
+						} else if (this.pushPhase !== "Pushing" && this.pushPhase !== "FakiePushing" && !this.isBraking) {
+							const idleAnim =
+								this.currentStance === "Fakie"
+									? SkateboardConfig.ANIMATIONS.fakieIdle
+									: SkateboardConfig.ANIMATIONS.idle;
+							this.animService.playAnimation(idleAnim, Enum.AnimationPriority.Action2, true, 0.15);
+						}
+					}
+				});
+			}
 		}
 	}
 
@@ -1156,7 +1212,7 @@ export class SkateboardController {
 		this.animService.stopAnimation(SkateboardConfig.ANIMATIONS.ollie, 0.05);
 
 		// Putar animasi trik karakter
-		this.animService.playAnimation(trickName, Enum.AnimationPriority.Action2, false, 0.05);
+		this.animService.playAnimation(trickName, Enum.AnimationPriority.Action4, false, 0.05);
 		const track = this.animService.getTrack(trickName);
 
 		// Hitung sisa waktu melayang di udara agar trik selesai sebelum roda menyentuh tanah
@@ -1180,20 +1236,23 @@ export class SkateboardController {
 
 		const onTrickFinished = () => {
 			this.isPerformingTrick = false;
+			this.animService.stopAnimation(trickName, 0.05);
 			// Jika masih di udara dan masih mounted, kembalikan pose inAir agar karakter tidak berdiri kaku bawaan Roblox
 			if (this.isMounted && !this.isGrounded()) {
 				this.animService.playAnimation(
 					SkateboardConfig.ANIMATIONS.inAir,
-					Enum.AnimationPriority.Action,
+					Enum.AnimationPriority.Action2,
 					true,
 					0.1,
 				);
 			} else if (this.isMounted && this.isGrounded()) {
-				const idleAnim =
-					this.currentStance === "Fakie"
-						? SkateboardConfig.ANIMATIONS.fakieIdle
-						: SkateboardConfig.ANIMATIONS.idle;
-				this.animService.playAnimation(idleAnim, Enum.AnimationPriority.Action, true, 0.1);
+				if (this.pushPhase !== "Pushing" && this.pushPhase !== "FakiePushing" && !this.isBraking) {
+					const idleAnim =
+						this.currentStance === "Fakie"
+							? SkateboardConfig.ANIMATIONS.fakieIdle
+							: SkateboardConfig.ANIMATIONS.idle;
+					this.animService.playAnimation(idleAnim, Enum.AnimationPriority.Action2, true, 0.15);
+				}
 			}
 		};
 
@@ -1515,7 +1574,14 @@ export class SkateboardController {
 		return char?.FindFirstChild("HumanoidRootPart") as BasePart | undefined;
 	}
 
-	private getGroundInfo(): { grounded: boolean; normal: Vector3; material?: Enum.Material } {
+	private getGroundInfo(): {
+		grounded: boolean;
+		normal: Vector3;
+		material?: Enum.Material;
+		groundY?: number;
+		targetPitch?: number;
+		targetRoll?: number;
+	} {
 		if (this.currentState === "Grinding") {
 			return { grounded: false, normal: new Vector3(0, 1, 0) };
 		}
@@ -1530,30 +1596,98 @@ export class SkateboardController {
 			return { grounded: false, normal: new Vector3(0, 1, 0) };
 		}
 
-		// 1. Raycast ke bawah untuk mendeteksi kontak tanah & normal permukaan tanah
 		this.raycastParams.FilterDescendantsInstances = [char];
-		const rayOrigin = rootPart.Position;
-		const rayDirection = new Vector3(0, -4.6, 0);
-		const result = Workspace.Raycast(rayOrigin, rayDirection, this.raycastParams);
 
-		if (result) {
-			// Jika mengenai part bertag GrindRail, jangan anggap tanah biasa agar sistem grinding dapat menguncinya
-			const hit = result.Instance;
-			let isRail = CollectionService.HasTag(hit, SkateboardConfig.GRINDING.tag);
-			if (!isRail && hit.Parent) {
-				isRail = CollectionService.HasTag(hit.Parent, SkateboardConfig.GRINDING.tag);
-			}
-			if (!isRail) {
-				return { grounded: true, normal: result.Normal, material: result.Material };
-			}
+		// Multi-point raycast: Center, Front wheelbase, Back wheelbase, Left, Right
+		const rootCF = rootPart.CFrame;
+		const frontOrigin = rootCF.PointToWorldSpace(new Vector3(0, 1.5, -1.8));
+		const backOrigin = rootCF.PointToWorldSpace(new Vector3(0, 1.5, 1.8));
+		const leftOrigin = rootCF.PointToWorldSpace(new Vector3(-0.6, 1.5, 0));
+		const rightOrigin = rootCF.PointToWorldSpace(new Vector3(0.6, 1.5, 0));
+		const centerOrigin = rootCF.PointToWorldSpace(new Vector3(0, 1.5, 0));
+		const rayDir = new Vector3(0, -6.5, 0);
+
+		const frontHit = Workspace.Raycast(frontOrigin, rayDir, this.raycastParams);
+		const backHit = Workspace.Raycast(backOrigin, rayDir, this.raycastParams);
+		const leftHit = Workspace.Raycast(leftOrigin, rayDir, this.raycastParams);
+		const rightHit = Workspace.Raycast(rightOrigin, rayDir, this.raycastParams);
+		const centerHit = Workspace.Raycast(centerOrigin, rayDir, this.raycastParams);
+
+		// Periksa apakah salah satu hit adalah GrindRail
+		const checkRail = (hit?: RaycastResult) => {
+			if (!hit) return false;
+			const inst = hit.Instance;
+			return (
+				CollectionService.HasTag(inst, SkateboardConfig.GRINDING.tag) ||
+				(inst.Parent !== undefined && CollectionService.HasTag(inst.Parent, SkateboardConfig.GRINDING.tag))
+			);
+		};
+
+		const validFront = frontHit && !checkRail(frontHit) ? frontHit : undefined;
+		const validBack = backHit && !checkRail(backHit) ? backHit : undefined;
+		const validCenter = centerHit && !checkRail(centerHit) ? centerHit : undefined;
+		const validLeft = leftHit && !checkRail(leftHit) ? leftHit : undefined;
+		const validRight = rightHit && !checkRail(rightHit) ? rightHit : undefined;
+
+		let grounded = false;
+		let normal = new Vector3(0, 1, 0);
+		let material: Enum.Material | undefined = undefined;
+		let groundY: number | undefined = undefined;
+		let targetPitch: number | undefined = undefined;
+		let targetRoll: number | undefined = undefined;
+
+		if (validFront && validBack) {
+			grounded = true;
+			const deltaY = validFront.Position.Y - validBack.Position.Y;
+			targetPitch = math.atan2(deltaY, 3.6);
+			groundY = (validFront.Position.Y + validBack.Position.Y) / 2;
+			material = validCenter?.Material ?? validFront.Material;
+			normal = validCenter?.Normal ?? validFront.Normal;
+		} else if (validCenter) {
+			grounded = true;
+			groundY = validCenter.Position.Y;
+			material = validCenter.Material;
+			normal = validCenter.Normal;
+			targetPitch = math.asin(math.clamp(-rootCF.LookVector.Dot(normal), -0.85, 0.85));
+		} else if (validFront) {
+			grounded = true;
+			groundY = validFront.Position.Y;
+			material = validFront.Material;
+			normal = validFront.Normal;
+			targetPitch = math.asin(math.clamp(-rootCF.LookVector.Dot(normal), -0.85, 0.85));
+		} else if (validBack) {
+			grounded = true;
+			groundY = validBack.Position.Y;
+			material = validBack.Material;
+			normal = validBack.Normal;
+			targetPitch = math.asin(math.clamp(-rootCF.LookVector.Dot(normal), -0.85, 0.85));
 		}
 
-		// 2. Deteksi native Roblox Humanoid (FloorMaterial bukan Air = 100% menempel tanah)
-		if (humanoid && humanoid.FloorMaterial !== Enum.Material.Air) {
-			return { grounded: true, normal: new Vector3(0, 1, 0), material: humanoid.FloorMaterial };
+		if (validLeft && validRight) {
+			const deltaRollY = validRight.Position.Y - validLeft.Position.Y;
+			targetRoll = math.atan2(deltaRollY, 1.2);
+		} else if (normal.Y < 0.999) {
+			targetRoll = math.asin(math.clamp(rootCF.RightVector.Dot(normal), -0.85, 0.85));
 		}
 
-		return { grounded: false, normal: new Vector3(0, 1, 0) };
+		// Fallback native humanoid floor
+		if (!grounded && humanoid && humanoid.FloorMaterial !== Enum.Material.Air) {
+			grounded = true;
+			normal = new Vector3(0, 1, 0);
+			material = humanoid.FloorMaterial;
+			groundY = rootPart.Position.Y - 3.66;
+			targetPitch = 0;
+			targetRoll = 0;
+		}
+
+		return {
+			grounded,
+			normal,
+			material,
+			groundY,
+			targetPitch,
+			targetRoll,
+		};
 	}
 
 	private isGrounded(): boolean {
@@ -1585,7 +1719,7 @@ export class SkateboardController {
 					this.animService.stopAnimation(SkateboardConfig.ANIMATIONS.fakieIdle, 0.1);
 					this.animService.playAnimation(
 						SkateboardConfig.ANIMATIONS.fakieStop,
-						Enum.AnimationPriority.Action,
+						Enum.AnimationPriority.Action2,
 						true,
 						0.1,
 					);
@@ -1620,7 +1754,7 @@ export class SkateboardController {
 							this.currentStance === "Fakie"
 								? SkateboardConfig.ANIMATIONS.fakieIdle
 								: SkateboardConfig.ANIMATIONS.idle;
-						this.animService.playAnimation(idleAnim, Enum.AnimationPriority.Action, true, 0.2);
+						this.animService.playAnimation(idleAnim, Enum.AnimationPriority.Action2, true, 0.2);
 					}
 				}
 
@@ -1629,7 +1763,7 @@ export class SkateboardController {
 					this.isHoldingBrake = true;
 					if (this.currentSpeed > 0.5) {
 						this.isBraking = true;
-						this.animService.playAnimation(SkateboardConfig.ANIMATIONS.stop, Enum.AnimationPriority.Action, true);
+						this.animService.playAnimation(SkateboardConfig.ANIMATIONS.stop, Enum.AnimationPriority.Action2, true);
 					} else {
 						this.isBraking = false;
 						this.currentStance = "Fakie";
@@ -1690,7 +1824,7 @@ export class SkateboardController {
 					if (!isOlliePlaying && !this.animService.isPlaying(SkateboardConfig.ANIMATIONS.inAir)) {
 						this.animService.playAnimation(
 							SkateboardConfig.ANIMATIONS.inAir,
-							Enum.AnimationPriority.Action,
+							Enum.AnimationPriority.Action2,
 							true,
 							0.1,
 						);
@@ -1699,12 +1833,15 @@ export class SkateboardController {
 			} else {
 				// Ketika berada di atas tanah, pastikan animasi inAir & Ollie selalu dihentikan agar tidak nyangkut saat idle
 				this.animService.stopAnimation(SkateboardConfig.ANIMATIONS.inAir, 0.1);
+				this.animService.stopAnimation(SkateboardConfig.ANIMATIONS.ollie, 0.05);
+				this.animService.stopAnimation("Ollie", 0.05);
 
 				// Touchdown / Landing detection:
-				// HANYA trigger landing jika baru saja mendarat dari lompatan/melayang di udara (InAir & timeInAir >= 0.2s)
-				if (!this.wasGrounded && this.currentState === "InAir" && this.timeInAir >= 0.2) {
+				if (this.currentState === "InAir") {
 					const fallImpact = math.clamp(this.timeInAir / 0.4, 0.7, 1.2);
-					this.audioService.playLanding(fallImpact);
+					if (this.timeInAir >= 0.15) {
+						this.audioService.playLanding(fallImpact);
+					}
 
 					this.currentState = "Landing";
 					this.isPerformingTrick = false;
@@ -1718,28 +1855,67 @@ export class SkateboardController {
 					);
 
 					this.animService.stopAnimation(SkateboardConfig.ANIMATIONS.ollie, 0.05);
+					this.animService.stopAnimation("Ollie", 0.05);
 					this.animService.stopAnimation(SkateboardConfig.ANIMATIONS.inAir, 0.05);
+
 					const landAnim =
 						this.currentStance === "Fakie"
 							? SkateboardConfig.ANIMATIONS.fakieLand
 							: SkateboardConfig.ANIMATIONS.land;
-					this.animService.playAnimation(landAnim, Enum.AnimationPriority.Action, false, 0.05);
 
-					task.delay(0.2, () => {
+					const shouldPlayLandAnim = this.timeInAir >= 0.18;
+					if (shouldPlayLandAnim) {
+						this.animService.playAnimation(landAnim, Enum.AnimationPriority.Action3, false, 0.05);
+					}
+
+					task.delay(shouldPlayLandAnim ? 0.18 : 0.02, () => {
 						if (this.isMounted && this.currentState === "Landing") {
 							this.currentState = this.currentStance === "Fakie" ? "FakieIdle" : "Idle";
-							const idleAnim =
-								this.currentStance === "Fakie"
-									? SkateboardConfig.ANIMATIONS.fakieIdle
-									: SkateboardConfig.ANIMATIONS.idle;
-							this.animService.playAnimation(idleAnim, Enum.AnimationPriority.Action, true, 0.2);
+							this.hasPendingTrickBoost = true;
+
+							if (this.isPushing && !this.isBraking && this.currentStance !== "Fakie") {
+								// Pemain sedang menekan W saat mendarat dari trik/ollie: picu 1 kayuhan akselerasi pasca-trik
+								this.startPushing();
+							} else if (this.pushPhase !== "Pushing" && this.pushPhase !== "FakiePushing" && !this.isBraking) {
+								const idleAnim =
+									this.currentStance === "Fakie"
+										? SkateboardConfig.ANIMATIONS.fakieIdle
+										: SkateboardConfig.ANIMATIONS.idle;
+								this.animService.playAnimation(idleAnim, Enum.AnimationPriority.Action2, true, 0.15);
+							}
 						}
 					});
-				} else if (this.currentState === "InAir") {
-					// Jika guncangan/gundukan kecil lewat (< 0.2s), pulihkan state normal tanpa efek audio/landing
-					this.currentState = this.currentStance === "Fakie" ? "FakieIdle" : "Idle";
 				}
 				this.timeInAir = 0;
+
+				// Active Stance Guard: Pastikan karakter selalu berada dalam pose riding/idle skateboard
+				// saat meluncur, coasting, atau diam, dan tidak pernah jatuh ke default T-pose kaku Roblox
+				const isPushingFoot = this.isPushAnimPlaying || this.pushPhase === "FakiePushing";
+				const isBusyWithOtherAction =
+					this.isBraking ||
+					this.isChargingOllie ||
+					this.isPerformingTrick ||
+					this.currentState === "Landing";
+
+				if (!isPushingFoot && !isBusyWithOtherAction) {
+					// Jika sedang belok dan animasi belok sedang berjalan, biarkan animasi belok
+					const turnAnim =
+						this.steerDirection === -1
+							? (this.currentStance === "Fakie" ? SkateboardConfig.ANIMATIONS.fakieTurnLeft : SkateboardConfig.ANIMATIONS.turnLeft)
+							: (this.currentStance === "Fakie" ? SkateboardConfig.ANIMATIONS.fakieTurnRight : SkateboardConfig.ANIMATIONS.turnRight);
+					const isTurnPlaying = this.steerDirection !== 0 && this.animService.isPlaying(turnAnim);
+
+					if (!isTurnPlaying) {
+						const idleAnim =
+							this.currentStance === "Fakie"
+								? SkateboardConfig.ANIMATIONS.fakieIdle
+								: SkateboardConfig.ANIMATIONS.idle;
+						const track = this.animService.getTrack(idleAnim);
+						if (!track || !track.IsPlaying || track.WeightCurrent < 0.5) {
+							this.animService.playAnimation(idleAnim, Enum.AnimationPriority.Action2, true, 0.15);
+						}
+					}
+				}
 			}
 			this.wasGrounded = grounded;
 
@@ -1764,7 +1940,7 @@ export class SkateboardController {
 				}
 			}
 
-			// 2. Akselerasi Dinamis Maju (Forward Push & Cruising) atau Rem Mundur saat tekan W
+			// 2. Akselerasi Dinamis Maju (Forward Push) atau Rem Mundur saat tekan W
 			if (this.isPushing && grounded && !this.isChargingOllie && !this.isPerformingTrick && !this.isBraking) {
 				if (this.currentSpeed < -0.1) {
 					// Sedang meluncur mundur: rem laju mundur cepat & mulus hingga 0, lalu otomatis dorong maju
@@ -1781,50 +1957,25 @@ export class SkateboardController {
 						isSlope && slopeAlignment > 0.03
 							? SkateboardConfig.PHYSICS.maxSpeed * 1.35
 							: SkateboardConfig.PHYSICS.maxSpeed;
-					const cruisingThreshold = maxSpeed * 0.88;
 
-					if (this.pushPhase === "Pushing") {
-						this.currentSpeed = math.min(
-							this.currentSpeed + SkateboardConfig.PHYSICS.pushAcceleration * dt,
-							maxSpeed,
-						);
+					this.pushPhase = "Pushing";
+					this.currentSpeed = math.min(
+						this.currentSpeed + SkateboardConfig.PHYSICS.pushAcceleration * dt,
+						maxSpeed,
+					);
 
+					if (this.isPushAnimPlaying) {
 						const dynamicPushSpeed = math.clamp(this.currentSpeed / 16, 0.85, 1.35);
 						this.animService.adjustSpeed(SkateboardConfig.ANIMATIONS.startPush, dynamicPushSpeed);
-
-						if (this.currentSpeed >= cruisingThreshold) {
-							this.pushPhase = "Cruising";
-							this.animService.stopAnimation(SkateboardConfig.ANIMATIONS.startPush, 0.3);
-							if (this.steerDirection === -1) {
-								this.playTurnAnim("Left");
-							} else if (this.steerDirection === 1) {
-								this.playTurnAnim("Right");
-							} else {
-								this.animService.playAnimation(
-									SkateboardConfig.ANIMATIONS.idle,
-									Enum.AnimationPriority.Action,
-									true,
-									0.25,
-								);
-							}
-						}
-					} else if (this.pushPhase === "Cruising") {
-						this.currentSpeed = math.min(this.currentSpeed + 2 * dt, maxSpeed);
-
-						if (this.currentSpeed < cruisingThreshold * 0.75) {
-							this.pushPhase = "Pushing";
+					} else if (this.steerDirection === 0) {
+						const idleTrack = this.animService.getTrack(SkateboardConfig.ANIMATIONS.idle);
+						if (!idleTrack || !idleTrack.IsPlaying || idleTrack.WeightCurrent < 0.5) {
 							this.animService.playAnimation(
-								SkateboardConfig.ANIMATIONS.startPush,
-								Enum.AnimationPriority.Action,
+								SkateboardConfig.ANIMATIONS.idle,
+								Enum.AnimationPriority.Action2,
 								true,
-								0.25,
-								1.0,
+								0.15,
 							);
-							if (this.steerDirection === -1) {
-								this.playTurnAnim("Left");
-							} else if (this.steerDirection === 1) {
-								this.playTurnAnim("Right");
-							}
 						}
 					}
 				}
@@ -1851,8 +2002,6 @@ export class SkateboardController {
 				!this.isPerformingTrick
 			) {
 				const maxFakie = SkateboardConfig.PHYSICS.maxFakieSpeed;
-				const fakieCruisingThreshold = -maxFakie * 0.85;
-
 				this.currentSpeed = math.max(
 					this.currentSpeed - SkateboardConfig.PHYSICS.fakieAcceleration * dt,
 					-maxFakie,
@@ -1861,56 +2010,21 @@ export class SkateboardController {
 				const dynamicFakieSpeed = math.clamp(math.abs(this.currentSpeed) / 16, 0.85, 1.35);
 				this.animService.adjustSpeed(SkateboardConfig.ANIMATIONS.fakiePush, dynamicFakieSpeed);
 
-				if (this.currentSpeed <= fakieCruisingThreshold) {
-					this.pushPhase = "FakieCruising";
-					this.currentState = "FakieIdle";
-					this.animService.stopAnimation(SkateboardConfig.ANIMATIONS.fakiePush, 0.3);
-					if (this.steerDirection === -1) {
-						this.playTurnAnim("Left");
-					} else if (this.steerDirection === 1) {
-						this.playTurnAnim("Right");
-					} else {
-						this.animService.playAnimation(
-							SkateboardConfig.ANIMATIONS.fakieIdle,
-							Enum.AnimationPriority.Action,
-							true,
-							0.25,
-						);
-					}
-				}
-			} else if (
-				this.pushPhase === "FakieCruising" &&
-				grounded &&
-				!this.isChargingOllie &&
-				!this.isPerformingTrick
-			) {
-				const maxFakie = SkateboardConfig.PHYSICS.maxFakieSpeed;
-				const fakieCruisingThreshold = -maxFakie * 0.85;
-
-				this.currentSpeed = math.max(this.currentSpeed - 2 * dt, -maxFakie);
-
-				if (this.currentSpeed > fakieCruisingThreshold * 0.75) {
-					this.pushPhase = "FakiePushing";
-					this.currentState = "FakiePush";
+				const fakieTrack = this.animService.getTrack(SkateboardConfig.ANIMATIONS.fakiePush);
+				if (!fakieTrack || !fakieTrack.IsPlaying || fakieTrack.WeightCurrent < 0.5) {
 					this.animService.playAnimation(
 						SkateboardConfig.ANIMATIONS.fakiePush,
-						Enum.AnimationPriority.Action,
+						Enum.AnimationPriority.Action2,
 						true,
-						0.25,
-						1.0,
+						0.2,
+						dynamicFakieSpeed,
 					);
-					if (this.steerDirection === -1) {
-						this.playTurnAnim("Left");
-					} else if (this.steerDirection === 1) {
-						this.playTurnAnim("Right");
-					}
 				}
 			} else if (
 				grounded &&
 				!this.isPushing &&
 				!this.isHoldingBrake &&
 				this.pushPhase !== "FakiePushing" &&
-				this.pushPhase !== "FakieCruising" &&
 				!isSlope
 			) {
 				// 3. Framerate-Independent Drag (Normalisasi Hambatan Gesek Sesuai FPS)
@@ -1928,7 +2042,7 @@ export class SkateboardController {
 						this.animService.stopAnimation(SkateboardConfig.ANIMATIONS.fakieIdle, 0.25);
 						this.animService.playAnimation(
 							SkateboardConfig.ANIMATIONS.idle,
-							Enum.AnimationPriority.Action,
+							Enum.AnimationPriority.Action2,
 							true,
 							0.25,
 						);
@@ -1971,6 +2085,30 @@ export class SkateboardController {
 				this.currentRoll +
 				(targetRoll - this.currentRoll) * math.clamp(SkateboardConfig.PHYSICS.rollSmoothing * dt, 0, 1);
 
+			// Ground Adaptive Alignment: Kontur tanah (pitch tangga/tanjakan & roll lereng) dan adaptasi tinggi roda
+			let targetSlopePitch = 0;
+			let targetSlopeRoll = 0;
+			let targetBoardY = SkateboardConfig.ATTACHMENT.boardCFrameOffset.Y;
+
+			if (grounded && this.currentState !== "InAir" && !this.isPerformingTrick) {
+				if (groundInfo.targetPitch !== undefined) {
+					targetSlopePitch = groundInfo.targetPitch;
+				}
+				if (groundInfo.targetRoll !== undefined) {
+					targetSlopeRoll = groundInfo.targetRoll;
+				}
+				if (groundInfo.groundY !== undefined) {
+					const distToGround = rootPart.Position.Y - groundInfo.groundY;
+					// Jarak vertikal roda bawah ke center VisualBoard adalah 0.464 studs
+					targetBoardY = math.clamp(-(distToGround - 0.464), -3.9, -2.6);
+				}
+			}
+
+			const groundAlignAlpha = math.clamp(dt * 20, 0, 1);
+			this.currentSlopePitch += (targetSlopePitch - this.currentSlopePitch) * groundAlignAlpha;
+			this.currentSlopeRoll += (targetSlopeRoll - this.currentSlopeRoll) * groundAlignAlpha;
+			this.currentBoardY += (targetBoardY - this.currentBoardY) * groundAlignAlpha;
+
 			if (this.activeBoardTrick) {
 				const elapsed = os.clock() - this.activeBoardTrick.startTime;
 				const progress = elapsed / this.activeBoardTrick.duration;
@@ -1989,9 +2127,10 @@ export class SkateboardController {
 
 			const boardJoint = this.getBoardMotor();
 			if (boardJoint) {
-				boardJoint.C0 = SkateboardConfig.ATTACHMENT.boardCFrameOffset
-					.mul(this.trickCFrameOffset)
-					.mul(CFrame.Angles(0, 0, this.currentRoll));
+				const totalRoll = this.currentSlopeRoll + this.currentRoll;
+				boardJoint.C0 = new CFrame(0, this.currentBoardY, 0)
+					.mul(CFrame.Angles(-this.currentSlopePitch, 0, totalRoll))
+					.mul(this.trickCFrameOffset);
 			}
 
 			// 7. Penggerak Fisika Karakter (Direct Horizontal Velocity & Momentum Support)
@@ -2273,7 +2412,7 @@ export class SkateboardController {
 		this.animService.stopAnimation(SkateboardConfig.ANIMATIONS.fakieCrouch, 0.05);
 
 		const grindPose = SkateboardConfig.ANIMATIONS.idle;
-		this.animService.playAnimation(grindPose, Enum.AnimationPriority.Action, true, 0.1);
+		this.animService.playAnimation(grindPose, Enum.AnimationPriority.Action2, true, 0.1);
 
 		this.audioService.startGrind();
 	}
@@ -2410,7 +2549,7 @@ export class SkateboardController {
 			this.currentState = "InAir";
 			this.timeInAir = 0.15;
 			this.animService.stopAnimation(SkateboardConfig.ANIMATIONS.idle, 0.05);
-			this.animService.playAnimation(SkateboardConfig.ANIMATIONS.inAir, Enum.AnimationPriority.Action, true, 0.1);
+			this.animService.playAnimation(SkateboardConfig.ANIMATIONS.inAir, Enum.AnimationPriority.Action2, true, 0.1);
 		} else if (reason === "Ollie") {
 			this.executeGrindOllie(grind);
 		} else {

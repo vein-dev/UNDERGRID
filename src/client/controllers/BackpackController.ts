@@ -76,6 +76,20 @@ export class BackpackController {
 			this.refreshView();
 		});
 
+		// Listen to backpack changes across respawns
+		const watchBackpack = (bp: Backpack) => {
+			bp.ChildAdded.Connect(() => this.refreshView());
+			bp.ChildRemoved.Connect(() => this.refreshView());
+		};
+		const existingBp = this.player.FindFirstChildOfClass("Backpack");
+		if (existingBp) watchBackpack(existingBp);
+		this.player.ChildAdded.Connect((child) => {
+			if (child.IsA("Backpack")) watchBackpack(child);
+		});
+
+		this.storageFolder.ChildAdded.Connect(() => this.refreshView());
+		this.storageFolder.ChildRemoved.Connect(() => this.refreshView());
+
 		this.refreshView();
 		print("[BackpackController] Backpack & Storage system initialized successfully.");
 	}
@@ -201,8 +215,90 @@ export class BackpackController {
 		}
 	}
 
+	private syncStorageTools(): void {
+		const hotbar = HotbarController.getInstance();
+		const backpack = this.player.FindFirstChildOfClass("Backpack");
+		const character = this.player.Character;
+
+		// 1. Remove tools from storage that no longer exist or were completely removed
+		for (const [slot, tool] of this.storageTools) {
+			const isStillValid =
+				tool.Parent !== undefined &&
+				(tool.Parent === backpack ||
+					tool.Parent === this.storageFolder ||
+					(character !== undefined && tool.Parent === character) ||
+					tool.IsDescendantOf(this.player));
+
+			if (!isStillValid) {
+				this.storageTools.delete(slot);
+			}
+		}
+
+		// 2. Remove any tool from storage that is currently assigned to a hotbar slot
+		for (const [slot, tool] of this.storageTools) {
+			for (let i = 1; i <= BackpackView.PICKUP_SLOT_COUNT; i++) {
+				if (hotbar.getToolInSlot(i) === tool) {
+					this.storageTools.delete(slot);
+					break;
+				}
+			}
+		}
+
+		// 3. Collect all tools currently in Backpack, storageFolder, and character (if not in hotbar)
+		const availableTools: Tool[] = [];
+		const checkAndAdd = (child: Instance) => {
+			if (!child.IsA("Tool")) return;
+			let inHotbar = false;
+			for (let i = 1; i <= BackpackView.PICKUP_SLOT_COUNT; i++) {
+				if (hotbar.getToolInSlot(i) === child) {
+					inHotbar = true;
+					break;
+				}
+			}
+			if (!inHotbar) {
+				availableTools.push(child);
+			}
+		};
+
+		if (backpack) {
+			for (const child of backpack.GetChildren()) {
+				checkAndAdd(child);
+			}
+		}
+		if (character) {
+			for (const child of character.GetChildren()) {
+				checkAndAdd(child);
+			}
+		}
+		for (const child of this.storageFolder.GetChildren()) {
+			checkAndAdd(child);
+		}
+
+		// 4. Ensure every unslotted tool gets a slot in this.storageTools (1 to 20)
+		for (const tool of availableTools) {
+			let alreadyInStorage = false;
+			for (const [, stTool] of this.storageTools) {
+				if (stTool === tool) {
+					alreadyInStorage = true;
+					break;
+				}
+			}
+
+			if (!alreadyInStorage) {
+				for (let i = 1; i <= BackpackView.STORAGE_SLOT_COUNT; i++) {
+					if (!this.storageTools.has(i)) {
+						this.storageTools.set(i, tool);
+						break;
+					}
+				}
+			}
+		}
+	}
+
 	public refreshView(): void {
 		if (!this.backpackView) return;
+
+		this.syncStorageTools();
 
 		const hotbar = HotbarController.getInstance();
 		const character = this.player.Character;

@@ -99,7 +99,7 @@ export const MovementConfig = {
 	},
 
 	BOBBING: {
-		enabled: true,
+		enabled: false,
 		intensity: 1.0,
 		swaySmoothness: 0.125,
 	},

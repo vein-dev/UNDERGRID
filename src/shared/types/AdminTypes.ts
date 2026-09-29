@@ -1,4 +1,5 @@
 import { StageLightingControlPayload } from "./StageLightingTypes";
+import { StageCameraControlPayload } from "./StageCameraTypes";
 
 /**
  * Types and interfaces for the Admin Panel system.
@@ -17,6 +18,7 @@ export enum AdminTab {
 export interface AdminStateSync {
 	isQueueLocked: boolean;
 	stageLighting?: StageLightingControlPayload;
+	stageCamera?: StageCameraControlPayload;
 }
 
 /** Player information summary for Admin Player Management tab. */
