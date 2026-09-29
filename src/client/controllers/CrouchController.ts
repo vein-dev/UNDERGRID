@@ -67,7 +67,7 @@ export class CrouchController {
 
 	private init(): void {
 		UserInputService.InputBegan.Connect((input, gameProcessed) => {
-			if (gameProcessed || this.isPaused) return;
+			if (gameProcessed || this.isPaused || this.rootPart?.GetAttribute("IsFlying") === true) return;
 
 			if (input.KeyCode === MovementConfig.CROUCH.crouchKey) {
 				if (this.isCrawling) {
@@ -90,7 +90,7 @@ export class CrouchController {
 		});
 
 		UserInputService.InputEnded.Connect((input, _gameProcessed) => {
-			if (this.isPaused) return;
+			if (this.isPaused || this.rootPart?.GetAttribute("IsFlying") === true) return;
 			if (this.isSprintKey(input.KeyCode)) {
 				this.sprintKeyHeld = false;
 				this.stopSprint();

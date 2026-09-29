@@ -79,7 +79,15 @@ export class FallController {
 	}
 
 	private onStateChanged(newState: Enum.HumanoidStateType): void {
-		if (!this.hrp || !this.humanoid || this.humanoid.Health <= 0 || this.hrp.GetAttribute("IsSkating") === true) return;
+		if (
+			!this.hrp ||
+			!this.humanoid ||
+			this.humanoid.Health <= 0 ||
+			this.hrp.GetAttribute("IsSkating") === true ||
+			this.hrp.GetAttribute("IsFlying") === true
+		) {
+			return;
+		}
 
 		if (newState === Enum.HumanoidStateType.Jumping) {
 			// Saat melompat kembali, hentikan semua track landing seketika agar tidak menimpa animasi jump

@@ -37,6 +37,7 @@ import { SkateboardMobileView } from "../ui/views/SkateboardMobileView";
 
 export class SkateboardController {
 	private static instance: SkateboardController;
+	private static readonly DEFAULT_ROOT_JOINT_C0 = new CFrame(0, 0, 0, -1, 0, 0, 0, 0, 1, 0, 1, 0);
 
 	private mountEvent: RemoteEvent;
 	private trickEvent: RemoteEvent;
@@ -72,6 +73,7 @@ export class SkateboardController {
 	private currentRoll = 0;
 	private currentSlopePitch = 0;
 	private currentSlopeRoll = 0;
+	private lastKnownNormal = new Vector3(0, 1, 0);
 	private currentBoardY = SkateboardConfig.ATTACHMENT.boardCFrameOffset.Y;
 	private lastJumpTime = 0;
 	private currentExpectedAirTime = 0.35;
@@ -788,10 +790,12 @@ export class SkateboardController {
 			const hum = char.FindFirstChildOfClass("Humanoid");
 			if (hum) {
 				hum.SetStateEnabled(Enum.HumanoidStateType.Jumping, false);
+				hum.SetStateEnabled(Enum.HumanoidStateType.Climbing, false);
 				hum.UseJumpPower = true;
 				hum.JumpPower = 0;
 				hum.JumpHeight = 0;
 				hum.HipHeight = SkateboardConfig.ATTACHMENT.hipHeightMounted;
+				hum.MaxSlopeAngle = SkateboardConfig.PHYSICS.maxSlopeAngleDeg;
 			}
 			const animator = this.getAnimator(char);
 			if (animator) {
@@ -821,7 +825,7 @@ export class SkateboardController {
 			const rightHip = torso?.FindFirstChild("Right Hip") as Motor6D | undefined;
 			const leftHip = torso?.FindFirstChild("Left Hip") as Motor6D | undefined;
 
-			if (rootJoint) rootJoint.C0 = new CFrame(0, 0, 0, -1, 0, 0, 0, 0, 1, 0, 1, 0);
+			if (rootJoint) rootJoint.C0 = SkateboardController.DEFAULT_ROOT_JOINT_C0;
 			if (neck) neck.C0 = new CFrame(0, 1, 0, -1, 0, 0, 0, 0, 1, 0, 1, 0);
 			if (rightShoulder) rightShoulder.C0 = new CFrame(1, 0.5, 0, 0, 0, 1, 0, 1, 0, -1, 0, 0);
 			if (leftShoulder) leftShoulder.C0 = new CFrame(-1, 0.5, 0, 0, 0, -1, 0, 1, 0, 1, 0, 0);
@@ -861,6 +865,7 @@ export class SkateboardController {
 		this.currentRoll = 0;
 		this.currentSlopePitch = 0;
 		this.currentSlopeRoll = 0;
+		this.lastKnownNormal = new Vector3(0, 1, 0);
 		this.currentBoardY = SkateboardConfig.ATTACHMENT.boardCFrameOffset.Y;
 		this.wasGrounded = true;
 		this.timeInAir = 0;
@@ -890,11 +895,13 @@ export class SkateboardController {
 			if (hum) {
 				hum.UnequipTools();
 				hum.SetStateEnabled(Enum.HumanoidStateType.Jumping, true);
+				hum.SetStateEnabled(Enum.HumanoidStateType.Climbing, true);
 				hum.AutoRotate = true;
 				hum.WalkSpeed = MovementConfig.CROUCH.normalSpeed;
 				hum.JumpPower = MovementConfig.JUMP.jumpPower;
 				hum.JumpHeight = 7.2;
 				hum.HipHeight = SkateboardConfig.ATTACHMENT.hipHeightDismounted;
+				hum.MaxSlopeAngle = 89;
 				hum.Move(Vector3.zero, false);
 			}
 
@@ -907,7 +914,7 @@ export class SkateboardController {
 			const rightHip = torso?.FindFirstChild("Right Hip") as Motor6D | undefined;
 			const leftHip = torso?.FindFirstChild("Left Hip") as Motor6D | undefined;
 
-			if (rootJoint) rootJoint.C0 = new CFrame(0, 0, 0, -1, 0, 0, 0, 0, 1, 0, 1, 0);
+			if (rootJoint) rootJoint.C0 = SkateboardController.DEFAULT_ROOT_JOINT_C0;
 			if (neck) neck.C0 = new CFrame(0, 1, 0, -1, 0, 0, 0, 0, 1, 0, 1, 0);
 			if (rightShoulder) rightShoulder.C0 = new CFrame(1, 0.5, 0, 0, 0, 1, 0, 1, 0, -1, 0, 0);
 			if (leftShoulder) leftShoulder.C0 = new CFrame(-1, 0.5, 0, 0, 0, -1, 0, 1, 0, 1, 0, 0);
@@ -1581,6 +1588,7 @@ export class SkateboardController {
 		groundY?: number;
 		targetPitch?: number;
 		targetRoll?: number;
+		hitPosition?: Vector3;
 	} {
 		if (this.currentState === "Grinding") {
 			return { grounded: false, normal: new Vector3(0, 1, 0) };
@@ -1598,22 +1606,12 @@ export class SkateboardController {
 
 		this.raycastParams.FilterDescendantsInstances = [char];
 
-		// Multi-point raycast: Center, Front wheelbase, Back wheelbase, Left, Right
 		const rootCF = rootPart.CFrame;
-		const frontOrigin = rootCF.PointToWorldSpace(new Vector3(0, 1.5, -1.8));
-		const backOrigin = rootCF.PointToWorldSpace(new Vector3(0, 1.5, 1.8));
-		const leftOrigin = rootCF.PointToWorldSpace(new Vector3(-0.6, 1.5, 0));
-		const rightOrigin = rootCF.PointToWorldSpace(new Vector3(0.6, 1.5, 0));
-		const centerOrigin = rootCF.PointToWorldSpace(new Vector3(0, 1.5, 0));
-		const rayDir = new Vector3(0, -6.5, 0);
+		const rootPos = rootPart.Position;
+		const lookDir = rootCF.LookVector;
+		const rightDir = rootCF.RightVector;
+		const localDown = rootCF.UpVector.mul(-1);
 
-		const frontHit = Workspace.Raycast(frontOrigin, rayDir, this.raycastParams);
-		const backHit = Workspace.Raycast(backOrigin, rayDir, this.raycastParams);
-		const leftHit = Workspace.Raycast(leftOrigin, rayDir, this.raycastParams);
-		const rightHit = Workspace.Raycast(rightOrigin, rayDir, this.raycastParams);
-		const centerHit = Workspace.Raycast(centerOrigin, rayDir, this.raycastParams);
-
-		// Periksa apakah salah satu hit adalah GrindRail
 		const checkRail = (hit?: RaycastResult) => {
 			if (!hit) return false;
 			const inst = hit.Instance;
@@ -1623,11 +1621,59 @@ export class SkateboardController {
 			);
 		};
 
-		const validFront = frontHit && !checkRail(frontHit) ? frontHit : undefined;
-		const validBack = backHit && !checkRail(backHit) ? backHit : undefined;
-		const validCenter = centerHit && !checkRail(centerHit) ? centerHit : undefined;
-		const validLeft = leftHit && !checkRail(leftHit) ? leftHit : undefined;
-		const validRight = rightHit && !checkRail(rightHit) ? rightHit : undefined;
+		// Multi-direction surface detection:
+		// 1. Raycast ke arah bawah dunia (Flat ground)
+		// 2. Raycast ke arah bawah lokal karakter (-rootCF.UpVector)
+		// 3. Raycast menyusuri kurva ramp (-lastKnownNormal)
+		// 4. Spherecast radius 2.2 studs omnidirectional untuk mendeteksi dinding lengkung ramp
+		let bestHit: RaycastResult | undefined;
+
+		// A. Cast ke arah bawah dunia
+		const downHit = Workspace.Raycast(rootPos, new Vector3(0, -6.5, 0), this.raycastParams);
+		if (downHit && !checkRail(downHit)) {
+			bestHit = downHit;
+		}
+
+		// B. Cast ke arah bawah lokal karakter (-rootCF.UpVector)
+		if (!bestHit) {
+			const localHit = Workspace.Raycast(rootPos, localDown.mul(6.5), this.raycastParams);
+			if (localHit && !checkRail(localHit)) {
+				bestHit = localHit;
+			}
+		}
+
+		// C. Cast ke arah permukaan ramp berdasarkan normal terakhir
+		if (!bestHit && this.lastKnownNormal.Y < 0.99) {
+			const intoRampDir = (new Vector3(0, -0.5, 0).sub(this.lastKnownNormal.mul(0.85))).Unit.mul(6.5);
+			const rampHit = Workspace.Raycast(rootPos, intoRampDir, this.raycastParams);
+			if (rampHit && !checkRail(rampHit)) {
+				bestHit = rampHit;
+			}
+		}
+
+		// D. Spherecast radius 2.2 studs menyapu ke arah tanah/ramp
+		if (!bestHit) {
+			const sweepDir = (this.lastKnownNormal.Y < 0.99
+				? (new Vector3(0, -0.6, 0).sub(this.lastKnownNormal.mul(0.8))).Unit
+				: new Vector3(0, -1, 0)
+			).mul(5.5);
+			const sphereResult = Workspace.Spherecast(rootPos, 2.2, sweepDir, this.raycastParams);
+			if (sphereResult && !checkRail(sphereResult)) {
+				bestHit = sphereResult;
+			}
+		}
+
+		// E. Cast ke arah bawah papan skateboard (sesuai kemiringan sendi boardMotor)
+		if (!bestHit) {
+			const boardMotor = this.getBoardMotor();
+			if (boardMotor && boardMotor.Part1) {
+				const boardDown = boardMotor.Part1.CFrame.UpVector.mul(-1);
+				const boardHit = Workspace.Raycast(rootPos, boardDown.mul(6.5), this.raycastParams);
+				if (boardHit && !checkRail(boardHit)) {
+					bestHit = boardHit;
+				}
+			}
+		}
 
 		let grounded = false;
 		let normal = new Vector3(0, 1, 0);
@@ -1636,44 +1682,37 @@ export class SkateboardController {
 		let targetPitch: number | undefined = undefined;
 		let targetRoll: number | undefined = undefined;
 
-		if (validFront && validBack) {
+		if (bestHit) {
 			grounded = true;
-			const deltaY = validFront.Position.Y - validBack.Position.Y;
-			targetPitch = math.atan2(deltaY, 3.6);
-			groundY = (validFront.Position.Y + validBack.Position.Y) / 2;
-			material = validCenter?.Material ?? validFront.Material;
-			normal = validCenter?.Normal ?? validFront.Normal;
-		} else if (validCenter) {
-			grounded = true;
-			groundY = validCenter.Position.Y;
-			material = validCenter.Material;
-			normal = validCenter.Normal;
-			targetPitch = math.asin(math.clamp(-rootCF.LookVector.Dot(normal), -0.85, 0.85));
-		} else if (validFront) {
-			grounded = true;
-			groundY = validFront.Position.Y;
-			material = validFront.Material;
-			normal = validFront.Normal;
-			targetPitch = math.asin(math.clamp(-rootCF.LookVector.Dot(normal), -0.85, 0.85));
-		} else if (validBack) {
-			grounded = true;
-			groundY = validBack.Position.Y;
-			material = validBack.Material;
-			normal = validBack.Normal;
-			targetPitch = math.asin(math.clamp(-rootCF.LookVector.Dot(normal), -0.85, 0.85));
-		}
+			normal = bestHit.Normal;
+			material = bestHit.Material;
+			groundY = bestHit.Position.Y;
+			this.lastKnownNormal = normal;
 
-		if (validLeft && validRight) {
-			const deltaRollY = validRight.Position.Y - validLeft.Position.Y;
-			targetRoll = math.atan2(deltaRollY, 1.2);
-		} else if (normal.Y < 0.999) {
-			targetRoll = math.asin(math.clamp(rootCF.RightVector.Dot(normal), -0.85, 0.85));
-		}
+			// Deteksi multi-point kontak roda depan & belakang menyusuri kontur normal
+			const surfaceNormal = normal;
+			const castIntoSurface = surfaceNormal.mul(-6.5);
+			const elevatedFront = rootPos.add(new Vector3(0, 0.8, 0)).add(lookDir.mul(1.6));
+			const elevatedBack = rootPos.add(new Vector3(0, 0.8, 0)).sub(lookDir.mul(1.6));
 
-		// Fallback native humanoid floor
-		if (!grounded && humanoid && humanoid.FloorMaterial !== Enum.Material.Air) {
+			const frontHit = Workspace.Raycast(elevatedFront, castIntoSurface, this.raycastParams);
+			const backHit = Workspace.Raycast(elevatedBack, castIntoSurface, this.raycastParams);
+
+			if (frontHit && backHit && !checkRail(frontHit) && !checkRail(backHit)) {
+				const boardVector = frontHit.Position.sub(backHit.Position);
+				const horizDist = math.sqrt(boardVector.X * boardVector.X + boardVector.Z * boardVector.Z);
+				targetPitch = math.atan2(boardVector.Y, math.max(horizDist, 0.1));
+			} else {
+				targetPitch = math.asin(math.clamp(-lookDir.Dot(normal), -0.96, 0.96));
+			}
+
+			// Roll dihitung secara presisi dari proyeksi normal ke RightVector
+			targetRoll = math.asin(math.clamp(-rightDir.Dot(normal), -0.96, 0.96));
+		} else if (humanoid && humanoid.FloorMaterial !== Enum.Material.Air) {
+			// Fallback native humanoid floor
 			grounded = true;
 			normal = new Vector3(0, 1, 0);
+			this.lastKnownNormal = normal;
 			material = humanoid.FloorMaterial;
 			groundY = rootPart.Position.Y - 3.66;
 			targetPitch = 0;
@@ -1687,6 +1726,7 @@ export class SkateboardController {
 			groundY,
 			targetPitch,
 			targetRoll,
+			hitPosition: bestHit?.Position,
 		};
 	}
 
@@ -1709,6 +1749,20 @@ export class SkateboardController {
 			const groundInfo = this.getGroundInfo();
 			const grounded = groundInfo.grounded;
 			const groundNormal = groundInfo.normal;
+			const isRampOrSlope = grounded && math.abs(groundNormal.Y) < 0.999;
+
+			// Adaptive Ramp Clearance: Menjaga jarak HRP dari permukaan ramp agar roda papan skateboard
+			// selalu tepat menempel di permukaan ramp dan tidak pernah tenggelam ke dalam mesh
+			if (grounded && isRampOrSlope && groundInfo.hitPosition) {
+				const currentClearance = rootPart.Position.sub(groundInfo.hitPosition).Dot(groundNormal);
+				const targetClearance = 3.3; // Offset dari titik kontak roda ke pusat HRP
+				if (currentClearance < targetClearance) {
+					const pushCorrection = groundNormal.mul(
+						(targetClearance - currentClearance) * math.clamp(dt * 25, 0, 1),
+					);
+					rootPart.Position = rootPart.Position.add(pushCorrection);
+				}
+			}
 
 			// Fail-safe active polling tombol gerak (W atau Mobile Touch Push) agar respon seketika setelah mount
 			const isPushDown = UserInputService.IsKeyDown(SkateboardConfig.KEYBINDS.push) || this.isTouchPushing;
@@ -2062,20 +2116,32 @@ export class SkateboardController {
 					math.clamp(SkateboardConfig.PHYSICS.steerResponsiveness * dt, 0, 1);
 
 			// Speed-Dependent Steering: Di kecepatan rendah lincah (full turn speed),
-			// di kecepatan tinggi (mendekati maxSpeed) dikurangi hingga ~40% agar kontrol papan tidak oversteer/oleng
+			// di kecepatan tinggi (mendekati maxSpeed) dikurangi secara proporsional agar kontrol papan tidak oversteer
 			const baseMaxSpeed = SkateboardConfig.PHYSICS.maxSpeed;
 			const speedAlpha = math.clamp(math.abs(this.currentSpeed) / baseMaxSpeed, 0, 1);
-			const dynamicTurnSpeed = SkateboardConfig.PHYSICS.turnAngularVelocity * (1 - speedAlpha * 0.4);
+			const rampTurnBoost = isRampOrSlope ? 1.6 : 1.0;
+			const dynamicTurnSpeed = SkateboardConfig.PHYSICS.turnAngularVelocity * (1 - speedAlpha * 0.3) * rampTurnBoost;
 
 			// Invert yawDelta saat meluncur mundur agar kemudi kiri/kanan tetap sinkron dengan pandangan pemain
 			const steerMultiplier = this.currentSpeed < -0.1 ? 1 : -1;
 			const yawDelta = steerMultiplier * this.smoothedSteer * dynamicTurnSpeed * dt;
 
 			if (math.abs(yawDelta) > 0.00005) {
-				const [, currentYaw] = rootPart.CFrame.ToOrientation();
-				rootPart.CFrame = new CFrame(rootPart.Position).mul(
-					CFrame.fromOrientation(0, currentYaw + yawDelta, 0),
-				);
+				if (isRampOrSlope) {
+					// Belok menyusuri bidang permukaan ramp (mengelilingi groundNormal)
+					const turnRot = CFrame.fromAxisAngle(groundNormal, yawDelta);
+					const currentLook = rootPart.CFrame.LookVector;
+					const rotatedLook = turnRot.VectorToWorldSpace(currentLook);
+					const horizLook = new Vector3(rotatedLook.X, 0, rotatedLook.Z);
+					if (horizLook.Magnitude > 0.01) {
+						rootPart.CFrame = CFrame.lookAt(rootPart.Position, rootPart.Position.add(horizLook.Unit));
+					}
+				} else {
+					const [, currentYaw] = rootPart.CFrame.ToOrientation();
+					rootPart.CFrame = new CFrame(rootPart.Position).mul(
+						CFrame.fromOrientation(0, currentYaw + yawDelta, 0),
+					);
+				}
 			}
 
 			// 6. Kemiringan Badan & Papan (Banking Roll Tilt) & Animasi Trik Papan Prosedural
@@ -2085,10 +2151,12 @@ export class SkateboardController {
 				this.currentRoll +
 				(targetRoll - this.currentRoll) * math.clamp(SkateboardConfig.PHYSICS.rollSmoothing * dt, 0, 1);
 
-			// Ground Adaptive Alignment: Kontur tanah (pitch tangga/tanjakan & roll lereng) dan adaptasi tinggi roda
+			// Ground Adaptive Alignment: Kontur tanah (pitch tangga/tanjakan & roll lereng)
 			let targetSlopePitch = 0;
 			let targetSlopeRoll = 0;
-			let targetBoardY = SkateboardConfig.ATTACHMENT.boardCFrameOffset.Y;
+
+			// Papan skateboard selalu terkunci kokoh di bawah telapak kaki (mencegah melayang terlepas)
+			this.currentBoardY = SkateboardConfig.ATTACHMENT.boardCFrameOffset.Y;
 
 			if (grounded && this.currentState !== "InAir" && !this.isPerformingTrick) {
 				if (groundInfo.targetPitch !== undefined) {
@@ -2097,17 +2165,11 @@ export class SkateboardController {
 				if (groundInfo.targetRoll !== undefined) {
 					targetSlopeRoll = groundInfo.targetRoll;
 				}
-				if (groundInfo.groundY !== undefined) {
-					const distToGround = rootPart.Position.Y - groundInfo.groundY;
-					// Jarak vertikal roda bawah ke center VisualBoard adalah 0.464 studs
-					targetBoardY = math.clamp(-(distToGround - 0.464), -3.9, -2.6);
-				}
 			}
 
-			const groundAlignAlpha = math.clamp(dt * 20, 0, 1);
+			const groundAlignAlpha = math.clamp(dt * SkateboardConfig.PHYSICS.slopeAlignSmoothing, 0, 1);
 			this.currentSlopePitch += (targetSlopePitch - this.currentSlopePitch) * groundAlignAlpha;
 			this.currentSlopeRoll += (targetSlopeRoll - this.currentSlopeRoll) * groundAlignAlpha;
-			this.currentBoardY += (targetBoardY - this.currentBoardY) * groundAlignAlpha;
 
 			if (this.activeBoardTrick) {
 				const elapsed = os.clock() - this.activeBoardTrick.startTime;
@@ -2125,26 +2187,63 @@ export class SkateboardController {
 				this.trickCFrameOffset = new CFrame();
 			}
 
+			const totalRoll = this.currentSlopeRoll + this.currentRoll;
+
+			// A. Terapkan kemiringan adaptif ke tubuh skater (RootJoint Motor6D R6)
+			// Menjaga postur badan skater tetap tegak lurus di atas papan dan selaras sempurna dengan kontur ramp
+			const rootJoint = rootPart.FindFirstChild("RootJoint") as Motor6D | undefined;
+			const slopeTilt = CFrame.Angles(-this.currentSlopePitch, totalRoll, 0);
+			if (rootJoint) {
+				rootJoint.C0 = SkateboardController.DEFAULT_ROOT_JOINT_C0.mul(slopeTilt);
+			}
+
+			// B. Terapkan kemiringan adaptif ke papan skateboard (VisualBoard Motor6D)
+			// Transformasikan rotasi torso ke root space agar papan skateboard 100% menempel tepat di bawah telapak kaki
+			// dan mengikuti sudut kemiringan ramp secara identik dengan pose tubuh skater
+			const torsoRot = SkateboardController.DEFAULT_ROOT_JOINT_C0.mul(slopeTilt).mul(
+				SkateboardController.DEFAULT_ROOT_JOINT_C0.Inverse(),
+			);
+
 			const boardJoint = this.getBoardMotor();
 			if (boardJoint) {
-				const totalRoll = this.currentSlopeRoll + this.currentRoll;
-				boardJoint.C0 = new CFrame(0, this.currentBoardY, 0)
-					.mul(CFrame.Angles(-this.currentSlopePitch, 0, totalRoll))
+				boardJoint.C0 = torsoRot
+					.mul(new CFrame(0, this.currentBoardY, 0))
 					.mul(this.trickCFrameOffset);
 			}
 
-			// 7. Penggerak Fisika Karakter (Direct Horizontal Velocity & Momentum Support)
+			// 7. Penggerak Fisika Karakter (Surface Tangent Velocity & Momentum Ramp Support)
 			// Hitung arah hadap BARU setelah belokan diterapkan di frame ini
 			const currentHeadingForward = rootPart.CFrame.LookVector;
 			const moveDir = this.currentSpeed >= 0 ? currentHeadingForward : currentHeadingForward.mul(-1);
-			const horiz = moveDir.mul(math.abs(this.currentSpeed));
+
+			// Proyeksikan arah gerak menyusuri bidang normal ramp (Surface Tangent)
+			let tangentDir = moveDir;
+			if (isRampOrSlope) {
+				const projected = moveDir.sub(groundNormal.mul(moveDir.Dot(groundNormal)));
+				if (projected.Magnitude > 0.001) {
+					tangentDir = projected.Unit;
+				}
+			}
+
+			const targetVelocity = tangentDir.mul(math.abs(this.currentSpeed));
 
 			if (grounded) {
 				if (math.abs(this.currentSpeed) > 0.1) {
 					humanoid.WalkSpeed = math.abs(this.currentSpeed);
-					humanoid.Move(moveDir, false);
-					// Dorongan linear velocity horizontal langsung mengikuti orientasi belok terbaru
-					rootPart.AssemblyLinearVelocity = new Vector3(horiz.X, rootPart.AssemblyLinearVelocity.Y, horiz.Z);
+					humanoid.Move(tangentDir, false);
+					// Dorongan linear velocity menyusuri kontur ramp/tanjakan secara mulus
+					if (isRampOrSlope) {
+						// Gaya rekat permukaan (downforce) agar roda menempel di kurva tanpa membanting ke bibir ramp
+						const downforceMag = math.clamp(math.abs(this.currentSpeed) * 0.4, 1, 8);
+						const downforce = groundNormal.mul(-downforceMag * math.clamp(groundNormal.Y, 0.2, 1.0));
+						rootPart.AssemblyLinearVelocity = targetVelocity.add(downforce);
+					} else {
+						rootPart.AssemblyLinearVelocity = new Vector3(
+							targetVelocity.X,
+							rootPart.AssemblyLinearVelocity.Y,
+							targetVelocity.Z,
+						);
+					}
 				} else {
 					humanoid.WalkSpeed = 0;
 					humanoid.Move(Vector3.zero, false);
@@ -2152,8 +2251,12 @@ export class SkateboardController {
 				}
 			} else {
 				humanoid.WalkSpeed = 0;
-				// Jaga momentum horizontal saat melayang di udara agar laju maju tidak mandek / berhenti di tengah trik
-				rootPart.AssemblyLinearVelocity = new Vector3(horiz.X, rootPart.AssemblyLinearVelocity.Y, horiz.Z);
+				// Jaga momentum saat melayang di udara agar laju maju tidak mandek / berhenti di tengah trik
+				rootPart.AssemblyLinearVelocity = new Vector3(
+					targetVelocity.X,
+					rootPart.AssemblyLinearVelocity.Y,
+					targetVelocity.Z,
+				);
 			}
 		});
 	}

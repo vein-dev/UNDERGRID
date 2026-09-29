@@ -131,13 +131,11 @@ export class AdminService {
 		this.adminControlEvent.FireServer("SetStageCameraControl", payload);
 	}
 
-	public giveStageController(): void {
-		this.adminControlEvent.FireServer("GiveStageController");
-	}
+	/** @deprecated Physical tool removed. Stage Controller is managed entirely via the Topbar UI icon. */
+	public giveStageController(): void {}
 
-	public giveLightingRemote(): void {
-		this.giveStageController();
-	}
+	/** @deprecated Physical tool removed. Stage Controller is managed entirely via the Topbar UI icon. */
+	public giveLightingRemote(): void {}
 
 	public onStateUpdated(cb: StateUpdateCallback): () => void {
 		this.stateUpdateCallbacks.push(cb);

@@ -234,15 +234,21 @@ export class MovementController {
 		humanoid.StateChanged.Connect((_oldState, newState) => {
 			if (humanoid.Health <= 0) return;
 
-			// Jika sedang bermain skateboard, blokir seluruh animasi locomotion bawaan
+			// Jika sedang bermain skateboard atau terbang, blokir seluruh animasi locomotion bawaan
 			const hrp = char.FindFirstChild("HumanoidRootPart") as BasePart | undefined;
-			if (hrp && hrp.GetAttribute("IsSkating") === true) {
+			if (hrp && (hrp.GetAttribute("IsSkating") === true || hrp.GetAttribute("IsFlying") === true)) {
 				trackSet.jump.Stop(0);
 				trackSet.fall.Stop(0);
 				trackSet.climb.Stop(0);
 				trackSet.walk.Stop(0);
 				trackSet.run.Stop(0);
-				trackSet.idle.Stop(0);
+				if (hrp.GetAttribute("IsFlying") === true) {
+					if (!trackSet.idle.IsPlaying) {
+						trackSet.idle.Play(0.2);
+					}
+				} else {
+					trackSet.idle.Stop(0);
+				}
 				return;
 			}
 
@@ -425,11 +431,12 @@ export class MovementController {
 		tiltState: PlayerTiltState,
 		isLocalPlayer: boolean,
 	): void {
-		// 1. CRAWL, SKATE & COMBAT LOCK: Lewati manipulasi joint saat crawling, skating, atau bertarung
+		// 1. CRAWL, SKATE & COMBAT LOCK: Lewati manipulasi joint saat crawling, skating, terbang, atau bertarung
 		if (
 			hrp.GetAttribute("CrawlLock") === true ||
 			hrp.GetAttribute("IsSkating") === true ||
-			hrp.GetAttribute("IsFighting") === true
+			hrp.GetAttribute("IsFighting") === true ||
+			hrp.GetAttribute("IsFlying") === true
 		) {
 			return;
 		}
@@ -606,7 +613,7 @@ export class MovementController {
 	 * Goyangan kamera (*head bobbing*) prosedural saat berjalan dan berlari.
 	 */
 	private calculateCameraBobbing(dt: number, hrp: BasePart, humanoid: Humanoid): void {
-		if (!this.isCameraBobbingEnabled || hrp.GetAttribute("IsSkating") === true) return;
+		if (!this.isCameraBobbingEnabled || hrp.GetAttribute("IsSkating") === true || hrp.GetAttribute("IsFlying") === true) return;
 		const camera = Workspace.CurrentCamera;
 		if (!camera || humanoid.Health <= 0) return;
 
@@ -692,6 +699,19 @@ export class MovementController {
 			hrp.GetAttribute("IsSkating") === true ||
 			hrp.GetAttribute("IsFighting") === true;
 		const isLanding = hrp.GetAttribute("IsLanding") === true;
+
+		// Jika karakter sedang terbang, pertahankan pose melayang (idle) dan blokir animasi jalan/lari
+		if (hrp.GetAttribute("IsFlying") === true) {
+			if (tracks.walk.IsPlaying) tracks.walk.Stop(0.1);
+			if (tracks.run.IsPlaying) tracks.run.Stop(0.1);
+			if (tracks.jump.IsPlaying) tracks.jump.Stop(0.1);
+			if (tracks.fall.IsPlaying) tracks.fall.Stop(0.1);
+			if (tracks.climb.IsPlaying) tracks.climb.Stop(0.1);
+			if (!tracks.idle.IsPlaying) {
+				tracks.idle.Play(0.2);
+			}
+			return;
+		}
 
 		// Jika karakter sedang crouch, crawl, landing, skating, bertarung, atau mati: serahkan ke controller terkait
 		if (isCrouchOrCrawl || isLanding || humanoid.Health <= 0) {

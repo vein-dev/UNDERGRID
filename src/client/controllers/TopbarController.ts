@@ -30,9 +30,9 @@ export class TopbarController {
 		// 2. Icon Backpack (Terhubung dengan BackpackController & keybind B)
 		const backpackIcon = new Icon()
 			.setName("Backpack")
-			// .setLabel("Backpack")
 			.setImage(GetIconUri("backpack"))
 			.setCaption("Backpack")
+			.autoDeselect(false)
 			.bindToggleKey(Enum.KeyCode.B);
 
 		let isSyncing = false;
@@ -64,6 +64,7 @@ export class TopbarController {
 			.setName("Emotes")
 			.setImage(GetIconUri("sparkles"))
 			.setCaption("Emotes & Reactions (G)")
+			.autoDeselect(false)
 			.bindToggleKey(Enum.KeyCode.G);
 
 		let isSyncingEmote = false;
@@ -95,6 +96,7 @@ export class TopbarController {
 			.setImage(GetIconUri("eye"), "Deselected")
 			.setImage(GetIconUri("eye-off"), "Selected")
 			.setCaption("Sembunyikan Hotbar (H)")
+			.autoDeselect(false)
 			.bindToggleKey(Enum.KeyCode.H);
 
 		let isSyncingHotbar = false;
@@ -133,6 +135,7 @@ export class TopbarController {
 				// .setLabel("Admin")
 				.setCaption("Admin")
 				.setImage(GetIconUri("shield"))
+				.autoDeselect(false)
 				.bindToggleKey(Enum.KeyCode.P);
 
 			let isSyncingAdmin = false;
@@ -165,6 +168,7 @@ export class TopbarController {
 				.setName("StageController")
 				.setCaption("Stage Controller (L)")
 				.setImage(GetIconUri("activity"))
+				.autoDeselect(false)
 				.bindToggleKey(Enum.KeyCode.L);
 
 			let isSyncingStage = false;
@@ -204,6 +208,7 @@ export class TopbarController {
 			.setName("Settings")
 			.setImage(GetIconUri("settings"))
 			.setCaption("Settings (M)")
+			.autoDeselect(false)
 			.bindToggleKey(Enum.KeyCode.M);
 
 		let isSyncingSettings = false;

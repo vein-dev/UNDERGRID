@@ -1,10 +1,13 @@
 import { Players, RunService, UserInputService, Workspace } from "@rbxts/services";
 import { getRemoteEvent } from "shared/network";
+import { CombatController } from "./CombatController";
+import { CrouchController } from "./CrouchController";
 
 /**
  * FlyController
  * Mengendalikan fisika terbang berbasis orientasi kamera untuk Admin.
- * Mendukung kontrol keyboard (WASD, Space naik, Shift turun) serta thumbstick mobile.
+ * Mendukung kontrol keyboard (WASD, Space naik, Shift/Ctrl turun) serta thumbstick mobile.
+ * Mendukung Noclip (menembus objek) dengan mengabaikan CanCollide pada Stepped physics.
  */
 export class FlyController {
 	private static instance?: FlyController;
@@ -14,6 +17,7 @@ export class FlyController {
 	private bodyVelocity?: BodyVelocity;
 	private bodyGyro?: BodyGyro;
 	private renderConnection?: RBXScriptConnection;
+	private noclipConnection?: RBXScriptConnection;
 	private charConnection?: RBXScriptConnection;
 
 	private constructor() {}
@@ -69,6 +73,14 @@ export class FlyController {
 		this.isFlying = true;
 		this.flySpeed = speed;
 
+		// Tandai attribute agar controller lain (Movement, Footstep, Fall) sinkron
+		rootPart.SetAttribute("IsFlying", true);
+		character.SetAttribute("IsFlying", true);
+
+		// Jeda kontrol lain yang berpotensi bentrok
+		CrouchController.getInstance().setPaused(true);
+		CombatController.getInstance().setPaused(true);
+
 		this.cleanupPhysics();
 
 		const bv = new Instance("BodyVelocity");
@@ -86,7 +98,25 @@ export class FlyController {
 		bg.Parent = rootPart;
 		this.bodyGyro = bg;
 
+		// Nonaktifkan state jatuh & duduk agar tidak tersangkut objek saat terbang
+		humanoid.SetStateEnabled(Enum.HumanoidStateType.FallingDown, false);
+		humanoid.SetStateEnabled(Enum.HumanoidStateType.Ragdoll, false);
+		humanoid.SetStateEnabled(Enum.HumanoidStateType.Seated, false);
 		humanoid.PlatformStand = true;
+		humanoid.ChangeState(Enum.HumanoidStateType.PlatformStanding);
+
+		// Noclip: Nonaktifkan CanCollide pada seluruh BasePart karakter sebelum setiap frame simulasi fisika
+		this.noclipConnection = RunService.Stepped.Connect(() => {
+			if (!this.isFlying) return;
+			const currentCharacter = Players.LocalPlayer.Character;
+			if (!currentCharacter) return;
+
+			for (const part of currentCharacter.GetDescendants()) {
+				if (part.IsA("BasePart") && part.CanCollide) {
+					part.CanCollide = false;
+				}
+			}
+		});
 
 		// Loop RenderStepped untuk pergerakan halus
 		this.renderConnection = RunService.RenderStepped.Connect(() => {
@@ -158,13 +188,35 @@ export class FlyController {
 
 		this.cleanupPhysics();
 
+		CrouchController.getInstance().setPaused(false);
+		CombatController.getInstance().setPaused(false);
+
 		const localPlayer = Players.LocalPlayer;
 		const character = localPlayer.Character;
 		if (character) {
+			character.SetAttribute("IsFlying", false);
+			const rootPart = character.FindFirstChild("HumanoidRootPart") as BasePart | undefined;
+			if (rootPart) {
+				rootPart.SetAttribute("IsFlying", false);
+			}
+
 			const humanoid = character.FindFirstChildOfClass("Humanoid");
 			if (humanoid && humanoid.Health > 0) {
 				humanoid.PlatformStand = false;
+				humanoid.SetStateEnabled(Enum.HumanoidStateType.FallingDown, true);
+				humanoid.SetStateEnabled(Enum.HumanoidStateType.Ragdoll, true);
+				humanoid.SetStateEnabled(Enum.HumanoidStateType.Seated, true);
 				humanoid.ChangeState(Enum.HumanoidStateType.GettingUp);
+			}
+
+			// Pulihkan tabrakan default part utama karakter
+			const torso = character.FindFirstChild("Torso") as BasePart | undefined;
+			if (torso) {
+				torso.CanCollide = true;
+			}
+			const head = character.FindFirstChild("Head") as BasePart | undefined;
+			if (head) {
+				head.CanCollide = true;
 			}
 		}
 	}
@@ -172,6 +224,9 @@ export class FlyController {
 	private cleanupPhysics(): void {
 		this.renderConnection?.Disconnect();
 		this.renderConnection = undefined;
+
+		this.noclipConnection?.Disconnect();
+		this.noclipConnection = undefined;
 
 		this.charConnection?.Disconnect();
 		this.charConnection = undefined;

@@ -249,7 +249,7 @@ export class AdminPanelView {
 		this.screenGui.Name = "AdminPanelGui";
 		this.screenGui.ResetOnSpawn = false;
 		this.screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling;
-		this.screenGui.DisplayOrder = 120;
+		this.screenGui.DisplayOrder = 200;
 		this.screenGui.ScreenInsets = Enum.ScreenInsets.None;
 		this.screenGui.IgnoreGuiInset = true;
 		this.screenGui.Enabled = false;

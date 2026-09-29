@@ -95,22 +95,14 @@ export class ServerAdminService {
 				this.handleAdminChatCommand(player, message);
 			});
 
-			if (isPlayerAdmin(player)) {
-				player.CharacterAdded.Connect(() => {
-					task.wait(0.5);
-					this.giveStageController(player);
-				});
-				if (player.Character) {
-					task.defer(() => this.giveStageController(player));
-				}
-			} else {
-				// Pemain biasa (non-admin): bersihkan Stage Controller jika ada
-				player.CharacterAdded.Connect(() => {
-					task.wait(0.5);
-					this.stripStageControllerIfNonAdmin(player);
-				});
-				this.stripStageControllerIfNonAdmin(player);
+			player.CharacterAdded.Connect(() => {
+				task.wait(0.3);
+				this.stripStageController(player);
+			});
+			if (player.Character) {
+				task.defer(() => this.stripStageController(player));
 			}
+			this.stripStageController(player);
 		};
 
 		Players.PlayerAdded.Connect(handlePlayerLifecycle);
@@ -276,11 +268,7 @@ export class ServerAdminService {
 				break;
 			}
 
-			case "GiveStageController":
-			case "GiveLightingRemote": {
-				this.giveStageController(player);
-				break;
-			}
+
 
 			case "TriggerFogBurst": {
 				ServerStageLightingService.getInstance().triggerFogBurst();
@@ -699,36 +687,7 @@ export class ServerAdminService {
 		this.adminStateUpdatedEvent.FireAllClients(state);
 	}
 
-	private giveStageController(player: Player): void {
-		if (!isPlayerAdmin(player)) return;
-
-		const backpack = player.FindFirstChildOfClass("Backpack");
-		const character = player.Character;
-		if (
-			backpack?.FindFirstChild("Stage Controller") ||
-			character?.FindFirstChild("Stage Controller") ||
-			backpack?.FindFirstChild("LightingRemote") ||
-			character?.FindFirstChild("LightingRemote")
-		) {
-			return;
-		}
-
-		const serverStorage = game.GetService("ServerStorage");
-		const starterPack = game.GetService("StarterPack");
-		const template = (serverStorage.FindFirstChild("Stage Controller") ??
-			starterPack.FindFirstChild("Stage Controller") ??
-			serverStorage.FindFirstChild("LightingRemote") ??
-			starterPack.FindFirstChild("LightingRemote")) as Tool | undefined;
-
-		if (template && backpack) {
-			const clone = template.Clone();
-			clone.Parent = backpack;
-		}
-	}
-
-	private stripStageControllerIfNonAdmin(player: Player): void {
-		if (isPlayerAdmin(player)) return;
-
+	private stripStageController(player: Player): void {
 		const backpack = player.FindFirstChildOfClass("Backpack");
 		const character = player.Character;
 

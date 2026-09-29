@@ -344,6 +344,7 @@ export function LightingRemoteComponent({ visible, onClose }: LightingRemoteComp
 			BackgroundColor3={Color3.fromHex("#0a0a0a")}
 			BackgroundTransparency={0.2}
 			BorderSizePixel={0}
+			Active={true}
 		>
 			<uicorner CornerRadius={new UDim(0, 18)} />
 			<uistroke
@@ -1372,7 +1373,7 @@ export class LightingRemoteView {
 			const gui = new Instance("ScreenGui");
 			gui.Name = "LightingRemoteGui";
 			gui.ResetOnSpawn = false;
-			gui.DisplayOrder = 125;
+			gui.DisplayOrder = 200;
 			gui.IgnoreGuiInset = true;
 			gui.Parent = playerGui;
 			this.screenGui = gui;

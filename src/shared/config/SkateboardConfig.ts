@@ -39,6 +39,8 @@ export const SkateboardConfig = {
 		ollieMaxChargeTime: 0.45, // Durasi charge (detik) untuk mencapai tinggi maksimum
 		trickPopJump: 0, // Pastikan 0 agar tidak ada tendangan ekstra di udara
 		airStabilizeDamping: 15, // stabilitas leveling di udara
+		slopeAlignSmoothing: 18.0, // kecepatan adaptasi kemiringan lereng/ramp
+		maxSlopeAngleDeg: 89, // sudut tanjakan maksimum yang dapat dilalui karakter (derajat)
 	},
 
 	ATTACHMENT: {

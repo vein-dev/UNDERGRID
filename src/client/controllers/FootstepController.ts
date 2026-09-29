@@ -107,7 +107,7 @@ export class FootstepController {
 		muteDefaultSound("Climbing");
 
 		humanoid.StateChanged.Connect((_oldState, newState) => {
-			if (this.isMuted || hrp.GetAttribute("IsSkating") === true) return;
+			if (this.isMuted || hrp.GetAttribute("IsSkating") === true || hrp.GetAttribute("IsFlying") === true) return;
 			if (newState === Enum.HumanoidStateType.Landed) {
 				this.playActionSound("Landing", hrp);
 			} else if (newState === Enum.HumanoidStateType.Jumping) {
@@ -124,7 +124,7 @@ export class FootstepController {
 		const char = this.player.Character;
 		const humanoid = char?.FindFirstChildOfClass("Humanoid");
 		const hrp = char?.FindFirstChild("HumanoidRootPart") as BasePart | undefined;
-		if (this.isMuted || hrp?.GetAttribute("IsSkating") === true) return;
+		if (this.isMuted || hrp?.GetAttribute("IsSkating") === true || hrp?.GetAttribute("IsFlying") === true) return;
 		if (!char || !humanoid || !hrp || humanoid.Health <= 0) return;
 
 		const velocity = hrp.AssemblyLinearVelocity;

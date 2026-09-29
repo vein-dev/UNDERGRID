@@ -249,10 +249,6 @@ export class HotbarController {
 			}
 		}
 
-		// Priority for Admin Tool (Stage Controller): ensure it is accessible in hotbar
-		if (tool.Name === "Stage Controller" || tool.Name === "LightingRemote" || tool.Name === "LightingController") {
-			this.toolSlots.set(HotbarView.MAX_SLOTS, tool);
-		}
 	}
 
 	private removeToolFromSlots(tool: Tool): void {

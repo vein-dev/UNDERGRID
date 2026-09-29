@@ -26,7 +26,7 @@ export class LightingRemoteClientComponent implements IToolComponent {
 				this.remoteView.show();
 			}),
 			this.tool.Unequipped.Connect(() => {
-				this.remoteView.hide();
+				// Don't auto-close the remote view so admin workflow is uninterrupted
 			}),
 			this.tool.Activated.Connect(() => {
 				this.remoteView.toggle();
@@ -61,7 +61,6 @@ export class LightingRemoteClientComponent implements IToolComponent {
 			conn.Disconnect();
 		}
 		this.connections.clear();
-		this.remoteView.hide();
 		print(`[StageControllerClientComponent] Destroyed for tool: ${this.tool.Name}`);
 	}
 }

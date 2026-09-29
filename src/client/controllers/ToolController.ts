@@ -3,11 +3,10 @@ import {
 	DrumstickClientComponent,
 	GuitarClientComponent,
 	IToolComponent,
-	LightingRemoteClientComponent,
 	SkateboardClientComponent,
 	SmartphoneClientComponent,
 } from "client/components";
-import { isDrumstickTool, isGuitarTool, isPlayerAdmin } from "shared/config";
+import { isDrumstickTool, isGuitarTool } from "shared/config";
 
 /**
  * Client singleton controller responsible for binding OOP components
@@ -85,11 +84,8 @@ export class ToolController {
 			tool.Name === "LightingRemote" ||
 			tool.Name === "LightingController"
 		) {
-			if (!isPlayerAdmin(this.player)) {
-				tool.Destroy();
-				return;
-			}
-			component = new LightingRemoteClientComponent(tool);
+			tool.Destroy();
+			return;
 		}
 
 		if (component !== undefined) {
