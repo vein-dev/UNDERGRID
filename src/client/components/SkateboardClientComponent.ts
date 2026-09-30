@@ -101,15 +101,17 @@ export class SkateboardClientComponent implements IToolComponent {
 			anchorPart.CanTouch = false;
 			anchorPart.CanQuery = false;
 			anchorPart.Massless = true;
-			anchorPart.CFrame = hrp.CFrame;
-			let weld = anchorPart.FindFirstChild("ToolRootWeld") as WeldConstraint | undefined;
-			if (!weld) {
-				weld = new Instance("WeldConstraint");
-				weld.Name = "ToolRootWeld";
-				weld.Part0 = hrp;
-				weld.Part1 = anchorPart;
-				weld.Parent = anchorPart;
+			// Hancurkan weld lama sebelum CFrame diset agar solver physics Roblox tidak melempar karakter (weld fling)
+			const oldWeld = anchorPart.FindFirstChild("ToolRootWeld");
+			if (oldWeld) {
+				oldWeld.Destroy();
 			}
+			anchorPart.CFrame = hrp.CFrame;
+			const weld = new Instance("WeldConstraint");
+			weld.Name = "ToolRootWeld";
+			weld.Part0 = hrp;
+			weld.Part1 = anchorPart;
+			weld.Parent = anchorPart;
 		}
 
 		// Bersihkan RightGrip di tangan kanan jika pernah ada
@@ -166,6 +168,17 @@ export class SkateboardClientComponent implements IToolComponent {
 	private onUnequipped(): void {
 		this.cleanupEquippedConnections();
 
+		// Hapus ToolRootWeld seketika agar saat tool berada di Backpack tidak ada kaitan fisik ke HRP
+		const anchorPart = (this.tool.FindFirstChild("ToolAnchor") ??
+			this.tool.FindFirstChild("Handle") ??
+			this.tool.FindFirstChildWhichIsA("BasePart")) as BasePart | undefined;
+		if (anchorPart) {
+			const weld = anchorPart.FindFirstChild("ToolRootWeld");
+			if (weld) {
+				weld.Destroy();
+			}
+		}
+
 		if (this.isDismounting) return;
 		this.isDismounting = true;
 
@@ -193,6 +206,16 @@ export class SkateboardClientComponent implements IToolComponent {
 		this.connections = [];
 
 		this.cleanupEquippedConnections();
+
+		const anchorPart = (this.tool.FindFirstChild("ToolAnchor") ??
+			this.tool.FindFirstChild("Handle") ??
+			this.tool.FindFirstChildWhichIsA("BasePart")) as BasePart | undefined;
+		if (anchorPart) {
+			const weld = anchorPart.FindFirstChild("ToolRootWeld");
+			if (weld) {
+				weld.Destroy();
+			}
+		}
 
 		if (this.unsubscribeMountListener) {
 			this.unsubscribeMountListener();

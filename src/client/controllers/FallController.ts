@@ -61,6 +61,14 @@ export class FallController {
 		this.humanoid.StateChanged.Connect((_oldState, newState) => {
 			this.onStateChanged(newState);
 		});
+
+		this.hrp.GetAttributeChangedSignal("IsSkating").Connect(() => {
+			if (this.hrp?.GetAttribute("IsSkating") === true) {
+				this.isFalling = false;
+				this.previousHeight = undefined;
+				this.stopLandingTracks();
+			}
+		});
 	}
 
 	private loadAnimationTrack(animator: Animator, animId: string): AnimationTrack | undefined {

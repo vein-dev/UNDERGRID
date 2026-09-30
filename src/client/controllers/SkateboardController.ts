@@ -605,6 +605,18 @@ export class SkateboardController {
 			this.currentState = "Idle";
 			this.currentSpeed = 0;
 			this.steerDirection = 0;
+			this.smoothedSteer = 0;
+			this.currentRoll = 0;
+			this.currentSlopePitch = 0;
+			this.currentSlopeRoll = 0;
+			this.wasGrounded = true;
+			this.timeInAir = 0;
+			this.lastJumpTime = 0;
+			this.isChargingOllie = false;
+			this.queuedTrick = undefined;
+			this.isPerformingTrick = false;
+			this.hasPendingTrickBoost = false;
+			this.isPushAnimPlaying = false;
 			this.pushPhase = "None";
 			this.activeGrind = undefined;
 
@@ -621,6 +633,13 @@ export class SkateboardController {
 					warn("[Mount] HumanoidRootPart/Torso not found on character!");
 					return;
 				}
+
+				// Hilangkan sisa kecepatan jatuh (negative Y velocity) agar tidak memicu landing berulang
+				hrp.AssemblyLinearVelocity = new Vector3(
+					hrp.AssemblyLinearVelocity.X,
+					math.max(0, hrp.AssemblyLinearVelocity.Y),
+					hrp.AssemblyLinearVelocity.Z,
+				);
 
 				hrp.SetAttribute("IsSkating", true);
 
@@ -1517,6 +1536,8 @@ export class SkateboardController {
 			}
 		}
 
+		boardModel.PrimaryPart = targetPart;
+		boardModel.PivotTo(rootPart.CFrame.mul(SkateboardConfig.ATTACHMENT.boardCFrameOffset));
 		boardModel.Parent = char;
 		this.predictedBoard = boardModel;
 

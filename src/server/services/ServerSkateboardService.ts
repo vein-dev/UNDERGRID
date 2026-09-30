@@ -356,6 +356,8 @@ export class ServerSkateboardService {
 
 		// Rename untuk mencocokkan nama pose animasi R6 (VisualBoard)
 		targetPart.Name = "VisualBoard";
+		boardModel.PrimaryPart = targetPart;
+		boardModel.PivotTo(rootPart.CFrame.mul(SkateboardConfig.ATTACHMENT.boardCFrameOffset));
 
 		// Posisikan skateboard tepat di bawah kaki karakter
 		boardModel.Parent = char;
@@ -381,15 +383,17 @@ export class ServerSkateboardService {
 				anchorPart.Anchored = false;
 				anchorPart.CanCollide = false;
 				anchorPart.Massless = true;
-				anchorPart.CFrame = rootPart.CFrame;
-				let weld = anchorPart.FindFirstChild("ToolRootWeld") as WeldConstraint | undefined;
-				if (!weld) {
-					weld = new Instance("WeldConstraint");
-					weld.Name = "ToolRootWeld";
-					weld.Part0 = rootPart;
-					weld.Part1 = anchorPart;
-					weld.Parent = anchorPart;
+				// Hancurkan weld usang sebelum repositioning agar fisika tidak terpental
+				const oldWeld = anchorPart.FindFirstChild("ToolRootWeld");
+				if (oldWeld) {
+					oldWeld.Destroy();
 				}
+				anchorPart.CFrame = rootPart.CFrame;
+				const weld = new Instance("WeldConstraint");
+				weld.Name = "ToolRootWeld";
+				weld.Part0 = rootPart;
+				weld.Part1 = anchorPart;
+				weld.Parent = anchorPart;
 			}
 			for (const desc of equippedTool.GetDescendants()) {
 				if (desc.IsA("BasePart")) {
@@ -451,6 +455,24 @@ export class ServerSkateboardService {
 				rootPart.SetAttribute("IsSkating", false);
 				const joint = rootPart.FindFirstChild(SkateboardConfig.ATTACHMENT.jointName);
 				if (joint) joint.Destroy();
+			}
+
+			// Bersihkan ToolRootWeld pada tool di karakter atau backpack agar tidak ada sisa weld ke HRP
+			const backpack = player.FindFirstChildOfClass("Backpack");
+			const containers: Instance[] = [char];
+			if (backpack) containers.push(backpack);
+			for (const container of containers) {
+				for (const item of container.GetChildren()) {
+					if (item.IsA("Tool")) {
+						const anchor = (item.FindFirstChild("ToolAnchor") ??
+							item.FindFirstChild("Handle") ??
+							item.FindFirstChildWhichIsA("BasePart")) as BasePart | undefined;
+						const weld = anchor?.FindFirstChild("ToolRootWeld");
+						if (weld) {
+							weld.Destroy();
+						}
+					}
+				}
 			}
 
 			// Unequip tool skateboard dari tangan ke Backpack

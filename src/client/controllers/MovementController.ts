@@ -231,6 +231,20 @@ export class MovementController {
 		this.characterLocomotion.set(char, trackSet);
 
 		// Hubungkan transisi state jump, fall, climb
+		const root = char.FindFirstChild("HumanoidRootPart") as BasePart | undefined;
+		if (root) {
+			root.GetAttributeChangedSignal("IsSkating").Connect(() => {
+				if (root.GetAttribute("IsSkating") === true) {
+					trackSet.jump.Stop(0);
+					trackSet.fall.Stop(0);
+					trackSet.climb.Stop(0);
+					trackSet.walk.Stop(0);
+					trackSet.run.Stop(0);
+					trackSet.idle.Stop(0);
+				}
+			});
+		}
+
 		humanoid.StateChanged.Connect((_oldState, newState) => {
 			if (humanoid.Health <= 0) return;
 

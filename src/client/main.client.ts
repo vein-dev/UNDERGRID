@@ -24,6 +24,7 @@ import {
 	SeatController,
 	StageCameraController,
 	AvatarContextMenuController,
+	StreetlightController,
 } from "./controllers";
 
 
@@ -102,6 +103,7 @@ function main() {
 	StageCameraController.getInstance().init();
 	StageCameraOverlayView.getInstance();
 	AvatarContextMenuController.getInstance().init();
+	StreetlightController.getInstance().init();
 
 	print("[Client] All controllers initialized successfully.");
 

@@ -68,19 +68,19 @@ export class GraphicsController {
 				}
 			}
 
-			// 1. Realistic AAA Optical Bloom (Pendaran lensa lembut pada lampu/neon tanpa mencuci warna putih)
+			// 1. Realistic AAA Optical Bloom (Pendaran lensa lembut pada lampu/neon tanpa mencuci warna kulit/pakaian)
 			let bloom = Lighting.FindFirstChildOfClass("BloomEffect");
 			if (!bloom) {
 				bloom = new Instance("BloomEffect");
 				bloom.Name = "Bloom";
 				bloom.Parent = Lighting;
 			}
-			bloom.Intensity = 0.65;
-			bloom.Size = 36;
-			bloom.Threshold = 1.70;
+			bloom.Intensity = 0.32; // Glow lembut terukur, tidak silau membakar
+			bloom.Size = 24;
+			bloom.Threshold = 2.4; // Threshold tinggi: hanya lampu/neon sejati yang glow, kulit & pakaian tetap alami
 			bloom.Enabled = true;
 
-			// 2. Realistic AAA DepthOfField (Focal Blur Lensa Sinematik 35mm)
+			// 2. Realistic AAA DepthOfField (Focal Blur Lensa Sinematik halus tanpa artefak piksel/banding)
 			let dof = Lighting.FindFirstChildOfClass("DepthOfFieldEffect");
 			if (!dof) {
 				dof = new Instance("DepthOfFieldEffect");
@@ -90,7 +90,7 @@ export class GraphicsController {
 			dof.NearIntensity = 0; // Karakter & gameplay 100% tajam dan jernih
 			dof.FocusDistance = 35;
 			dof.InFocusRadius = 25;
-			dof.FarIntensity = 0.48; // Blur latar belakang kejauhan lebih terasa (cinematic bokeh)
+			dof.FarIntensity = 0.22; // Blur latar belakang kejauhan lembut tanpa noise atau undakan kasar
 			dof.Enabled = true;
 
 			// 3. Cinematic Soft God Rays (SunRays halus merata tanpa artefak garis kasar)
@@ -118,16 +118,16 @@ export class GraphicsController {
 			atmosphere.Color = new Color3(195 / 255, 170 / 255, 145 / 255);
 			atmosphere.Decay = new Color3(75 / 255, 50 / 255, 25 / 255);
 
-			// 5. Cinematic Moody Color Grading (Kontras pekat, saturasi pas, nuansa urban elegan)
+			// 5. Cinematic Moody Color Grading (Kontras lembut, dynamic range lebar, transisi halus)
 			let cc = Lighting.FindFirstChildOfClass("ColorCorrectionEffect");
 			if (!cc) {
 				cc = new Instance("ColorCorrectionEffect");
 				cc.Name = "ColorCorrection";
 				cc.Parent = Lighting;
 			}
-			cc.Brightness = 0.01;
-			cc.Contrast = 0.22;
-			cc.Saturation = 0.04;
+			cc.Brightness = 0.0;
+			cc.Contrast = 0.08; // Kontras seimbang menjaga dynamic range agar highlight tidak klip putih
+			cc.Saturation = 0.05;
 			cc.TintColor = new Color3(250 / 255, 246 / 255, 252 / 255);
 			cc.Enabled = true;
 		});

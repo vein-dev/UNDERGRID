@@ -11,3 +11,4 @@ export * from "./DrumstickConfig";
 export * from "./RollupDoorConfig";
 export * from "./SeatConfig";
 export * from "./DrumSeatConfig";
+export * from "./StreetlightConfig";

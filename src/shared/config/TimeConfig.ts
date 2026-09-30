@@ -14,17 +14,6 @@ export const TimeConfig = {
 	/** Kecepatan waktu standar */
 	DEFAULT_TIME_SCALE: 1.0,
 
-	/** Konfigurasi otomatisasi lampu jalan & lampu map */
-	STREETLIGHTS: {
-		/** Jam saat lampu jalan mulai menyala (17.75 = 17:45 sore saat petang tiba) */
-		TURN_ON_HOUR: 17.75,
-		/** Jam saat lampu jalan mulai padam (6.0 = 06:00 pagi saat fajar tiba) */
-		TURN_OFF_HOUR: 6.0,
-		/** Tag CollectionService untuk lampu otomatis */
-		COLLECTION_TAG: "AutoNightLight",
-		/** Kata kunci nama model/part lampu di workspace */
-		NAME_PATTERNS: ["streetlight", "streetlamp", "thelight", "lamp", "walllamp"],
-	},
 
 	/**
 	 * Profil pencahayaan visual berdasarkan periode waktu untuk interpolasi (Lerp).
@@ -58,12 +47,12 @@ export const TimeConfig = {
 		} as LightingProfile,
 
 		[TimePeriod.Night]: {
-			brightness: 0.9,
-			ambient: Color3.fromRGB(25, 25, 40),
-			outdoorAmbient: Color3.fromRGB(35, 40, 55),
-			colorShiftTop: Color3.fromRGB(50, 75, 120),
-			colorShiftBottom: Color3.fromRGB(15, 18, 30),
-			exposureCompensation: -0.15,
+			brightness: 1.8,
+			ambient: Color3.fromRGB(80, 85, 100),
+			outdoorAmbient: Color3.fromRGB(105, 110, 130),
+			colorShiftTop: Color3.fromRGB(140, 170, 210),
+			colorShiftBottom: Color3.fromRGB(65, 70, 85),
+			exposureCompensation: 0.0,
 		} as LightingProfile,
 	},
 } as const;
