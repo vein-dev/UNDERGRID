@@ -377,7 +377,10 @@ export function EmoteModalComponent({ isOpen, onClose, onAnimationFinished }: Em
 	// Filter items
 	const items = rawItems.filter((item: EmoteItem) => {
 		const matchesSearch =
-			searchQuery === "" || item.name.lower().find(searchQuery.lower())[0] !== undefined;
+			searchQuery === "" ||
+			item.name.lower().find(searchQuery.lower())[0] !== undefined ||
+			(item.description !== undefined &&
+				item.description.lower().find(searchQuery.lower())[0] !== undefined);
 		return matchesSearch;
 	});
 

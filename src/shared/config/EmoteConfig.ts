@@ -224,11 +224,39 @@ export const EMOTE_CONFIG: EmoteConfig = {
 
 	Poses: [
 		{
-			id: "pose_crossed",
-			name: "Crossed Arms",
+			id: "pose_sit_1",
+			name: "Sit 1",
 			category: "Pose",
-			animationId: "rbxassetid://182435998",
-			description: "Melipat kedua tangan di dada",
+			animationId: "rbxassetid://129069298051425",
+			description: "Sitting pose 1",
+		},
+		{
+			id: "pose_sit_2",
+			name: "Sit 2",
+			category: "Pose",
+			animationId: "rbxassetid://96180643659743",
+			description: "Sitting pose 2",
+		},
+		{
+			id: "pose_sit_3",
+			name: "Sit 3",
+			category: "Pose",
+			animationId: "rbxassetid://77714086840663",
+			description: "Sitting pose 3",
+		},
+		{
+			id: "pose_sit_4",
+			name: "Sit 4",
+			category: "Pose",
+			animationId: "rbxassetid://130355781301070",
+			description: "Sitting pose 4",
+		},
+		{
+			id: "pose_sit_5",
+			name: "Sit 5",
+			category: "Pose",
+			animationId: "rbxassetid://124634232157047",
+			description: "Sitting pose 5",
 		},
 	],
 
