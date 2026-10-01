@@ -23,18 +23,43 @@ export class ServerEmoteService {
 	}
 
 	public init(): void {
-		// Listen for reaction requests from clients
-		this.reactionEvent.OnServerEvent.Connect((player, action, emoji) => {
-			if (action === "SendReaction" && typeIs(emoji, "string")) {
-				this.handleSendReaction(player, emoji);
+		// Listen for reaction & emote state requests from clients
+		this.reactionEvent.OnServerEvent.Connect((player, action, data) => {
+			if (action === "SendReaction" && typeIs(data, "string")) {
+				this.handleSendReaction(player, data);
+			} else if (action === "StartEmote" && typeIs(data, "string")) {
+				const char = player.Character;
+				if (char) char.SetAttribute("ActiveEmoteId", data);
+			} else if (action === "StopEmote") {
+				const char = player.Character;
+				if (char) char.SetAttribute("ActiveEmoteId", "");
 			}
 		});
+
+		const bindPlayerChar = (player: Player) => {
+			const setupChar = (char: Model) => {
+				char.SetAttribute("ActiveEmoteId", "");
+				char.ChildAdded.Connect((child) => {
+					if (child.IsA("Tool")) {
+						char.SetAttribute("ActiveEmoteId", "");
+					}
+				});
+			};
+
+			player.CharacterAdded.Connect(setupChar);
+			if (player.Character) setupChar(player.Character);
+		};
+
+		Players.PlayerAdded.Connect(bindPlayerChar);
+		for (const p of Players.GetPlayers()) {
+			bindPlayerChar(p);
+		}
 
 		Players.PlayerRemoving.Connect((player) => {
 			this.playerLastReaction.delete(player.UserId);
 		});
 
-		print("[ServerEmoteService] Initialized successfully with reaction replication.");
+		print("[ServerEmoteService] Initialized successfully with reaction & emote state replication.");
 	}
 
 	private handleSendReaction(player: Player, emoji: string): void {

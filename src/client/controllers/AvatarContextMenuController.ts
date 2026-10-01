@@ -14,8 +14,10 @@ function extractAssetIdNumber(assetUrl: string): string | undefined {
 // Koleksi seluruh Asset ID numerik khusus Dance dan Pose yang diizinkan untuk di-sync
 const ALLOWED_SYNC_ANIMATION_IDS = new Set<string>();
 const ANIMATION_ID_TO_EMOTE = new Map<string, EmoteItem>();
+const EMOTE_BY_ID = new Map<string, EmoteItem>();
 
 for (const dance of EMOTE_CONFIG.Dances) {
+	EMOTE_BY_ID.set(dance.id, dance);
 	if (dance.animationId) {
 		const id = extractAssetIdNumber(dance.animationId);
 		if (id) {
@@ -26,6 +28,7 @@ for (const dance of EMOTE_CONFIG.Dances) {
 }
 
 for (const pose of EMOTE_CONFIG.Poses) {
+	EMOTE_BY_ID.set(pose.id, pose);
 	if (pose.animationId) {
 		const id = extractAssetIdNumber(pose.animationId);
 		if (id) {
@@ -35,18 +38,62 @@ for (const pose of EMOTE_CONFIG.Poses) {
 	}
 }
 
-function findSyncableEmoteItem(track: AnimationTrack): EmoteItem | undefined {
+/**
+ * Validasi ketat apakah karakter berada dalam kondisi yang valid untuk melakukan sync emote.
+ * Menolak sync jika:
+ * 1. Karakter sedang dalam status AFK.
+ * 2. Karakter sedang memegang / meng-equip Tool (Gitar, Senjata, Skateboard, Drumstick, dll).
+ * 3. Karakter sedang duduk di kursi / drum seat / furniture.
+ */
+function isCharacterInSyncableState(char: Model | undefined): boolean {
+	if (!char) return false;
+
+	// 1. Dilarang sync jika target sedang dalam status AFK
+	const isAfk = (char.GetAttribute("IsAfk") as boolean | undefined) ?? false;
+	if (isAfk) return false;
+
+	// 2. Dilarang sync jika target sedang memegang Tool (Gitar, Senjata, Skateboard, Drumstick, dll.)
+	if (char.FindFirstChildOfClass("Tool") !== undefined) return false;
+
+	// 3. Dilarang sync jika target sedang duduk di kursi / drum / furniture
+	const humanoid = char.FindFirstChildOfClass("Humanoid");
+	if (!humanoid || humanoid.Health <= 0 || humanoid.Sit) return false;
+
+	return true;
+}
+
+function findSyncableEmoteItem(track: AnimationTrack, targetChar?: Model): EmoteItem | undefined {
+	if (targetChar && !isCharacterInSyncableState(targetChar)) {
+		return undefined;
+	}
+
 	const anim = track.Animation;
 	if (!anim || !anim.AnimationId || anim.AnimationId === "") {
 		return undefined;
 	}
+
 	const id = extractAssetIdNumber(anim.AnimationId);
 	if (!id) return undefined;
+
+	// Cek apakah ada ActiveEmoteId eksplisit dari karakter target
+	if (targetChar) {
+		const activeEmoteId = targetChar.GetAttribute("ActiveEmoteId") as string | undefined;
+		if (activeEmoteId && activeEmoteId.size() > 0) {
+			const item = EMOTE_BY_ID.get(activeEmoteId);
+			if (item) {
+				const itemAssetId = item.animationId ? extractAssetIdNumber(item.animationId) : undefined;
+				if (itemAssetId === id) {
+					return item;
+				}
+			}
+		}
+	}
+
 	return ANIMATION_ID_TO_EMOTE.get(id);
 }
 
-function isSyncableAnimation(track: AnimationTrack): boolean {
-	return findSyncableEmoteItem(track) !== undefined;
+function isSyncableAnimation(track: AnimationTrack, targetChar?: Model): boolean {
+	return findSyncableEmoteItem(track, targetChar) !== undefined;
 }
 
 /**
@@ -287,7 +334,18 @@ export class AvatarContextMenuController {
 		this.stopSync();
 
 		const targetChar = target.player.Character;
-		const targetHum = targetChar?.FindFirstChildOfClass("Humanoid");
+		if (!targetChar || !isCharacterInSyncableState(targetChar)) {
+			warn(`[AvatarContextMenuController] ${target.displayName} tidak dalam status yang dapat di-sync (mungkin AFK atau memegang Tool).`);
+			return;
+		}
+
+		const localChar = this.localPlayer.Character;
+		if (!localChar || !isCharacterInSyncableState(localChar)) {
+			warn(`[AvatarContextMenuController] Karakter lokal tidak dalam status yang dapat di-sync.`);
+			return;
+		}
+
+		const targetHum = targetChar.FindFirstChildOfClass("Humanoid");
 		const targetAnimator = targetHum?.FindFirstChildOfClass("Animator");
 
 		if (!targetAnimator) {
@@ -297,7 +355,7 @@ export class AvatarContextMenuController {
 
 		// Find currently active Dance or Pose track only
 		const tracks = targetAnimator.GetPlayingAnimationTracks();
-		const activeTrack = tracks.find((t) => isSyncableAnimation(t));
+		const activeTrack = tracks.find((t) => isSyncableAnimation(t, targetChar));
 
 		if (activeTrack && activeTrack.Animation) {
 			this.playSyncTrack(activeTrack, target);
@@ -312,23 +370,75 @@ export class AvatarContextMenuController {
 		// Dynamic Listener: automatically follow when target changes emote (restricted to Dance & Pose only)!
 		const animPlayedConn = targetAnimator.AnimationPlayed.Connect((newTrack) => {
 			if (newTrack.Animation && this.syncingUserId === target.userId) {
-				if (isSyncableAnimation(newTrack)) {
+				const currentTargetChar = target.player.Character;
+				if (!currentTargetChar || !isCharacterInSyncableState(currentTargetChar)) {
+					this.stopSync();
+					if (this.currentTarget) this.selectTarget(this.currentTarget);
+					return;
+				}
+
+				if (isSyncableAnimation(newTrack, currentTargetChar)) {
 					task.defer(() => {
 						this.playSyncTrack(newTrack, target);
 					});
+				} else {
+					// Jika target memainkan animasi lain (misal Tool/Gitar atau non-emote), hentikan sync
+					this.stopSync();
+					if (this.currentTarget) this.selectTarget(this.currentTarget);
 				}
 			}
 		});
 		this.syncConnections.push(animPlayedConn);
 
-		// Handle target died or character removed
+		// Listener 1: target berubah menjadi AFK -> langsung stop sync
+		const targetAfkConn = targetChar.GetAttributeChangedSignal("IsAfk").Connect(() => {
+			if (targetChar.GetAttribute("IsAfk") === true) {
+				this.stopSync();
+				if (this.currentTarget) this.selectTarget(this.currentTarget);
+			}
+		});
+		this.syncConnections.push(targetAfkConn);
+
+		// Listener 2: target meng-equip Tool (Gitar, Senjata, Skateboard, Drumstick, dll) -> langsung stop sync
+		const targetToolConn = targetChar.ChildAdded.Connect((child) => {
+			if (child.IsA("Tool")) {
+				this.stopSync();
+				if (this.currentTarget) this.selectTarget(this.currentTarget);
+			}
+		});
+		this.syncConnections.push(targetToolConn);
+
+		// Listener 3: target duduk (kursi / panggung / drum) -> stop sync
 		if (targetHum) {
+			const seatedConn = targetHum.Seated.Connect((isSeated) => {
+				if (isSeated) {
+					this.stopSync();
+					if (this.currentTarget) this.selectTarget(this.currentTarget);
+				}
+			});
+			this.syncConnections.push(seatedConn);
+
 			const diedConn = targetHum.Died.Connect(() => {
 				this.stopSync();
 				if (this.currentTarget) this.selectTarget(this.currentTarget);
 			});
 			this.syncConnections.push(diedConn);
 		}
+
+		// Listener 4: local player berubah menjadi AFK atau meng-equip Tool -> langsung stop sync
+		const localAfkConn = localChar.GetAttributeChangedSignal("IsAfk").Connect(() => {
+			if (localChar.GetAttribute("IsAfk") === true) {
+				this.stopSync();
+			}
+		});
+		this.syncConnections.push(localAfkConn);
+
+		const localToolConn = localChar.ChildAdded.Connect((child) => {
+			if (child.IsA("Tool")) {
+				this.stopSync();
+			}
+		});
+		this.syncConnections.push(localToolConn);
 
 		const charRemovingConn = target.player.CharacterRemoving.Connect(() => {
 			this.stopSync();
@@ -338,11 +448,22 @@ export class AvatarContextMenuController {
 	}
 
 	private playSyncTrack(sourceTrack: AnimationTrack, target: AvatarTargetPlayer): void {
-		const matchedItem = findSyncableEmoteItem(sourceTrack);
+		const targetChar = target.player.Character;
+		if (!targetChar || !isCharacterInSyncableState(targetChar)) {
+			this.stopSync();
+			return;
+		}
+
+		const matchedItem = findSyncableEmoteItem(sourceTrack, targetChar);
 		if (!matchedItem || !matchedItem.animationId) return;
 
 		const localChar = this.localPlayer.Character;
-		const localHum = localChar?.FindFirstChildOfClass("Humanoid");
+		if (!localChar || !isCharacterInSyncableState(localChar)) {
+			this.stopSync();
+			return;
+		}
+
+		const localHum = localChar.FindFirstChildOfClass("Humanoid");
 		if (!localHum || localHum.Health <= 0) return;
 
 		// Ambil Animator resmi server (jangan buat Animator baru di client agar replikasi server aktif)
@@ -363,7 +484,7 @@ export class AvatarContextMenuController {
 		}
 
 		// Bersihkan instance Animation lama di local character jika ada
-		const existingAnim = localChar?.FindFirstChild("SyncAnimationInstance");
+		const existingAnim = localChar.FindFirstChild("SyncAnimationInstance");
 		if (existingAnim) {
 			existingAnim.Destroy();
 		}
@@ -396,19 +517,26 @@ export class AvatarContextMenuController {
 			const stoppedConn = sourceTrack.Stopped.Connect(() => {
 				task.delay(0.1, () => {
 					if (this.syncingUserId === target.userId && this.syncedTargetPlayer) {
-						const targetChar = this.syncedTargetPlayer.Character;
-						const targetAnimator = targetChar
-							?.FindFirstChildOfClass("Humanoid")
+						const currentTargetChar = this.syncedTargetPlayer.Character;
+						if (!currentTargetChar || !isCharacterInSyncableState(currentTargetChar)) {
+							this.stopSync();
+							if (this.currentTarget) this.selectTarget(this.currentTarget);
+							return;
+						}
+
+						const currentTargetAnimator = currentTargetChar
+							.FindFirstChildOfClass("Humanoid")
 							?.FindFirstChildOfClass("Animator");
 						const playing =
-							targetAnimator
+							currentTargetAnimator
 								?.GetPlayingAnimationTracks()
-								.filter((t) => isSyncableAnimation(t)) ?? [];
+								.filter((t) => isSyncableAnimation(t, currentTargetChar)) ?? [];
+
 						if (playing.size() === 0 && this.syncedTrack) {
 							this.syncedTrack.Stop(0.2);
 							this.syncedTrack.Destroy();
 							this.syncedTrack = undefined;
-							const anim = localChar?.FindFirstChild("SyncAnimationInstance");
+							const anim = localChar.FindFirstChild("SyncAnimationInstance");
 							if (anim) anim.Destroy();
 						}
 					}

@@ -275,8 +275,8 @@ export class ServerCombatService {
 		createValue("IsInClash", "BoolValue", false);
 		createValue("HasAnimateSpeedHandling", "BoolValue", false);
 
-		// Guarantee Fists tool exists for combat
-		this.ensureFistsTool(player);
+		// Fists tool is now stored in ServerStorage/Tools and given via admin command :give fists <player>
+		// this.ensureFistsTool(player);
 
 		task.delay(1, () => {
 			if (character.Parent && this.playerData.has(player)) {

@@ -6,6 +6,11 @@ import { RunService } from "@rbxts/services";
 
 export const AdminConfig = {
 	/**
+	 * Explicit Game Owner User ID.
+	 */
+	OWNER_USER_ID: 8895971048, // Fleurizze (Game Owner)
+
+	/**
 	 * Explicit list of User IDs with Admin privileges.
 	 * Add User IDs here to grant music & system control.
 	 */
@@ -24,6 +29,37 @@ export const AdminConfig = {
 	/** Cooldown in seconds between queuing songs */
 	QUEUE_COOLDOWN_SECONDS: 10,
 };
+
+/**
+ * Checks whether a given player is the Game Owner.
+ * Critical operations (like Server Restart / Reboot) are strictly restricted to the Game Owner.
+ */
+export function isPlayerOwner(player: Player): boolean {
+	// 0. Studio Developer Testing
+	if (RunService.IsStudio() && (player.UserId === game.CreatorId || player.UserId <= 0 || player.UserId === AdminConfig.OWNER_USER_ID)) {
+		return true;
+	}
+
+	// 1. Explicit Game Owner User ID
+	if (player.UserId === AdminConfig.OWNER_USER_ID) {
+		return true;
+	}
+
+	// 2. Game Creator (User)
+	if (game.CreatorType === Enum.CreatorType.User && player.UserId === game.CreatorId) {
+		return true;
+	}
+
+	// 3. Group Owner (Rank 255)
+	if (game.CreatorType === Enum.CreatorType.Group) {
+		const rank = player.GetRankInGroup(game.CreatorId);
+		if (rank === 255) {
+			return true;
+		}
+	}
+
+	return false;
+}
 
 /**
  * Checks whether a given player has Admin privileges in the current game.

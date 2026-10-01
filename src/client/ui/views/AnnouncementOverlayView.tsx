@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from "@rbxts/react";
+import React, { useEffect, useRef, useState } from "@rbxts/react";
 import ReactRoblox, { Root } from "@rbxts/react-roblox";
 import { Lighting, Players, RunService, TweenService } from "@rbxts/services";
 import { Fonts } from "../Typography";
@@ -20,6 +20,51 @@ export function AnnouncementOverlayComponent({
 }: AnnouncementOverlayComponentProps) {
 	const canvasGroupRef = useRef<CanvasGroup>();
 	const scaleRef = useRef<UIScale>();
+	const [displayedText, setDisplayedText] = useState("");
+	const [isTyping, setIsTyping] = useState(false);
+
+	// ─── Efek Mesin Ketik (Typewriter Animation) ───
+	useEffect(() => {
+		if (!visible || text === "") {
+			setDisplayedText("");
+			setIsTyping(false);
+			return;
+		}
+
+		let active = true;
+		setDisplayedText("");
+		setIsTyping(true);
+
+		const typeThread = task.spawn(() => {
+			// Jeda singkat 0.12 detik agar transisi fade-in kontainer mulai berjalan
+			task.wait(0.12);
+
+			const len = text.size();
+			for (let i = 1; i <= len; i++) {
+				if (!active) break;
+				setDisplayedText(text.sub(1, i));
+
+				// Variasi ritme ketikan natural ala mesin ketik
+				const char = text.sub(i, i);
+				if (char === "." || char === "!" || char === "?") {
+					task.wait(0.06);
+				} else if (char === "," || char === ":" || char === ";") {
+					task.wait(0.04);
+				} else {
+					task.wait(0.025);
+				}
+			}
+
+			if (active) {
+				setIsTyping(false);
+			}
+		});
+
+		return () => {
+			active = false;
+			task.cancel(typeThread);
+		};
+	}, [visible, text]);
 
 	useEffect(() => {
 		if (!visible) return;
@@ -40,9 +85,12 @@ export function AnnouncementOverlayComponent({
 		enterTweenGroup.Play();
 		enterTweenScale.Play();
 
+		// Hitung durasi efektif agar efek mesin ketik selesai diketik dan sempat dibaca
+		const effectiveDuration = math.max(duration, 0.2 + text.size() * 0.03 + 2.5);
+
 		// ─── 3. Animasi Keluar: Fade Out + Smooth Zoom (0.45 detik) setelah durasi ───
 		let isCancelled = false;
-		const timerThread = task.delay(duration, () => {
+		const timerThread = task.delay(effectiveDuration, () => {
 			if (isCancelled) return;
 			const exitInfo = new TweenInfo(0.45, Enum.EasingStyle.Quad, Enum.EasingDirection.In);
 			const exitTweenGroup = TweenService.Create(cg, exitInfo, { GroupTransparency: 1 });
@@ -97,11 +145,11 @@ export function AnnouncementOverlayComponent({
 				<uiscale ref={scaleRef} Scale={0.92} />
 				<uisizeconstraint MaxSize={new Vector2(960, 360)} />
 
-				{/* Teks Pengumuman Bold di Tengah */}
+				{/* Teks Pengumuman Bold di Tengah dengan Efek Mesin Ketik */}
 				<textlabel
 					Size={new UDim2(1, 0, 1, 0)}
 					BackgroundTransparency={1}
-					Text={text}
+					Text={isTyping ? `${displayedText}_` : displayedText}
 					TextColor3={Color3.fromHex("#ffffff")}
 					Font={Fonts.Bold}
 					TextSize={32}

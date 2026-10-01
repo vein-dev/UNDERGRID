@@ -22,3 +22,4 @@ export * from "./SeatController";
 export * from "./StageCameraController";
 export * from "./AvatarContextMenuController";
 export * from "./StreetlightController";
+export * from "./AfkController";

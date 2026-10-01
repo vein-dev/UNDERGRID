@@ -14,3 +14,4 @@ export * from "./ServerGuitarService";
 export * from "./ServerDrumstickService";
 export * from "./ServerRollupDoorService";
 export * from "./ServerSeatService";
+export * from "./ServerAfkService";

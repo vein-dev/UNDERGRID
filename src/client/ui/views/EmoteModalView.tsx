@@ -457,7 +457,7 @@ export function EmoteModalComponent({ isOpen, onClose, onAnimationFinished }: Em
 						Position={new UDim2(0, 42, 0, 0)}
 						Size={new UDim2(1, -90, 1, 0)}
 						BackgroundTransparency={1}
-						Text="EMOTES & REAKSI"
+						Text="EMOTES"
 						TextColor3={Color3.fromHex("#ffffff")}
 						Font={Fonts.Bold}
 						TextSize={14}

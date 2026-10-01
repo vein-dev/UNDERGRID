@@ -15,6 +15,7 @@ import {
 	ServerDrumstickService,
 	ServerRollupDoorService,
 	ServerSeatService,
+	ServerAfkService,
 } from "./services";
 
 /**
@@ -26,6 +27,9 @@ function main() {
 	// Initialize singleton services
 	const timeService = ServerTimeService.getInstance();
 	timeService.init();
+
+	const afkService = ServerAfkService.getInstance();
+	afkService.init();
 
 	const stageLightingService = ServerStageLightingService.getInstance();
 	stageLightingService.init();

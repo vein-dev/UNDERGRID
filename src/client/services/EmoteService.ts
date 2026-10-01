@@ -149,6 +149,7 @@ export class EmoteService {
 			this.activeTrack = track;
 			this.activeEmoteId = item.id;
 			this.notifyState(true, item.id);
+			this.reactionEvent.FireServer("StartEmote", item.id);
 		} else {
 			warn(`[EmoteService] Gagal memuat animasi emote '${item.name}':`, track);
 		}
@@ -163,6 +164,7 @@ export class EmoteService {
 		if (this.activeEmoteId !== undefined) {
 			this.activeEmoteId = undefined;
 			this.notifyState(false);
+			this.reactionEvent.FireServer("StopEmote");
 		}
 	}
 
@@ -186,34 +188,23 @@ export class EmoteService {
 		const billboard = new Instance("BillboardGui");
 		billboard.Name = "ReactionBillboard";
 		billboard.Adornee = adornee;
-		billboard.Size = new UDim2(0, 68, 0, 68);
-		billboard.StudsOffset = new Vector3(0, 2.4, 0);
+		billboard.Size = new UDim2(0, 110, 0, 110);
+		billboard.StudsOffset = new Vector3(0, 2.6, 0);
 		billboard.MaxDistance = EMOTE_CONFIG.ReactionMaxDistance;
 		billboard.AlwaysOnTop = false;
 		billboard.ResetOnSpawn = false;
 
 		const container = new Instance("CanvasGroup");
 		container.Name = "EmojiContainer";
-		container.Size = new UDim2(0, 64, 0, 64);
+		container.Size = new UDim2(0.2, 0, 0.2, 0);
 		container.Position = new UDim2(0.5, 0, 0.5, 0);
 		container.AnchorPoint = new Vector2(0.5, 0.5);
-		container.BackgroundColor3 = Color3.fromHex("#121620");
-		container.BackgroundTransparency = 0.2;
+		container.BackgroundTransparency = 1;
 		container.GroupTransparency = 1; // start invisible for pop-in
-
-		const corner = new Instance("UICorner");
-		corner.CornerRadius = new UDim(0, 20);
-		corner.Parent = container;
-
-		const stroke = new Instance("UIStroke");
-		stroke.Color = Color3.fromHex("#ffffff");
-		stroke.Transparency = 0.75;
-		stroke.Thickness = 1.5;
-		stroke.Parent = container;
 
 		const emojiLabel = new Instance("TextLabel");
 		emojiLabel.Name = "EmojiLabel";
-		emojiLabel.Size = new UDim2(1, -8, 1, -8);
+		emojiLabel.Size = new UDim2(1, 0, 1, 0);
 		emojiLabel.Position = new UDim2(0.5, 0, 0.5, 0);
 		emojiLabel.AnchorPoint = new Vector2(0.5, 0.5);
 		emojiLabel.BackgroundTransparency = 1;
@@ -225,18 +216,21 @@ export class EmoteService {
 		container.Parent = billboard;
 		billboard.Parent = adornee;
 
-		// 1. Pop-in Bounce Tween
+		// 1. Pop-in Bounce Tween (Scale & Opacity)
 		TweenService.Create(
 			container,
-			new TweenInfo(0.3, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
-			{ GroupTransparency: 0 },
+			new TweenInfo(0.35, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
+			{
+				GroupTransparency: 0,
+				Size: new UDim2(1, 0, 1, 0),
+			},
 		).Play();
 
 		// 2. Slow gentle float upward
 		TweenService.Create(
 			billboard,
 			new TweenInfo(duration, Enum.EasingStyle.Sine, Enum.EasingDirection.Out),
-			{ StudsOffset: new Vector3(0, 3.8, 0) },
+			{ StudsOffset: new Vector3(0, 4.2, 0) },
 		).Play();
 
 		// 3. Fade out towards the end
@@ -245,7 +239,10 @@ export class EmoteService {
 				const fadeTween = TweenService.Create(
 					container,
 					new TweenInfo(0.4, Enum.EasingStyle.Quad, Enum.EasingDirection.In),
-					{ GroupTransparency: 1 },
+					{
+						GroupTransparency: 1,
+						Size: new UDim2(1.15, 0, 1.15, 0),
+					},
 				);
 				fadeTween.Play();
 				fadeTween.Completed.Connect(() => {

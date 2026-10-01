@@ -84,7 +84,9 @@ export class ServerSkateboardService {
 			this.dismountPlayer(player);
 		});
 
-		const starterSkate = StarterPack.FindFirstChild("Skateboard") as Tool | undefined;
+		const toolsFolder = ServerStorage.FindFirstChild("Tools") as Folder | undefined;
+		const storageSkate = (toolsFolder?.FindFirstChild("Skateboard") ?? ServerStorage.FindFirstChild("Skateboard")) as Tool | undefined;
+		const starterSkate = (StarterPack.FindFirstChild("Skateboard") ?? storageSkate) as Tool | undefined;
 		if (starterSkate) {
 			starterSkate.RequiresHandle = false;
 			starterSkate.ManualActivationOnly = true;
@@ -229,8 +231,10 @@ export class ServerSkateboardService {
 			return;
 		}
 
-		// 3. Cek StarterPack atau Tool pemain
-		const inStarter = StarterPack.FindFirstChild("Skateboard") as Tool | undefined;
+		// 3. Cek StarterPack, ServerStorage/Tools, atau Tool pemain
+		const toolsFolder = ServerStorage.FindFirstChild("Tools") as Folder | undefined;
+		const inStorage = (toolsFolder?.FindFirstChild("Skateboard") ?? ServerStorage.FindFirstChild("Skateboard")) as Tool | undefined;
+		const inStarter = (StarterPack.FindFirstChild("Skateboard") ?? inStorage) as Tool | undefined;
 		const backpack = player?.FindFirstChildOfClass("Backpack");
 		const toolSource =
 			inStarter ??
