@@ -2,9 +2,12 @@ import React, { useEffect, useRef, useState } from "@rbxts/react";
 import ReactRoblox, { Root } from "@rbxts/react-roblox";
 import { UserInputService } from "@rbxts/services";
 import { MusicPlayerService } from "client/services/MusicPlayerService";
+import { DjMusicPlayerService } from "client/services/DjMusicPlayerService";
+import { ZoneAudioController } from "client/controllers/ZoneAudioController";
 import { GlobalNotificationService } from "client/services/GlobalNotificationService";
 import { Fonts } from "../Typography";
-import { DEFAULT_SMARTPHONE_CONFIG, MusicPlayerState, MusicQueueItem, TrackData } from "shared/types";
+import { DEFAULT_DJ_PLAYLIST } from "shared/config";
+import { DEFAULT_SMARTPHONE_CONFIG, MusicPlayerState, MusicQueueItem, MusicTarget, TrackData } from "shared/types";
 import { LucideIcon } from "../components/LucideIcon";
 
 export interface MusicComponentProps {
@@ -21,12 +24,19 @@ function formatTime(seconds: number): string {
 }
 
 export function MusicComponent({ visible, onBack }: MusicComponentProps) {
-	const musicService = MusicPlayerService.getInstance();
+	const mainMusicService = MusicPlayerService.getInstance();
+	const djMusicService = DjMusicPlayerService.getInstance();
 
-	const [currentTrack, setCurrentTrack] = useState<TrackData | undefined>(() => musicService.getCurrentTrack());
-	const [playerState, setPlayerState] = useState<MusicPlayerState>(() => musicService.getState());
+	const [selectedStage, setSelectedStage] = useState<MusicTarget>(() => {
+		return ZoneAudioController.getInstance().getIsInDjArea() ? "dj" : "main";
+	});
+
+	const activeMusicService = selectedStage === "main" ? mainMusicService : djMusicService;
+
+	const [currentTrack, setCurrentTrack] = useState<TrackData | undefined>(() => activeMusicService.getCurrentTrack());
+	const [playerState, setPlayerState] = useState<MusicPlayerState>(() => activeMusicService.getState());
 	const [progress, setProgress] = useState({ position: 0, duration: 0 });
-	const [queue, setQueue] = useState<MusicQueueItem[]>(() => musicService.getQueue());
+	const [queue, setQueue] = useState<MusicQueueItem[]>(() => activeMusicService.getQueue());
 	const [showQueue, setShowQueue] = useState(false);
 	const [queueTab, setQueueTab] = useState<"queue" | "request">("queue");
 	const [customSoundId, setCustomSoundId] = useState("");
@@ -34,15 +44,19 @@ export function MusicComponent({ visible, onBack }: MusicComponentProps) {
 	const [isSubmitting, setIsSubmitting] = useState(false);
 	const isSubmittingRef = useRef(false);
 	const isActionProcessingRef = useRef(false);
-	const [isAdmin] = useState(() => musicService.isAdmin());
+	const isAdmin = activeMusicService.isAdmin();
 	const [volumeValue, setVolumeValue] = useState(() => {
-		const v = musicService.getVolume();
+		const v = activeMusicService.getVolume();
 		return math.clamp(math.round(v * 100), 1, 100);
 	});
 	const [isDraggingVolume, setIsDraggingVolume] = useState(false);
 	const volumeTrackRef = useRef<Frame>();
 
-	const playlist = musicService.getDefaultPlaylist() ?? DEFAULT_SMARTPHONE_CONFIG.playlist;
+	const playlist =
+		selectedStage === "main"
+			? (mainMusicService.getDefaultPlaylist() ?? DEFAULT_SMARTPHONE_CONFIG.playlist)
+			: (djMusicService.getDefaultPlaylist() ?? DEFAULT_DJ_PLAYLIST);
+
 	const filteredPlaylist = playlist.filter((track) => {
 		if (searchQuery === "") return true;
 		const q = searchQuery.lower();
@@ -50,14 +64,28 @@ export function MusicComponent({ visible, onBack }: MusicComponentProps) {
 	});
 
 	useEffect(() => {
-		musicService.onTrackChanged((t) => setCurrentTrack(t));
-		musicService.onStateChanged((s) => setPlayerState(s));
-		musicService.onProgress((pos, dur) => setProgress({ position: pos, duration: dur }));
-		musicService.onQueueUpdated((q) => setQueue([...q]));
-		musicService.onVolumeChanged((vol) => {
+		setCurrentTrack(activeMusicService.getCurrentTrack());
+		setPlayerState(activeMusicService.getState());
+		setQueue([...activeMusicService.getQueue()]);
+		const v = activeMusicService.getVolume();
+		setVolumeValue(math.clamp(math.round(v * 100), 1, 100));
+
+		const unsubTrack = activeMusicService.onTrackChanged((t) => setCurrentTrack(t));
+		const unsubState = activeMusicService.onStateChanged((s) => setPlayerState(s));
+		const unsubProg = activeMusicService.onProgress((pos, dur) => setProgress({ position: pos, duration: dur }));
+		const unsubQueue = activeMusicService.onQueueUpdated((q) => setQueue([...q]));
+		const unsubVol = activeMusicService.onVolumeChanged((vol) => {
 			setVolumeValue(math.clamp(math.round(vol * 100), 1, 100));
 		});
-	}, []);
+
+		return () => {
+			unsubTrack();
+			unsubState();
+			unsubProg();
+			unsubQueue();
+			unsubVol();
+		};
+	}, [selectedStage]);
 
 	const updateVolumeFromInput = (inputX: number) => {
 		const track = volumeTrackRef.current;
@@ -70,7 +98,8 @@ export function MusicComponent({ visible, onBack }: MusicComponentProps) {
 		const r = math.clamp(relativeX / trackWidth, 0, 1);
 		const newVol = math.clamp(math.round(r * 100), 1, 100);
 		setVolumeValue(newVol);
-		musicService.setVolume(newVol / 100);
+		activeMusicService.setVolume(newVol / 100);
+		ZoneAudioController.getInstance().setMasterVolume(newVol / 100);
 	};
 
 	useEffect(() => {
@@ -111,7 +140,7 @@ export function MusicComponent({ visible, onBack }: MusicComponentProps) {
 		isSubmittingRef.current = true;
 		setIsSubmitting(true);
 		try {
-			const res = await musicService.requestQueueSong(track);
+			const res = await activeMusicService.requestQueueSong(track);
 			if (res.success) {
 				setQueueTab("queue");
 			} else {
@@ -155,10 +184,12 @@ export function MusicComponent({ visible, onBack }: MusicComponentProps) {
 		setIsSubmitting(true);
 		try {
 			const soundAssetId = `rbxassetid://${cleanDigits}`;
-			const res = await musicService.requestQueueSong({
+			const res = await activeMusicService.requestQueueSong({
+				id: `custom_${cleanDigits}`,
 				soundId: soundAssetId,
 				title: `Sound #${cleanDigits}`,
 				artist: "Custom Audio",
+				coverColor: Color3.fromHex("#333333"),
 			});
 			if (res.success) {
 				setCustomSoundId("");
@@ -190,7 +221,7 @@ export function MusicComponent({ visible, onBack }: MusicComponentProps) {
 		if (isActionProcessingRef.current) return;
 		isActionProcessingRef.current = true;
 		try {
-			const res = await musicService.requestVoteSkip(idx);
+			const res = await activeMusicService.requestVoteSkip(idx);
 			GlobalNotificationService.getInstance().show({
 				title: "Vote Skip",
 				message: res.message,
@@ -215,7 +246,7 @@ export function MusicComponent({ visible, onBack }: MusicComponentProps) {
 		if (isActionProcessingRef.current) return;
 		isActionProcessingRef.current = true;
 		try {
-			const res = await musicService.requestRemoveQueue(idx);
+			const res = await activeMusicService.requestRemoveQueue(idx);
 			GlobalNotificationService.getInstance().show({
 				title: "Delete",
 				message: res.message,
@@ -291,12 +322,119 @@ export function MusicComponent({ visible, onBack }: MusicComponentProps) {
 				/>
 			</frame>
 
+			{/* Stage Switcher (Main Stage vs DJ Stage) */}
+			<frame
+				key="StageSwitcherContainer"
+				Position={new UDim2(0, 0, 0, 52)}
+				Size={new UDim2(1, 0, 0, 42)}
+				BackgroundColor3={Color3.fromHex("#0c0c0c")}
+				BackgroundTransparency={0}
+				ZIndex={9}
+			>
+				<frame
+					key="StageSegmented"
+					AnchorPoint={new Vector2(0.5, 0.5)}
+					Position={new UDim2(0.5, 0, 0.5, 0)}
+					Size={new UDim2(1, -24, 0, 32)}
+					BackgroundColor3={Color3.fromHex("#161616")}
+					ZIndex={10}
+				>
+					<uicorner CornerRadius={new UDim(0, 8)} />
+					<uistroke Color={Color3.fromHex("#262626")} Thickness={1} />
+					<uipadding
+						PaddingTop={new UDim(0, 2)}
+						PaddingBottom={new UDim(0, 2)}
+						PaddingLeft={new UDim(0, 2)}
+						PaddingRight={new UDim(0, 2)}
+					/>
+
+					{/* Tab 1: Main Stage */}
+					<textbutton
+						key="TabMainStage"
+						Position={new UDim2(0, 0, 0, 0)}
+						Size={new UDim2(0.5, -2, 1, 0)}
+						BackgroundColor3={selectedStage === "main" ? Color3.fromHex("#ffffff") : Color3.fromHex("#161616")}
+						BackgroundTransparency={selectedStage === "main" ? 0 : 1}
+						Text=""
+						AutoButtonColor={false}
+						ZIndex={11}
+						Event={{
+							Activated: () => setSelectedStage("main"),
+						}}
+					>
+						<uicorner CornerRadius={new UDim(0, 6)} />
+						<uilistlayout
+							FillDirection={Enum.FillDirection.Horizontal}
+							HorizontalAlignment={Enum.HorizontalAlignment.Center}
+							VerticalAlignment={Enum.VerticalAlignment.Center}
+							Padding={new UDim(0, 6)}
+						/>
+						<LucideIcon
+							name="disc-3"
+							size={new UDim2(0, 13, 0, 13)}
+							color={selectedStage === "main" ? Color3.fromHex("#000000") : Color3.fromHex("#888888")}
+							zIndex={12}
+						/>
+						<textlabel
+							key="Label"
+							BackgroundTransparency={1}
+							AutomaticSize={Enum.AutomaticSize.XY}
+							Text="Main Stage"
+							TextColor3={selectedStage === "main" ? Color3.fromHex("#000000") : Color3.fromHex("#888888")}
+							Font={Fonts.Bold}
+							TextSize={11}
+							ZIndex={12}
+						/>
+					</textbutton>
+
+					{/* Tab 2: DJ Stage */}
+					<textbutton
+						key="TabDjStage"
+						AnchorPoint={new Vector2(1, 0)}
+						Position={new UDim2(1, 0, 0, 0)}
+						Size={new UDim2(0.5, -2, 1, 0)}
+						BackgroundColor3={selectedStage === "dj" ? Color3.fromHex("#ffffff") : Color3.fromHex("#161616")}
+						BackgroundTransparency={selectedStage === "dj" ? 0 : 1}
+						Text=""
+						AutoButtonColor={false}
+						ZIndex={11}
+						Event={{
+							Activated: () => setSelectedStage("dj"),
+						}}
+					>
+						<uicorner CornerRadius={new UDim(0, 6)} />
+						<uilistlayout
+							FillDirection={Enum.FillDirection.Horizontal}
+							HorizontalAlignment={Enum.HorizontalAlignment.Center}
+							VerticalAlignment={Enum.VerticalAlignment.Center}
+							Padding={new UDim(0, 6)}
+						/>
+						<LucideIcon
+							name="headphones"
+							size={new UDim2(0, 13, 0, 13)}
+							color={selectedStage === "dj" ? Color3.fromHex("#000000") : Color3.fromHex("#888888")}
+							zIndex={12}
+						/>
+						<textlabel
+							key="Label"
+							BackgroundTransparency={1}
+							AutomaticSize={Enum.AutomaticSize.XY}
+							Text="Stage DJ"
+							TextColor3={selectedStage === "dj" ? Color3.fromHex("#000000") : Color3.fromHex("#888888")}
+							Font={Fonts.Bold}
+							TextSize={11}
+							ZIndex={12}
+						/>
+					</textbutton>
+				</frame>
+			</frame>
+
 			{/* Main Player Screen */}
 			{!showQueue ? (
 				<frame
 					key="PlayerBody"
-					Position={new UDim2(0, 0, 0, 52)}
-					Size={new UDim2(1, 0, 1, -52)}
+					Position={new UDim2(0, 0, 0, 94)}
+					Size={new UDim2(1, 0, 1, -94)}
 					BackgroundTransparency={1}
 					ZIndex={9}
 				>
@@ -304,8 +442,8 @@ export function MusicComponent({ visible, onBack }: MusicComponentProps) {
 					<frame
 						key="CoverWrapper"
 						AnchorPoint={new Vector2(0.5, 0)}
-						Position={new UDim2(0.5, 0, 0, 24)}
-						Size={new UDim2(0, 220, 0, 220)}
+						Position={new UDim2(0.5, 0, 0, 14)}
+						Size={new UDim2(0, 204, 0, 204)}
 						BackgroundColor3={currentTrack ? currentTrack.coverColor : Color3.fromHex("#1f1f1f")}
 						ZIndex={10}
 					>
@@ -325,7 +463,7 @@ export function MusicComponent({ visible, onBack }: MusicComponentProps) {
 					<textlabel
 						key="SongTitle"
 						AnchorPoint={new Vector2(0.5, 0)}
-						Position={new UDim2(0.5, 0, 0, 264)}
+						Position={new UDim2(0.5, 0, 0, 228)}
 						Size={new UDim2(1, -48, 0, 24)}
 						BackgroundTransparency={1}
 						Text={currentTrack ? currentTrack.title : "Tidak Ada Lagu"}
@@ -339,7 +477,7 @@ export function MusicComponent({ visible, onBack }: MusicComponentProps) {
 					<textlabel
 						key="Artist"
 						AnchorPoint={new Vector2(0.5, 0)}
-						Position={new UDim2(0.5, 0, 0, 292)}
+						Position={new UDim2(0.5, 0, 0, 256)}
 						Size={new UDim2(1, -48, 0, 18)}
 						BackgroundTransparency={1}
 						Text={currentTrack ? currentTrack.artist : "Pilih lagu"}
@@ -353,7 +491,7 @@ export function MusicComponent({ visible, onBack }: MusicComponentProps) {
 					{/* Seekbar */}
 					<frame
 						key="SeekbarContainer"
-						Position={new UDim2(0, 28, 0, 330)}
+						Position={new UDim2(0, 28, 0, 288)}
 						Size={new UDim2(1, -56, 0, 24)}
 						BackgroundTransparency={1}
 						ZIndex={10}
@@ -407,7 +545,7 @@ export function MusicComponent({ visible, onBack }: MusicComponentProps) {
 					{/* Volume Slider Row (Right under Track Timeline) */}
 					<frame
 						key="VolumeWrapper"
-						Position={new UDim2(0, 28, 0, 362)}
+						Position={new UDim2(0, 28, 0, 320)}
 						Size={new UDim2(1, -56, 0, 24)}
 						BackgroundTransparency={1}
 						ZIndex={10}
@@ -493,7 +631,7 @@ export function MusicComponent({ visible, onBack }: MusicComponentProps) {
 					<frame
 						key="RequestActionContainer"
 						AnchorPoint={new Vector2(0.5, 0)}
-						Position={new UDim2(0.5, 0, 0, 400)}
+						Position={new UDim2(0.5, 0, 0, 356)}
 						Size={new UDim2(1, -48, 0, 48)}
 						BackgroundTransparency={1}
 						ZIndex={10}
@@ -591,8 +729,8 @@ export function MusicComponent({ visible, onBack }: MusicComponentProps) {
 				/* Queue & Song Request Screen */
 				<frame
 					key="QueueContainer"
-					Position={new UDim2(0, 0, 0, 52)}
-					Size={new UDim2(1, 0, 1, -52)}
+					Position={new UDim2(0, 0, 0, 94)}
+					Size={new UDim2(1, 0, 1, -94)}
 					BackgroundTransparency={1}
 					ZIndex={9}
 				>

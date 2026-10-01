@@ -15,3 +15,4 @@ export * from "./ServerDrumstickService";
 export * from "./ServerRollupDoorService";
 export * from "./ServerSeatService";
 export * from "./ServerAfkService";
+export * from "./ServerDjMusicService";

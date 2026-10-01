@@ -395,24 +395,44 @@ export class MusicPlayerService {
 
 	// ─── Callbacks ────────────────────────────────────────────────────────────
 
-	public onTrackChanged(cb: TrackChangedCallback): void {
+	public onTrackChanged(cb: TrackChangedCallback): () => void {
 		this.trackChangedCallbacks.push(cb);
+		return () => {
+			const idx = this.trackChangedCallbacks.indexOf(cb);
+			if (idx !== -1) this.trackChangedCallbacks.remove(idx);
+		};
 	}
 
-	public onStateChanged(cb: StateChangedCallback): void {
+	public onStateChanged(cb: StateChangedCallback): () => void {
 		this.stateChangedCallbacks.push(cb);
+		return () => {
+			const idx = this.stateChangedCallbacks.indexOf(cb);
+			if (idx !== -1) this.stateChangedCallbacks.remove(idx);
+		};
 	}
 
-	public onProgress(cb: ProgressCallback): void {
+	public onProgress(cb: ProgressCallback): () => void {
 		this.progressCallbacks.push(cb);
+		return () => {
+			const idx = this.progressCallbacks.indexOf(cb);
+			if (idx !== -1) this.progressCallbacks.remove(idx);
+		};
 	}
 
-	public onQueueUpdated(cb: QueueUpdatedCallback): void {
+	public onQueueUpdated(cb: QueueUpdatedCallback): () => void {
 		this.queueUpdatedCallbacks.push(cb);
+		return () => {
+			const idx = this.queueUpdatedCallbacks.indexOf(cb);
+			if (idx !== -1) this.queueUpdatedCallbacks.remove(idx);
+		};
 	}
 
-	public onVolumeChanged(cb: VolumeChangedCallback): void {
+	public onVolumeChanged(cb: VolumeChangedCallback): () => void {
 		this.volumeChangedCallbacks.push(cb);
+		return () => {
+			const idx = this.volumeChangedCallbacks.indexOf(cb);
+			if (idx !== -1) this.volumeChangedCallbacks.remove(idx);
+		};
 	}
 
 	private emitTrackChanged(track: TrackData): void {

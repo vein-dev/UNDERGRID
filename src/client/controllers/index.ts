@@ -23,3 +23,4 @@ export * from "./StageCameraController";
 export * from "./AvatarContextMenuController";
 export * from "./StreetlightController";
 export * from "./AfkController";
+export * from "./ZoneAudioController";

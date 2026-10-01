@@ -53,6 +53,9 @@ export interface TrackData {
 	beatOffset?: number;
 }
 
+/** Target audio zone / stage channel */
+export type MusicTarget = "main" | "dj";
+
 /** Represents the current playback state of the music player. */
 export enum MusicPlayerState {
 	Idle = "Idle",

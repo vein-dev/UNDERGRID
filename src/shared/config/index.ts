@@ -13,3 +13,4 @@ export * from "./SeatConfig";
 export * from "./DrumSeatConfig";
 export * from "./StreetlightConfig";
 export * from "./AfkConfig";
+export * from "./DjMusicConfig";

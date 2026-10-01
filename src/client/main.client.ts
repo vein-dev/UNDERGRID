@@ -26,6 +26,7 @@ import {
 	AvatarContextMenuController,
 	StreetlightController,
 	AfkController,
+	ZoneAudioController,
 } from "./controllers";
 
 
@@ -106,6 +107,7 @@ function main() {
 	AvatarContextMenuController.getInstance().init();
 	StreetlightController.getInstance().init();
 	AfkController.getInstance().init();
+	ZoneAudioController.getInstance().init();
 
 	print("[Client] All controllers initialized successfully.");
 

@@ -1,7 +1,8 @@
 import { CollectionService, RunService, SoundService, Workspace } from "@rbxts/services";
 import { AdminService } from "client/services/AdminService";
+import { DjMusicPlayerService } from "client/services/DjMusicPlayerService";
 import { MusicPlayerService } from "client/services/MusicPlayerService";
-import { StageLightMode, StageLightingControlPayload } from "shared/types";
+import { StageLightMode, StageLightingControlPayload, TrackData } from "shared/types";
 
 interface ClientFixture {
 	model: Model;
@@ -268,17 +269,32 @@ export class ClientStageLightingController {
 
 	/**
 	 * Menemukan instans Sound musik yang sedang diputar di client
+	 * @param isDj True jika mencari audio DJ Stage, false untuk Main Stage
 	 */
-	private getActiveMusicSound(): Sound | undefined {
+	private getActiveMusicSound(isDj: boolean = false): Sound | undefined {
+		if (isDj) {
+			const dj = DjMusicPlayerService.getInstance();
+			const djSound = dj.getSoundInstance();
+			if (djSound && djSound.IsPlaying) return djSound;
+
+			const serverDj = SoundService.FindFirstChild("ServerDjMusic") as Sound | undefined;
+			if (serverDj && serverDj.IsPlaying) return serverDj;
+
+			return undefined;
+		}
+
 		const mp = MusicPlayerService.getInstance();
 		const mpSound = mp.getSoundInstance();
 		if (mpSound && mpSound.IsPlaying) return mpSound;
+
+		const serverMusic = SoundService.FindFirstChild("ServerGlobalMusic") as Sound | undefined;
+		if (serverMusic && serverMusic.IsPlaying) return serverMusic;
 
 		let bestSound: Sound | undefined;
 		let maxLoudness = -1;
 
 		for (const child of SoundService.GetChildren()) {
-			if (child.IsA("Sound") && child.IsPlaying) {
+			if (child.IsA("Sound") && child.IsPlaying && child.Name !== "ServerDjMusic" && child.Name !== "DjMusic") {
 				const loudness = child.PlaybackLoudness;
 				if (loudness > maxLoudness) {
 					maxLoudness = loudness;
@@ -287,12 +303,70 @@ export class ClientStageLightingController {
 			}
 		}
 
-		if (bestSound) return bestSound;
+		return bestSound;
+	}
 
-		const serverMusic = SoundService.FindFirstChild("ServerGlobalMusic") as Sound | undefined;
-		if (serverMusic && serverMusic.IsPlaying) return serverMusic;
+	/**
+	 * Menghitung parameter audio beat engine untuk panggung tertentu
+	 */
+	private calculateBeatParams(
+		activeSound: Sound | undefined,
+		currentTrack: TrackData | undefined,
+		clockNow: number,
+	): {
+		isMusicPlaying: boolean;
+		songTime: number;
+		beatDuration: number;
+		leadBarPhase: number;
+		leadTotalBeats: number;
+		currentPatternIdx: number;
+		nextPatternIdx: number;
+		isCrossfading: boolean;
+		smoothCrossfade: number;
+		motorSlewRate: number;
+	} {
+		const isMusicPlaying = activeSound !== undefined && activeSound.IsPlaying;
+		const baseBpm = currentTrack?.bpm ?? 128;
+		const playbackSpeed = activeSound ? activeSound.PlaybackSpeed : 1.0;
+		const effectiveBpm = math.clamp(baseBpm * playbackSpeed, 40, 260);
 
-		return undefined;
+		const beatDuration = 60 / baseBpm;
+		const barDuration = beatDuration * 4;
+
+		const rawSongTime = activeSound ? activeSound.TimePosition : clockNow;
+		const trackOffset = currentTrack?.beatOffset ?? currentTrack?.firstBeatOffset ?? 0;
+		const totalOffset = AUDIO_OUTPUT_LATENCY_SEC + trackOffset;
+		const isBeforeFirstBeat = activeSound !== undefined && rawSongTime < totalOffset;
+		const songTime = isBeforeFirstBeat ? 0 : math.max(0, rawSongTime - totalOffset);
+
+		const motorSlewRate = 8.0 + (effectiveBpm / 60) * 4.0;
+		const motorLeadTime = 1 / motorSlewRate;
+		const leadAdjustedTime = isBeforeFirstBeat ? 0 : songTime + motorLeadTime;
+		const leadBarPhase = isBeforeFirstBeat ? 0 : (leadAdjustedTime % barDuration) / barDuration;
+		const leadTotalBeats = isBeforeFirstBeat ? 0 : leadAdjustedTime / beatDuration;
+
+		const barsPerPattern = 8;
+		const totalBars = leadAdjustedTime / barDuration;
+		const barInCycle = totalBars % barsPerPattern;
+		const currentPatternIdx = math.floor(totalBars / barsPerPattern) % TOTAL_PATTERNS;
+		const nextPatternIdx = (currentPatternIdx + 1) % TOTAL_PATTERNS;
+
+		const isCrossfading = barInCycle >= barsPerPattern - 1;
+		const crossfadeT = isCrossfading ? barInCycle - (barsPerPattern - 1) : 0;
+		const smoothCrossfade = crossfadeT * crossfadeT * (3 - 2 * crossfadeT);
+
+		return {
+			isMusicPlaying,
+			songTime,
+			beatDuration,
+			leadBarPhase,
+			leadTotalBeats,
+			currentPatternIdx,
+			nextPatternIdx,
+			isCrossfading,
+			smoothCrossfade,
+			motorSlewRate,
+		};
 	}
 
 	/**
@@ -459,78 +533,48 @@ export class ClientStageLightingController {
 			if (this.mainFixtures.size() === 0 && this.djFixtures.size() === 0) return;
 		}
 
-		// ─── UPDATE AUDIO BEAT ENGINE (SHARED FOR MUSIC SYNC) ───
-		const activeSound = this.getActiveMusicSound();
-		const isMusicPlaying = activeSound !== undefined && activeSound.IsPlaying;
+		// ─── 1. PROSES MAIN STAGE FIXTURES (Sync ke MusicPlayerService) ───
+		const mainActiveSound = this.getActiveMusicSound(false);
+		const mainTrack = MusicPlayerService.getInstance().getCurrentTrack();
+		const mainBeat = this.calculateBeatParams(mainActiveSound, mainTrack, clockNow);
 
-		const musicService = MusicPlayerService.getInstance();
-		const currentTrack = musicService.getCurrentTrack();
-		const baseBpm = currentTrack?.bpm ?? 128;
-		const playbackSpeed = activeSound ? activeSound.PlaybackSpeed : 1.0;
-		const effectiveBpm = math.clamp(baseBpm * playbackSpeed, 40, 260);
-
-		const beatDuration = 60 / baseBpm;
-		const barDuration = beatDuration * 4;
-
-		const rawSongTime = activeSound ? activeSound.TimePosition : clockNow;
-		const trackOffset = currentTrack?.beatOffset ?? currentTrack?.firstBeatOffset ?? 0;
-		const totalOffset = AUDIO_OUTPUT_LATENCY_SEC + trackOffset;
-		const isBeforeFirstBeat = activeSound !== undefined && rawSongTime < totalOffset;
-		const songTime = isBeforeFirstBeat ? 0 : math.max(0, rawSongTime - totalOffset);
-
-		const totalBeats = isBeforeFirstBeat ? 0 : songTime / beatDuration;
-		const barPhase = isBeforeFirstBeat ? 0 : (songTime % barDuration) / barDuration;
-
-		const motorSlewRate = 8.0 + (effectiveBpm / 60) * 4.0;
-		const motorLeadTime = 1 / motorSlewRate;
-		const leadAdjustedTime = isBeforeFirstBeat ? 0 : songTime + motorLeadTime;
-		const leadBarPhase = isBeforeFirstBeat ? 0 : (leadAdjustedTime % barDuration) / barDuration;
-		const leadTotalBeats = isBeforeFirstBeat ? 0 : leadAdjustedTime / beatDuration;
-
-		const barsPerPattern = 8;
-		const totalBars = leadAdjustedTime / barDuration;
-		const barInCycle = totalBars % barsPerPattern;
-		const currentPatternIdx = math.floor(totalBars / barsPerPattern) % TOTAL_PATTERNS;
-		const nextPatternIdx = (currentPatternIdx + 1) % TOTAL_PATTERNS;
-
-		const isCrossfading = barInCycle >= barsPerPattern - 1;
-		const crossfadeT = isCrossfading ? barInCycle - (barsPerPattern - 1) : 0;
-		const smoothCrossfade = crossfadeT * crossfadeT * (3 - 2 * crossfadeT);
-
-		// ─── 1. PROSES MAIN STAGE FIXTURES ───
 		this.processFixtureGroup(
 			dt,
 			clockNow,
 			this.mainFixtures,
 			false,
-			isMusicPlaying,
-			songTime,
-			beatDuration,
-			leadBarPhase,
-			leadTotalBeats,
-			currentPatternIdx,
-			nextPatternIdx,
-			isCrossfading,
-			smoothCrossfade,
-			motorSlewRate,
+			mainBeat.isMusicPlaying,
+			mainBeat.songTime,
+			mainBeat.beatDuration,
+			mainBeat.leadBarPhase,
+			mainBeat.leadTotalBeats,
+			mainBeat.currentPatternIdx,
+			mainBeat.nextPatternIdx,
+			mainBeat.isCrossfading,
+			mainBeat.smoothCrossfade,
+			mainBeat.motorSlewRate,
 		);
 
-		// ─── 2. PROSES DJ STAGE FIXTURES ───
+		// ─── 2. PROSES DJ STAGE FIXTURES (Sync ke DjMusicPlayerService) ───
+		const djActiveSound = this.getActiveMusicSound(true);
+		const djTrack = DjMusicPlayerService.getInstance().getCurrentTrack();
+		const djBeat = this.calculateBeatParams(djActiveSound, djTrack, clockNow);
+
 		this.processFixtureGroup(
 			dt,
 			clockNow,
 			this.djFixtures,
 			true,
-			isMusicPlaying,
-			songTime,
-			beatDuration,
-			leadBarPhase,
-			leadTotalBeats,
-			currentPatternIdx,
-			nextPatternIdx,
-			isCrossfading,
-			smoothCrossfade,
-			motorSlewRate,
+			djBeat.isMusicPlaying,
+			djBeat.songTime,
+			djBeat.beatDuration,
+			djBeat.leadBarPhase,
+			djBeat.leadTotalBeats,
+			djBeat.currentPatternIdx,
+			djBeat.nextPatternIdx,
+			djBeat.isCrossfading,
+			djBeat.smoothCrossfade,
+			djBeat.motorSlewRate,
 		);
 	}
 

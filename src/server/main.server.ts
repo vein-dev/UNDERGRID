@@ -16,6 +16,7 @@ import {
 	ServerRollupDoorService,
 	ServerSeatService,
 	ServerAfkService,
+	ServerDjMusicService,
 } from "./services";
 
 /**
@@ -62,6 +63,7 @@ function main() {
 	seatService.init();
 
 	ServerMusicService.getInstance();
+	ServerDjMusicService.getInstance();
 	ServerChatService.getInstance();
 	ServerSocialService.getInstance();
 	ServerEventService.getInstance();
