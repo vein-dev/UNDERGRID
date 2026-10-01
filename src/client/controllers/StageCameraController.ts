@@ -14,6 +14,7 @@ export interface StageCameraState {
 	fov: number;
 	orbitSpeed: number;
 	fixedCamIndex?: number;
+	stageTarget?: "main" | "dj";
 	broadcastEnabled: boolean;
 }
 
@@ -44,6 +45,7 @@ export class StageCameraController {
 		fov: 70,
 		orbitSpeed: 0.5,
 		fixedCamIndex: 1,
+		stageTarget: "main",
 		broadcastEnabled: true,
 	};
 
@@ -136,6 +138,9 @@ export class StageCameraController {
 			if (payload.fixedCamIndex !== undefined) {
 				this.state.fixedCamIndex = payload.fixedCamIndex;
 			}
+			if (payload.stageTarget !== undefined) {
+				this.state.stageTarget = payload.stageTarget;
+			}
 
 			if (this.camera) {
 				this.camera.FieldOfView = payload.fov;
@@ -178,7 +183,17 @@ export class StageCameraController {
 			fov: this.state.fov,
 			orbitSpeed: this.state.orbitSpeed,
 			fixedCamIndex: this.state.fixedCamIndex,
+			stageTarget: this.state.stageTarget ?? "main",
 		});
+	}
+
+	public setStageTarget(target: "main" | "dj"): void {
+		if (this.state.stageTarget === target) return;
+		this.state.stageTarget = target;
+		this.notifyState();
+		if (this.state.mode === "fixed_cam") {
+			this.syncBroadcast();
+		}
 	}
 
 	public setBroadcastEnabled(enabled: boolean): void {
@@ -570,7 +585,8 @@ export class StageCameraController {
 
 		// Fixed Stage Rig Cam (STAGECAM 1 - 7): Independent of player character
 		if (this.state.mode === "fixed_cam") {
-			const camStage = Workspace.FindFirstChild("CamStage") as Folder | undefined;
+			const folderName = this.state.stageTarget === "dj" ? "CamDJ" : "CamStage";
+			const camStage = (Workspace.FindFirstChild(folderName) ?? Workspace.FindFirstChild("CamStage")) as Folder | undefined;
 			const targetPart = camStage?.FindFirstChild("CamTarget") as BasePart | undefined;
 			const camIndex = this.state.fixedCamIndex ?? 1;
 			const camPart = camStage?.FindFirstChild(`Cam${camIndex}`) as BasePart | undefined;

@@ -1,12 +1,19 @@
 import { CollectionService, RunService, Workspace } from "@rbxts/services";
-import { MusicPlayerState, StageLightFixture, StageLightMode, StageLightingControlPayload } from "shared/types";
+import {
+	MusicPlayerState,
+	StageLightFixture,
+	StageLightMode,
+	StageLightingControlPayload,
+	StageTarget,
+} from "shared/types";
 import { ServerMusicService } from "./ServerMusicService";
 
 /**
  * ServerStageLightingService
- * Layanan server otoritatif untuk mengontrol 40 moving light konser di workspace.Lighting.
- * Mendukung sinkronisasi musik real-time (BPM Tempo-Locked Wave & Beat Flash),
- * kontrol Pan/Tilt, warna RGB dinamis, dan efek pencahayaan panggung.
+ * Layanan server otoritatif untuk mengontrol moving light konser di workspace.Lighting.
+ * Mendukung kontrol terpisah dan independen untuk:
+ * 1. Main Stage Fixtures (StageLight_C1_R01 s/d R05) -> Fokus ke game.Workspace.Mic
+ * 2. DJ Stage Fixtures (StageLight_C1_R06 s/d R10)   -> Fokus ke game.Workspace.FocusDJLighting
  */
 const BASE_PAN_C0 = new CFrame(0.0285873413, -0.258911133, -0.00492858887, 1, 0, 0, 0, 0, 1, 0, -1, 0);
 const BASE_TILT_C0 = new CFrame(0.0239474773, -0.515777588, -0.00769042969, 1, 0, 0, 0, -1, 0, 0, 0, -1);
@@ -15,9 +22,10 @@ export class ServerStageLightingService {
 	private static instance?: ServerStageLightingService;
 
 	private isInitialized = false;
-	private fixtures: StageLightFixture[] = [];
+	private mainFixtures: StageLightFixture[] = [];
+	private djFixtures: StageLightFixture[] = [];
 
-	private controlState: StageLightingControlPayload = {
+	private mainControlState: StageLightingControlPayload = {
 		mode: StageLightMode.SpotlightCenter,
 		panAngle: 0,
 		tiltAngle: 0,
@@ -29,18 +37,43 @@ export class ServerStageLightingService {
 		isRainbow: false,
 		isPulse: false,
 		isMusicSync: false,
+		target: "main",
 		fogEnabled: false,
 		fogIntensity: 0.5,
 		backdropPreset: "gif_cyber_grid",
 		backdropBrightness: 2.0,
 	};
 
-	private fogEmitters: ParticleEmitter[] = [];
+	private djControlState: StageLightingControlPayload = {
+		mode: StageLightMode.SpotlightCenter,
+		panAngle: 0,
+		tiltAngle: 0,
+		motorSpeed: 0.04,
+		color: Color3.fromRGB(0, 255, 255),
+		brightness: 3.5,
+		beamEnabled: true,
+		strobeSpeed: 0,
+		isRainbow: false,
+		isPulse: false,
+		isMusicSync: false,
+		target: "dj",
+		fogEnabled: false,
+		fogIntensity: 0.5,
+		backdropPreset: "gif_cyber_grid",
+		backdropBrightness: 2.0,
+	};
+
+	private mainFogEmitters: ParticleEmitter[] = [];
+	private djFogEmitters: ParticleEmitter[] = [];
 
 	private animationTime = 0;
-	private strobeTimer = 0;
-	private strobeState = false;
-	private pulseTime = 0;
+	private mainStrobeTimer = 0;
+	private mainStrobeState = false;
+	private mainPulseTime = 0;
+
+	private djStrobeTimer = 0;
+	private djStrobeState = false;
+	private djPulseTime = 0;
 
 	private heartbeatConnection?: RBXScriptConnection;
 
@@ -64,24 +97,35 @@ export class ServerStageLightingService {
 		CollectionService.GetInstanceAddedSignal("FogMachine").Connect(() => {
 			this.ensureFogSetup();
 		});
+		CollectionService.GetInstanceAddedSignal("DjFogMachine").Connect(() => {
+			this.ensureFogSetup();
+		});
 
-		this.setMode(this.controlState.mode);
+		this.setMode(this.mainControlState.mode, "main");
+		this.setMode(this.djControlState.mode, "dj");
+		this.setColor(this.mainControlState.color, "main");
+		this.setColor(this.djControlState.color, "dj");
+		this.updateIntensity("all");
 
 		// Sambungkan Heartbeat loop untuk update animasi motor, warna, dan efek
 		this.heartbeatConnection = RunService.Heartbeat.Connect((dt) => {
 			this.onHeartbeat(dt);
 		});
 
-		print(`[ServerStageLightingService] Initialized with ${this.fixtures.size()} stage light fixtures.`);
+		print(
+			`[ServerStageLightingService] Initialized: ${this.mainFixtures.size()} Main Stage fixtures, ${this.djFixtures.size()} DJ Stage fixtures.`,
+		);
 	}
 
 	/**
 	 * Memuat dan mengindeks seluruh fixture dari workspace.Lighting
+	 * Memisahkan secara otomatis antara Main Stage (R01-R05) dan DJ Stage (R06-R10)
 	 */
 	public loadFixtures(): void {
-		this.fixtures.clear();
-		const tagged = CollectionService.GetTagged("StageLight");
+		this.mainFixtures.clear();
+		this.djFixtures.clear();
 
+		const tagged = CollectionService.GetTagged("StageLight");
 		let targetList: Instance[] = tagged;
 		if (targetList.size() === 0) {
 			const lightingFolder = Workspace.FindFirstChild("Lighting");
@@ -93,18 +137,17 @@ export class ServerStageLightingService {
 		for (const inst of targetList) {
 			if (!inst.IsA("Model")) continue;
 
-			const colAttr = inst.GetAttribute("Column");
-			const rowAttr = inst.GetAttribute("Row");
-
-			let col = typeIs(colAttr, "number") ? colAttr : 1;
-			let row = typeIs(rowAttr, "number") ? rowAttr : 1;
-
-			if (!typeIs(colAttr, "number")) {
-				const match = inst.Name.match("StageLight_C(%d+)_R(%d+)");
-				if (match[0] && match[1]) {
-					col = tonumber(match[0]) || 1;
-					row = tonumber(match[1]) || 1;
-				}
+			let col = 1;
+			let row = 1;
+			const [colStr, rowStr] = inst.Name.match("StageLight_C(%d+)_R(%d+)");
+			if (colStr !== undefined && rowStr !== undefined) {
+				col = tonumber(colStr) || 1;
+				row = tonumber(rowStr) || 1;
+			} else {
+				const colAttr = inst.GetAttribute("Column");
+				const rowAttr = inst.GetAttribute("Row");
+				if (typeIs(colAttr, "number")) col = colAttr;
+				if (typeIs(rowAttr, "number")) row = rowAttr;
 			}
 
 			const base = inst.FindFirstChild("Base")?.FindFirstChild("part") as BasePart | undefined;
@@ -119,12 +162,10 @@ export class ServerStageLightingService {
 			const beam = beamPart?.FindFirstChildOfClass("Beam");
 
 			if (panMotor && tiltMotor) {
-				// Pastikan base tetap menempel di truss
 				if (base) {
 					base.Anchored = true;
 				}
 
-				// Bagian bergerak HARUS unanchored agar Motor6D dapat memutar kepala lampu
 				const armPart = inst.FindFirstChild("Pan")?.FindFirstChild("Arm") as BasePart | undefined;
 				if (armPart) {
 					armPart.Anchored = false;
@@ -139,16 +180,15 @@ export class ServerStageLightingService {
 					}
 				}
 
-				// Kalibrasi agar sinar lampu atmosferik pas di lantai panggung tanpa tembus jauh
 				if (spotLight) {
 					spotLight.Face = Enum.NormalId.Front;
-					spotLight.Range = 28;
+					spotLight.Range = row >= 6 ? 35 : 28;
 					spotLight.Angle = 55;
 					spotLight.Shadows = true;
 				}
 				if (beam) {
 					beam.Width0 = 0.9;
-					beam.Width1 = 9.5;
+					beam.Width1 = row >= 6 ? 8.5 : 9.5;
 					beam.LightEmission = 1;
 					beam.LightInfluence = 0;
 					beam.Transparency = new NumberSequence([
@@ -164,7 +204,6 @@ export class ServerStageLightingService {
 					}
 				}
 
-				// Reset joint internal angles agar rotasi murni dikendalikan via C0 tanpa drift fisik
 				panMotor.DesiredAngle = 0;
 				panMotor.CurrentAngle = 0;
 				panMotor.MaxVelocity = 0;
@@ -172,7 +211,7 @@ export class ServerStageLightingService {
 				tiltMotor.CurrentAngle = 0;
 				tiltMotor.MaxVelocity = 0;
 
-				this.fixtures.push({
+				const fixtureData: StageLightFixture = {
 					model: inst,
 					column: col,
 					row: row,
@@ -184,306 +223,48 @@ export class ServerStageLightingService {
 					spotLight,
 					beam,
 					basePart: base,
-				});
+				};
+
+				// R06 s/d R10 adalah fixture khusus Stage DJ
+				if (row >= 6) {
+					this.djFixtures.push(fixtureData);
+				} else {
+					this.mainFixtures.push(fixtureData);
+				}
 			}
 		}
 
-		// Sortir fixtures dari kiri ke kanan (sumbu X) agar efek Wave/Chase mengalir sesuai posisi panggung
-		this.fixtures.sort((a, b) => {
-			const posA = a.model.GetPivot().Position.X;
-			const posB = b.model.GetPivot().Position.X;
-			return posA < posB;
+		// Sortir Main Stage Fixtures dari kiri ke kanan (sumbu X)
+		this.mainFixtures.sort((a, b) => {
+			return a.model.GetPivot().Position.X < b.model.GetPivot().Position.X;
 		});
+		for (let i = 0; i < this.mainFixtures.size(); i++) {
+			this.mainFixtures[i].column = i + 1;
+		}
 
-		// Berikan nomor kolom 1..N dari kiri ke kanan
-		for (let i = 0; i < this.fixtures.size(); i++) {
-			this.fixtures[i].column = i + 1;
+		// Sortir DJ Stage Fixtures sepanjang truss (sumbu Z)
+		this.djFixtures.sort((a, b) => {
+			return a.model.GetPivot().Position.Z < b.model.GetPivot().Position.Z;
+		});
+		for (let i = 0; i < this.djFixtures.size(); i++) {
+			this.djFixtures[i].column = i + 1;
 		}
 	}
 
 	/**
-	 * Memutar motor Pan dan Tilt menggunakan Motor6D.C0 (dengan batas aman fokus panggung)
+	 * Memutar motor Pan dan Tilt menggunakan Motor6D.C0
+	 * Dengan batas aman tilt terpisah antara Main Stage dan DJ Stage
 	 */
-	private applyFixtureAngles(f: StageLightFixture, panAngle: number, tiltAngle: number): void {
-		// Strict clamp untuk Tilt agar 100% fokus ke panggung dan TIDAK PERNAH menyorot ke atas
-		const clampedTilt = math.clamp(tiltAngle, -0.92, -0.52);
+	private applyFixtureAngles(f: StageLightFixture, panAngle: number, tiltAngle: number, isDj = false): void {
+		const minTilt = isDj ? -1.55 : -0.92;
+		const maxTilt = isDj ? -0.40 : -0.52;
+		const clampedTilt = math.clamp(tiltAngle, minTilt, maxTilt);
 		f.panMotor.C0 = f.initialPanC0.mul(CFrame.Angles(0, 0, panAngle));
 		f.tiltMotor.C0 = f.initialTiltC0.mul(CFrame.Angles(0, 0, clampedTilt));
 	}
 
 	/**
-	 * Menerapkan konfigurasi kontrol parsial atau penuh
-	 */
-	public applyControl(payload: Partial<StageLightingControlPayload>): void {
-		if (payload.mode !== undefined) {
-			this.setMode(payload.mode);
-		}
-		if (payload.panAngle !== undefined) {
-			this.controlState.panAngle = payload.panAngle;
-			if (this.controlState.mode === StageLightMode.Manual) {
-				for (const f of this.fixtures) {
-					const [basePan, baseTilt] = this.getFixtureMicAim(f);
-					this.applyFixtureAngles(f, basePan + payload.panAngle, baseTilt + this.controlState.tiltAngle);
-				}
-			}
-		}
-		if (payload.tiltAngle !== undefined) {
-			this.controlState.tiltAngle = payload.tiltAngle;
-			if (this.controlState.mode === StageLightMode.Manual) {
-				for (const f of this.fixtures) {
-					const [basePan, baseTilt] = this.getFixtureMicAim(f);
-					this.applyFixtureAngles(f, basePan + this.controlState.panAngle, baseTilt + payload.tiltAngle);
-				}
-			}
-		}
-		if (payload.motorSpeed !== undefined) {
-			this.controlState.motorSpeed = math.clamp(payload.motorSpeed, 0.01, 0.1);
-		}
-		if (payload.color !== undefined) {
-			this.setColor(payload.color);
-		}
-		if (payload.brightness !== undefined) {
-			this.controlState.brightness = payload.brightness;
-			this.updateIntensity();
-		}
-		if (payload.beamEnabled !== undefined) {
-			this.controlState.beamEnabled = payload.beamEnabled;
-			this.updateIntensity();
-		}
-		if (payload.strobeSpeed !== undefined) {
-			this.controlState.strobeSpeed = payload.strobeSpeed;
-		}
-		if (payload.isRainbow !== undefined) {
-			this.controlState.isRainbow = payload.isRainbow;
-			if (!payload.isRainbow) {
-				this.setColor(this.controlState.color);
-			}
-		}
-		if (payload.isPulse !== undefined) {
-			this.controlState.isPulse = payload.isPulse;
-			if (!payload.isPulse) {
-				this.updateIntensity();
-			}
-		}
-		if (payload.isMusicSync !== undefined) {
-			this.controlState.isMusicSync = payload.isMusicSync;
-			if (payload.isMusicSync) {
-				this.controlState.mode = StageLightMode.MusicSync;
-			}
-		}
-		if (payload.fogEnabled !== undefined) {
-			this.controlState.fogEnabled = payload.fogEnabled;
-			this.applyFog();
-		}
-		if (payload.fogIntensity !== undefined) {
-			this.controlState.fogIntensity = payload.fogIntensity;
-			this.applyFog();
-		}
-		if (payload.backdropPreset !== undefined) {
-			this.controlState.backdropPreset = payload.backdropPreset;
-		}
-		if (payload.backdropBrightness !== undefined) {
-			this.controlState.backdropBrightness = payload.backdropBrightness;
-		}
-		this.syncAttributes();
-	}
-
-	private syncAttributes(): void {
-		const folder = Workspace.FindFirstChild("Lighting");
-		if (folder) {
-			folder.SetAttribute("StageLightingMode", this.controlState.mode);
-			folder.SetAttribute("IsMusicSync", this.controlState.isMusicSync);
-			folder.SetAttribute("StageLightingBrightness", this.controlState.brightness);
-			folder.SetAttribute("StageLightingBeamEnabled", this.controlState.beamEnabled);
-			folder.SetAttribute("StageLightingStrobeSpeed", this.controlState.strobeSpeed);
-			folder.SetAttribute("StageLightingFogEnabled", this.controlState.fogEnabled ?? false);
-			folder.SetAttribute("StageLightingFogIntensity", this.controlState.fogIntensity ?? 0.5);
-			folder.SetAttribute("StageLightingBackdropPreset", this.controlState.backdropPreset ?? "gif_cyber_grid");
-			folder.SetAttribute("StageLightingBackdropBrightness", this.controlState.backdropBrightness ?? 2.0);
-		}
-
-		// Sinkronkan juga langsung ke model Backdrop di workspace jika ada
-		const targetModel = Workspace.FindFirstChild("3dModel");
-		const backdropPart = targetModel ? targetModel.FindFirstChild("Backdrop") : undefined;
-		if (backdropPart && backdropPart.IsA("BasePart")) {
-			if (this.controlState.backdropPreset !== undefined) {
-				backdropPart.SetAttribute("Preset", this.controlState.backdropPreset);
-			}
-			if (this.controlState.backdropBrightness !== undefined) {
-				backdropPart.SetAttribute("Brightness", this.controlState.backdropBrightness);
-			}
-		}
-	}
-
-	private ensureFogSetup(): void {
-		this.fogEmitters.clear();
-		const tagged = CollectionService.GetTagged("FogMachine");
-
-		if (tagged.size() === 0) {
-			warn("[ServerStageLightingService] No FogMachine tagged instances found.");
-			return;
-		}
-
-		for (const child of tagged) {
-			let targetPart: BasePart | undefined;
-			if (child.IsA("BasePart")) {
-				targetPart = child;
-			} else if (child.IsA("Model")) {
-				targetPart = child.PrimaryPart ?? (child.FindFirstChildWhichIsA("BasePart") as BasePart | undefined);
-			}
-
-			if (!targetPart) continue;
-
-			// Cari atau create Attachment
-			let attachment = targetPart.FindFirstChild("FogAttachment") as Attachment | undefined;
-			if (!attachment) {
-				attachment = new Instance("Attachment");
-				attachment.Name = "FogAttachment";
-				attachment.Parent = targetPart;
-			}
-			// SYNC: Selalu reset posisi & orientasi biar konsisten
-			attachment.Position = new Vector3(0, 0, 0);
-			attachment.Orientation = new Vector3(0, 0, 0);
-
-			// Cari atau create ParticleEmitter
-			let emitter = attachment.FindFirstChild("FogEmitter") as ParticleEmitter | undefined;
-			if (!emitter) {
-				emitter = new Instance("ParticleEmitter");
-				emitter.Name = "FogEmitter";
-				emitter.Parent = attachment;
-			}
-
-			// SYNC: Selalu set property (biar konsisten walau emitter udah ada)
-			emitter.Texture = "rbxasset://textures/particles/smoke_main.dds"; // internal Roblox, dijamin works
-			emitter.Rate = 20;
-			emitter.Lifetime = new NumberRange(3, 6);
-			emitter.Speed = new NumberRange(3, 8);
-			emitter.SpreadAngle = new Vector2(15, 15);
-			emitter.Size = new NumberSequence([
-				new NumberSequenceKeypoint(0, 5),
-				new NumberSequenceKeypoint(0.5, 15),
-				new NumberSequenceKeypoint(1, 25),
-			]);
-			emitter.Transparency = new NumberSequence([
-				new NumberSequenceKeypoint(0, 0.3),
-				new NumberSequenceKeypoint(0.3, 0.5),
-				new NumberSequenceKeypoint(1, 1),
-			]);
-			emitter.Color = new ColorSequence(Color3.fromRGB(220, 220, 230));
-			emitter.LightEmission = 0.1;
-			emitter.LightInfluence = 0.8;
-			emitter.RotSpeed = new NumberRange(-20, 20);
-			emitter.Acceleration = new Vector3(0, 2, 0);
-			emitter.Drag = 3;
-			emitter.ZOffset = 1;
-			emitter.EmissionDirection = Enum.NormalId.Top;
-			emitter.Enabled = false; // default off — kontrol via UI
-
-			this.fogEmitters.push(emitter);
-		}
-
-		print(`[ServerStageLightingService] Fog: found ${this.fogEmitters.size()} emitters.`);
-	}
-
-	private applyFog(): void {
-		const enabled = this.controlState.fogEnabled ?? false;
-		const intensity = this.controlState.fogIntensity ?? 0.5;
-
-		for (const emitter of this.fogEmitters) {
-			emitter.Enabled = enabled;
-			if (enabled) {
-				emitter.Rate = 5 + intensity * 25; // 5 - 30 partikel/detik
-			}
-		}
-	}
-
-	public triggerFogBurst(): void {
-		for (const emitter of this.fogEmitters) {
-			emitter.Emit(30); // burst 30 partikel, works walau Enabled=false
-		}
-	}
-
-	/**
-	 * Mengubah mode operasional utama stage lighting
-	 */
-	public setMode(mode: StageLightMode): void {
-		this.controlState.mode = mode;
-		this.controlState.isMusicSync = mode === StageLightMode.MusicSync;
-		this.syncAttributes();
-		print(`[ServerStageLightingService] Mode set to: ${mode}`);
-
-		switch (mode) {
-			case StageLightMode.Off:
-				this.resetMotors();
-				this.updateIntensity();
-				break;
-
-			case StageLightMode.Static:
-				this.applyStaticAngles();
-				this.updateIntensity();
-				break;
-
-			case StageLightMode.SpotlightCenter:
-				this.applyCenterFocusAngles();
-				this.updateIntensity();
-				break;
-
-			case StageLightMode.Manual:
-				for (const f of this.fixtures) {
-					const [basePan, baseTilt] = this.getFixtureMicAim(f);
-					this.applyFixtureAngles(f, basePan + this.controlState.panAngle, baseTilt + this.controlState.tiltAngle);
-				}
-				this.updateIntensity();
-				break;
-
-			case StageLightMode.MusicSync:
-			case StageLightMode.Wave:
-			case StageLightMode.Ballyhoo:
-			case StageLightMode.Circle:
-			case StageLightMode.Strobe:
-				this.updateIntensity();
-				break;
-		}
-	}
-
-	/**
-	 * Mengatur warna seluruh Beam, SpotLight, dan Lens
-	 */
-	public setColor(color: Color3): void {
-		this.controlState.color = color;
-		const colorSeq = new ColorSequence(color);
-
-		for (const f of this.fixtures) {
-			if (f.spotLight) f.spotLight.Color = color;
-			if (f.beam) f.beam.Color = colorSeq;
-			if (f.lensPart) f.lensPart.Color = color;
-		}
-	}
-
-	/**
-	 * Memperbarui intensitas cahaya berdasarkan mode dan konfigurasi
-	 */
-	private updateIntensity(): void {
-		const isOff = this.controlState.mode === StageLightMode.Off;
-		const targetBrightness = isOff ? 0 : this.controlState.brightness;
-		const targetBeam = !isOff && this.controlState.beamEnabled;
-
-		for (const f of this.fixtures) {
-			if (f.spotLight) {
-				f.spotLight.Brightness = targetBrightness;
-				f.spotLight.Enabled = targetBrightness > 0;
-			}
-			if (f.beam) {
-				f.beam.Enabled = targetBeam;
-			}
-			if (f.lensPart) {
-				f.lensPart.Material = targetBeam ? Enum.Material.Neon : Enum.Material.SmoothPlastic;
-			}
-		}
-	}
-
-	/**
-	 * Sudut presisi hasil kalibrasi matematis ke game.Workspace.Mic (lensa dan sorot cahaya 100% sejajar ke panggung)
+	 * Sudut presisi hasil kalibrasi matematis ke game.Workspace.Mic (Main Stage)
 	 */
 	private readonly micAims: Record<string, [number, number]> = {
 		StageLight_C1_R01: [0.75, -0.836],
@@ -494,75 +275,589 @@ export class ServerStageLightingService {
 	};
 
 	/**
-	 * Mendapatkan sudut bidik acuan ke panggung & mic untuk fixture tertentu
+	 * Sudut presisi hasil kalibrasi matematis ke game.Workspace.FocusDJLighting (DJ Stage)
+	 * Dot product = 1.00000 (100% presisi mengunci objek FocusDJLighting secara kinematik)
 	 */
-	private getFixtureMicAim(f: StageLightFixture): [number, number] {
-		const precomputed = this.micAims[f.model.Name];
-		if (precomputed) return precomputed;
-
-		const mic = Workspace.FindFirstChild("Mic") as Model | BasePart | undefined;
-		const micPos = mic ? (mic.IsA("Model") ? mic.GetPivot().Position : mic.Position) : new Vector3(260.65, -13.17, 380.26);
-		const lampPos = f.model.GetPivot().Position;
-		const diff = micPos.sub(lampPos);
-		const targetPan = math.atan2(diff.X, -diff.Z);
-		const hDist = math.sqrt(diff.X * diff.X + diff.Z * diff.Z);
-		const targetTilt = -math.atan2(hDist, -diff.Y);
-		return [targetPan, targetTilt];
-	}
+	private readonly djAims: Record<string, [number, number]> = {
+		StageLight_C1_R06: [0.810, -1.251],
+		StageLight_C1_R07: [0.477, -1.135],
+		StageLight_C1_R08: [0.000, -1.077],
+		StageLight_C1_R09: [-0.458, -1.112],
+		StageLight_C1_R10: [-0.822, -1.201],
+	};
 
 	/**
-	 * Mengembalikan motor ke posisi netral fokus panggung
+	 * Mendapatkan sudut bidik acuan untuk fixture tertentu
 	 */
-	public resetMotors(): void {
-		for (const f of this.fixtures) {
-			const [basePan, baseTilt] = this.getFixtureMicAim(f);
-			this.applyFixtureAngles(f, basePan, baseTilt);
+	private getFixtureAim(f: StageLightFixture, isDj: boolean): [number, number] {
+		if (isDj) {
+			const precomputed = this.djAims[f.model.Name];
+			if (precomputed) return precomputed;
+
+			const focus = Workspace.FindFirstChild("FocusDJLighting") as Model | BasePart | undefined;
+			if (focus) {
+				const focusPos = focus.IsA("Model") ? focus.GetPivot().Position : focus.Position;
+				const lampPos = f.model.GetPivot().Position;
+				const diff = focusPos.sub(lampPos);
+				const targetPan = math.atan2(-diff.Z, diff.X);
+				const hDist = math.sqrt(diff.X * diff.X + diff.Z * diff.Z);
+				const targetTilt = -math.atan2(hDist, -diff.Y);
+				return [targetPan, targetTilt];
+			}
+			return [0, -0.384];
+		} else {
+			const precomputed = this.micAims[f.model.Name];
+			if (precomputed) return precomputed;
+
+			const mic = Workspace.FindFirstChild("Mic") as Model | BasePart | undefined;
+			const micPos = mic
+				? mic.IsA("Model")
+					? mic.GetPivot().Position
+					: mic.Position
+				: new Vector3(260.65, -13.17, 380.26);
+			const lampPos = f.model.GetPivot().Position;
+			const diff = micPos.sub(lampPos);
+			const targetPan = math.atan2(diff.X, -diff.Z);
+			const hDist = math.sqrt(diff.X * diff.X + diff.Z * diff.Z);
+			const targetTilt = -math.atan2(hDist, -diff.Y);
+			return [targetPan, targetTilt];
 		}
 	}
 
 	/**
-	 * Fokuskan seluruh moving light ke titik tengah venue panggung dengan acuan game.Workspace.Mic
+	 * Fokuskan seluruh moving light ke titik tengah target (Mic / FocusDJLighting)
 	 */
-	private applyCenterFocusAngles(): void {
-		for (const f of this.fixtures) {
-			const [aimPan, aimTilt] = this.getFixtureMicAim(f);
-			this.applyFixtureAngles(f, aimPan, aimTilt);
+	private applyCenterFocusAngles(isDj: boolean): void {
+		const fixtures = isDj ? this.djFixtures : this.mainFixtures;
+		for (const f of fixtures) {
+			const [aimPan, aimTilt] = this.getFixtureAim(f, isDj);
+			this.applyFixtureAngles(f, aimPan, aimTilt, isDj);
 		}
 	}
 
 	/**
-	 * Sudut panggung statis menyebar anggun (fanned out) berpusat dari mic
+	 * Sudut statis menyebar anggun (fanned out) berpusat dari titik fokus
 	 */
-	private applyStaticAngles(): void {
-		const total = this.fixtures.size();
+	private applyStaticAngles(isDj: boolean): void {
+		const fixtures = isDj ? this.djFixtures : this.mainFixtures;
+		const total = fixtures.size();
 		const mid = (total + 1) / 2;
-		for (const f of this.fixtures) {
-			const [basePan, baseTilt] = this.getFixtureMicAim(f);
-			const panOffset = (f.column - mid) * 0.18;
-			const tiltOffset = math.abs(f.column - mid) * 0.04;
-			this.applyFixtureAngles(f, basePan + panOffset, baseTilt + tiltOffset);
+		for (const f of fixtures) {
+			const [basePan, baseTilt] = this.getFixtureAim(f, isDj);
+			const panOffset = (f.column - mid) * (isDj ? 0.12 : 0.18);
+			const tiltOffset = math.abs(f.column - mid) * (isDj ? 0.02 : 0.04);
+			this.applyFixtureAngles(f, basePan + panOffset, baseTilt + tiltOffset, isDj);
 		}
 	}
 
 	/**
-	 * Loop runtime untuk mode beranimasi (MusicSync, Wave, Circle, Ballyhoo, Rainbow, Pulse, Strobe)
+	 * Mengembalikan motor ke posisi netral fokus
+	 */
+	public resetMotors(target: StageTarget = "all"): void {
+		if (target === "main" || target === "all") {
+			for (const f of this.mainFixtures) {
+				const [basePan, baseTilt] = this.getFixtureAim(f, false);
+				this.applyFixtureAngles(f, basePan, baseTilt, false);
+			}
+		}
+		if (target === "dj" || target === "all") {
+			for (const f of this.djFixtures) {
+				const [basePan, baseTilt] = this.getFixtureAim(f, true);
+				this.applyFixtureAngles(f, basePan, baseTilt, true);
+			}
+		}
+	}
+
+	/**
+	 * Mengatur warna fixture
+	 */
+	public setColor(color: Color3, target: StageTarget = "all"): void {
+		const colorSeq = new ColorSequence(color);
+
+		if (target === "main" || target === "all") {
+			this.mainControlState.color = color;
+			for (const f of this.mainFixtures) {
+				if (f.spotLight) f.spotLight.Color = color;
+				if (f.beam) f.beam.Color = colorSeq;
+				if (f.lensPart) f.lensPart.Color = color;
+			}
+		}
+
+		if (target === "dj" || target === "all") {
+			this.djControlState.color = color;
+			for (const f of this.djFixtures) {
+				if (f.spotLight) f.spotLight.Color = color;
+				if (f.beam) f.beam.Color = colorSeq;
+				if (f.lensPart) f.lensPart.Color = color;
+			}
+		}
+	}
+
+	/**
+	 * Memperbarui intensitas cahaya berdasarkan mode dan konfigurasi
+	 */
+	private updateIntensity(target: StageTarget = "all"): void {
+		if (target === "main" || target === "all") {
+			const isOff = this.mainControlState.mode === StageLightMode.Off;
+			const targetBrightness = isOff ? 0 : this.mainControlState.brightness;
+			const targetBeam = !isOff && this.mainControlState.beamEnabled;
+
+			for (const f of this.mainFixtures) {
+				if (f.spotLight) {
+					f.spotLight.Brightness = targetBrightness;
+					f.spotLight.Enabled = targetBrightness > 0;
+				}
+				if (f.beam) {
+					f.beam.Enabled = targetBeam;
+				}
+				if (f.lensPart) {
+					f.lensPart.Material = targetBeam ? Enum.Material.Neon : Enum.Material.SmoothPlastic;
+				}
+			}
+		}
+
+		if (target === "dj" || target === "all") {
+			const isOff = this.djControlState.mode === StageLightMode.Off;
+			const targetBrightness = isOff ? 0 : this.djControlState.brightness;
+			const targetBeam = !isOff && this.djControlState.beamEnabled;
+
+			for (const f of this.djFixtures) {
+				if (f.spotLight) {
+					f.spotLight.Brightness = targetBrightness;
+					f.spotLight.Enabled = targetBrightness > 0;
+				}
+				if (f.beam) {
+					f.beam.Enabled = targetBeam;
+				}
+				if (f.lensPart) {
+					f.lensPart.Material = targetBeam ? Enum.Material.Neon : Enum.Material.SmoothPlastic;
+				}
+			}
+		}
+	}
+
+	/**
+	 * Mengubah mode operasional utama stage lighting
+	 */
+	public setMode(mode: StageLightMode, target: StageTarget = "main"): void {
+		if (target === "main" || target === "all") {
+			this.mainControlState.mode = mode;
+			this.mainControlState.isMusicSync = mode === StageLightMode.MusicSync;
+			this.applyModeState(mode, false);
+		}
+
+		if (target === "dj" || target === "all") {
+			this.djControlState.mode = mode;
+			this.djControlState.isMusicSync = mode === StageLightMode.MusicSync;
+			this.applyModeState(mode, true);
+		}
+
+		this.syncAttributes();
+		print(`[ServerStageLightingService] Mode set for target [${target}]: ${mode}`);
+	}
+
+	private applyModeState(mode: StageLightMode, isDj: boolean): void {
+		const targetStage: StageTarget = isDj ? "dj" : "main";
+		const state = isDj ? this.djControlState : this.mainControlState;
+		const fixtures = isDj ? this.djFixtures : this.mainFixtures;
+
+		switch (mode) {
+			case StageLightMode.Off:
+				this.resetMotors(targetStage);
+				this.updateIntensity(targetStage);
+				break;
+
+			case StageLightMode.Static:
+				this.applyStaticAngles(isDj);
+				this.updateIntensity(targetStage);
+				break;
+
+			case StageLightMode.SpotlightCenter:
+				this.applyCenterFocusAngles(isDj);
+				this.updateIntensity(targetStage);
+				break;
+
+			case StageLightMode.Manual:
+				for (const f of fixtures) {
+					const [basePan, baseTilt] = this.getFixtureAim(f, isDj);
+					this.applyFixtureAngles(f, basePan + state.panAngle, baseTilt + state.tiltAngle, isDj);
+				}
+				this.updateIntensity(targetStage);
+				break;
+
+			case StageLightMode.MusicSync:
+			case StageLightMode.Wave:
+			case StageLightMode.Ballyhoo:
+			case StageLightMode.Circle:
+			case StageLightMode.Strobe:
+				this.updateIntensity(targetStage);
+				break;
+		}
+	}
+
+	/**
+	 * Menerapkan konfigurasi kontrol parsial atau penuh dengan target fleksibel
+	 */
+	public applyControl(payload: Partial<StageLightingControlPayload>, targetOverride?: StageTarget): void {
+		const target = targetOverride ?? payload.target ?? "main";
+
+		const applyToSingleState = (
+			state: StageLightingControlPayload,
+			fixtures: StageLightFixture[],
+			isDj: boolean,
+		) => {
+			const st: StageTarget = isDj ? "dj" : "main";
+
+			if (payload.mode !== undefined) {
+				this.setMode(payload.mode, st);
+			}
+			if (payload.panAngle !== undefined) {
+				state.panAngle = payload.panAngle;
+				if (state.mode === StageLightMode.Manual) {
+					for (const f of fixtures) {
+						const [basePan, baseTilt] = this.getFixtureAim(f, isDj);
+						this.applyFixtureAngles(f, basePan + payload.panAngle, baseTilt + state.tiltAngle, isDj);
+					}
+				}
+			}
+			if (payload.tiltAngle !== undefined) {
+				state.tiltAngle = payload.tiltAngle;
+				if (state.mode === StageLightMode.Manual) {
+					for (const f of fixtures) {
+						const [basePan, baseTilt] = this.getFixtureAim(f, isDj);
+						this.applyFixtureAngles(f, basePan + state.panAngle, baseTilt + payload.tiltAngle, isDj);
+					}
+				}
+			}
+			if (payload.motorSpeed !== undefined) {
+				state.motorSpeed = math.clamp(payload.motorSpeed, 0.01, 0.1);
+			}
+			if (payload.color !== undefined) {
+				this.setColor(payload.color, st);
+			}
+			if (payload.brightness !== undefined) {
+				state.brightness = payload.brightness;
+				this.updateIntensity(st);
+			}
+			if (payload.beamEnabled !== undefined) {
+				state.beamEnabled = payload.beamEnabled;
+				this.updateIntensity(st);
+			}
+			if (payload.strobeSpeed !== undefined) {
+				state.strobeSpeed = payload.strobeSpeed;
+			}
+			if (payload.isRainbow !== undefined) {
+				state.isRainbow = payload.isRainbow;
+				if (!payload.isRainbow) {
+					this.setColor(state.color, st);
+				}
+			}
+			if (payload.isPulse !== undefined) {
+				state.isPulse = payload.isPulse;
+				if (!payload.isPulse) {
+					this.updateIntensity(st);
+				}
+			}
+			if (payload.isMusicSync !== undefined) {
+				state.isMusicSync = payload.isMusicSync;
+				if (payload.isMusicSync) {
+					state.mode = StageLightMode.MusicSync;
+				}
+			}
+		};
+
+		if (target === "main" || target === "all") {
+			applyToSingleState(this.mainControlState, this.mainFixtures, false);
+		}
+		if (target === "dj" || target === "all") {
+			applyToSingleState(this.djControlState, this.djFixtures, true);
+		}
+
+		// Fog & Backdrop controls per stage
+		if (payload.fogEnabled !== undefined) {
+			if (target === "main" || target === "all") {
+				this.mainControlState.fogEnabled = payload.fogEnabled;
+				this.applyFog("main");
+			}
+			if (target === "dj" || target === "all") {
+				this.djControlState.fogEnabled = payload.fogEnabled;
+				this.applyFog("dj");
+			}
+		}
+		if (payload.fogIntensity !== undefined) {
+			if (target === "main" || target === "all") {
+				this.mainControlState.fogIntensity = payload.fogIntensity;
+				this.applyFog("main");
+			}
+			if (target === "dj" || target === "all") {
+				this.djControlState.fogIntensity = payload.fogIntensity;
+				this.applyFog("dj");
+			}
+		}
+		if (payload.backdropPreset !== undefined) {
+			if (target === "main" || target === "all") {
+				this.mainControlState.backdropPreset = payload.backdropPreset;
+			}
+			if (target === "dj" || target === "all") {
+				this.djControlState.backdropPreset = payload.backdropPreset;
+			}
+		}
+		if (payload.backdropBrightness !== undefined) {
+			if (target === "main" || target === "all") {
+				this.mainControlState.backdropBrightness = payload.backdropBrightness;
+			}
+			if (target === "dj" || target === "all") {
+				this.djControlState.backdropBrightness = payload.backdropBrightness;
+			}
+		}
+
+		this.syncAttributes();
+	}
+
+	private syncAttributes(): void {
+		const folder = Workspace.FindFirstChild("Lighting");
+		if (folder) {
+			// Main Stage Attributes
+			folder.SetAttribute("StageLightingMode", this.mainControlState.mode);
+			folder.SetAttribute("IsMusicSync", this.mainControlState.isMusicSync);
+			folder.SetAttribute("StageLightingBrightness", this.mainControlState.brightness);
+			folder.SetAttribute("StageLightingBeamEnabled", this.mainControlState.beamEnabled);
+			folder.SetAttribute("StageLightingStrobeSpeed", this.mainControlState.strobeSpeed);
+			folder.SetAttribute("StageLightingFogEnabled", this.mainControlState.fogEnabled ?? false);
+			folder.SetAttribute("StageLightingFogIntensity", this.mainControlState.fogIntensity ?? 0.5);
+			folder.SetAttribute(
+				"StageLightingBackdropPreset",
+				this.mainControlState.backdropPreset ?? "gif_cyber_grid",
+			);
+			folder.SetAttribute(
+				"StageLightingBackdropBrightness",
+				this.mainControlState.backdropBrightness ?? 2.0,
+			);
+
+			// DJ Stage Attributes
+			folder.SetAttribute("DjLightingMode", this.djControlState.mode);
+			folder.SetAttribute("IsDjMusicSync", this.djControlState.isMusicSync);
+			folder.SetAttribute("DjLightingBrightness", this.djControlState.brightness);
+			folder.SetAttribute("DjLightingBeamEnabled", this.djControlState.beamEnabled);
+			folder.SetAttribute("DjLightingStrobeSpeed", this.djControlState.strobeSpeed);
+			folder.SetAttribute("DjLightingFogEnabled", this.djControlState.fogEnabled ?? false);
+			folder.SetAttribute("DjLightingFogIntensity", this.djControlState.fogIntensity ?? 0.5);
+			folder.SetAttribute(
+				"DjStageLightingBackdropPreset",
+				this.djControlState.backdropPreset ?? "gif_cyber_grid",
+			);
+			folder.SetAttribute(
+				"DjStageLightingBackdropBrightness",
+				this.djControlState.backdropBrightness ?? 2.0,
+			);
+		}
+
+		const targetModel = Workspace.FindFirstChild("3dModel");
+		if (targetModel) {
+			// Main Stage Backdrop
+			const mainBackdrop = targetModel.FindFirstChild("Backdrop") as BasePart | undefined;
+			if (mainBackdrop) {
+				if (this.mainControlState.backdropPreset !== undefined) {
+					mainBackdrop.SetAttribute("Preset", this.mainControlState.backdropPreset);
+				}
+				if (this.mainControlState.backdropBrightness !== undefined) {
+					mainBackdrop.SetAttribute("Brightness", this.mainControlState.backdropBrightness);
+				}
+			}
+
+			// DJ Stage Backdrop (BackdropDJ)
+			const djBackdrop = targetModel.FindFirstChild("BackdropDJ") as BasePart | undefined;
+			if (djBackdrop) {
+				if (this.djControlState.backdropPreset !== undefined) {
+					djBackdrop.SetAttribute("Preset", this.djControlState.backdropPreset);
+				}
+				if (this.djControlState.backdropBrightness !== undefined) {
+					djBackdrop.SetAttribute("Brightness", this.djControlState.backdropBrightness);
+				}
+			}
+		}
+	}
+
+	private ensureFogSetup(): void {
+		this.mainFogEmitters.clear();
+		this.djFogEmitters.clear();
+
+		const setupEmittersForInstances = (instances: Instance[], list: ParticleEmitter[]) => {
+			for (const child of instances) {
+				let targetPart: BasePart | undefined;
+				if (child.IsA("BasePart")) {
+					targetPart = child;
+				} else if (child.IsA("Model")) {
+					targetPart = child.PrimaryPart ?? (child.FindFirstChildWhichIsA("BasePart") as BasePart | undefined);
+				}
+
+				if (!targetPart) continue;
+
+				let attachment = targetPart.FindFirstChild("FogAttachment") as Attachment | undefined;
+				if (!attachment) {
+					attachment = new Instance("Attachment");
+					attachment.Name = "FogAttachment";
+					attachment.Parent = targetPart;
+				}
+				attachment.Position = new Vector3(0, 0, 0);
+				attachment.Orientation = new Vector3(0, 0, 0);
+
+				let emitter = attachment.FindFirstChild("FogEmitter") as ParticleEmitter | undefined;
+				if (!emitter) {
+					emitter = new Instance("ParticleEmitter");
+					emitter.Name = "FogEmitter";
+					emitter.Parent = attachment;
+				}
+
+				emitter.Texture = "rbxasset://textures/particles/smoke_main.dds";
+				emitter.Rate = 20;
+				emitter.Lifetime = new NumberRange(3, 6);
+				emitter.Speed = new NumberRange(3, 8);
+				emitter.SpreadAngle = new Vector2(15, 15);
+				emitter.Size = new NumberSequence([
+					new NumberSequenceKeypoint(0, 5),
+					new NumberSequenceKeypoint(0.5, 15),
+					new NumberSequenceKeypoint(1, 25),
+				]);
+				emitter.Transparency = new NumberSequence([
+					new NumberSequenceKeypoint(0, 0.3),
+					new NumberSequenceKeypoint(0.3, 0.5),
+					new NumberSequenceKeypoint(1, 1),
+				]);
+				emitter.Color = new ColorSequence(Color3.fromRGB(220, 220, 230));
+				emitter.LightEmission = 0.1;
+				emitter.LightInfluence = 0.8;
+				emitter.RotSpeed = new NumberRange(-20, 20);
+				emitter.Acceleration = new Vector3(0, 2, 0);
+				emitter.Drag = 3;
+				emitter.ZOffset = 1;
+				emitter.EmissionDirection = Enum.NormalId.Top;
+				emitter.Enabled = false;
+
+				list.push(emitter);
+			}
+		};
+
+		// 1. Main Fog Emitters Setup
+		let mainInstances = CollectionService.GetTagged("FogMachine");
+		if (mainInstances.size() === 0) {
+			const m = Workspace.FindFirstChild("FogMachine");
+			if (m) mainInstances = m.GetChildren();
+		}
+		setupEmittersForInstances(mainInstances, this.mainFogEmitters);
+
+		// 2. DJ Fog Emitters Setup (FogMachineDJ / Tag DjFogMachine)
+		let djInstances = CollectionService.GetTagged("DjFogMachine");
+		if (djInstances.size() === 0) {
+			const m = Workspace.FindFirstChild("FogMachineDJ");
+			if (m) djInstances = m.GetChildren();
+		}
+		setupEmittersForInstances(djInstances, this.djFogEmitters);
+
+		print(
+			`[ServerStageLightingService] Fog: ${this.mainFogEmitters.size()} Main emitters, ${this.djFogEmitters.size()} DJ emitters.`,
+		);
+	}
+
+	private applyFog(target: StageTarget = "all"): void {
+		if (target === "main" || target === "all") {
+			const enabled = this.mainControlState.fogEnabled ?? false;
+			const intensity = this.mainControlState.fogIntensity ?? 0.5;
+
+			for (const emitter of this.mainFogEmitters) {
+				emitter.Enabled = enabled;
+				if (enabled) {
+					emitter.Rate = 5 + intensity * 25;
+				}
+			}
+		}
+
+		if (target === "dj" || target === "all") {
+			const enabled = this.djControlState.fogEnabled ?? false;
+			const intensity = this.djControlState.fogIntensity ?? 0.5;
+
+			for (const emitter of this.djFogEmitters) {
+				emitter.Enabled = enabled;
+				if (enabled) {
+					emitter.Rate = 5 + intensity * 25;
+				}
+			}
+		}
+	}
+
+	public triggerFogBurst(target: StageTarget = "all"): void {
+		if (target === "main" || target === "all") {
+			for (const emitter of this.mainFogEmitters) {
+				emitter.Emit(30);
+			}
+		}
+		if (target === "dj" || target === "all") {
+			for (const emitter of this.djFogEmitters) {
+				emitter.Emit(30);
+			}
+		}
+	}
+
+	/**
+	 * Loop runtime Heartbeat untuk eksekusi animasi Main Stage dan DJ Stage secara independen
 	 */
 	private onHeartbeat(dt: number): void {
-		if (this.controlState.mode === StageLightMode.Off) return;
-
 		this.animationTime += dt;
 
-		// ─── 1. MODE KHUSUS: SINKRONISASI MUSIK (AUDIO & BPM SYNC) ───────────────
-		if (this.controlState.mode === StageLightMode.MusicSync || this.controlState.isMusicSync) {
+		// ─── 1. ANIMASI MAIN STAGE ────────────────────────────────────────────────
+		this.processStageHeartbeat(
+			dt,
+			this.mainFixtures,
+			this.mainControlState,
+			false,
+			this.mainStrobeTimer,
+			this.mainStrobeState,
+			this.mainPulseTime,
+			(timer, state, pulse) => {
+				this.mainStrobeTimer = timer;
+				this.mainStrobeState = state;
+				this.mainPulseTime = pulse;
+			},
+		);
+
+		// ─── 2. ANIMASI DJ STAGE ──────────────────────────────────────────────────
+		this.processStageHeartbeat(
+			dt,
+			this.djFixtures,
+			this.djControlState,
+			true,
+			this.djStrobeTimer,
+			this.djStrobeState,
+			this.djPulseTime,
+			(timer, state, pulse) => {
+				this.djStrobeTimer = timer;
+				this.djStrobeState = state;
+				this.djPulseTime = pulse;
+			},
+		);
+	}
+
+	private processStageHeartbeat(
+		dt: number,
+		fixtures: StageLightFixture[],
+		state: StageLightingControlPayload,
+		isDj: boolean,
+		strobeTimer: number,
+		strobeState: boolean,
+		pulseTime: number,
+		updateTimers: (timer: number, state: boolean, pulse: number) => void,
+	): void {
+		if (state.mode === StageLightMode.Off) return;
+
+		// SINKRONISASI MUSIK
+		if (state.mode === StageLightMode.MusicSync || state.isMusicSync) {
 			const musicService = ServerMusicService.getInstance();
 			const track = musicService.getCurrentTrack();
 			const musicState = musicService.getPlaybackState();
-			const elapsed = musicService.getPlaybackPosition();
 
-			// Jika musik tidak sedang dimainkan (di-pause / idle), istirahatkan lampu fokus tepat ke Mic
 			if (musicState !== MusicPlayerState.Playing) {
-				this.applyCenterFocusAngles();
-				for (const f of this.fixtures) {
+				this.applyCenterFocusAngles(isDj);
+				for (const f of fixtures) {
 					if (f.spotLight) {
 						f.spotLight.Brightness = 0.8;
 						f.spotLight.Enabled = true;
@@ -570,24 +865,20 @@ export class ServerStageLightingService {
 					if (f.beam) f.beam.Enabled = true;
 					if (f.lensPart) f.lensPart.Material = Enum.Material.Neon;
 				}
+				updateTimers(strobeTimer, strobeState, pulseTime);
 				return;
 			}
 
-			// Mode Reaktif Otomatis (Metode 2): Server hanya menyinkronkan warna dasar.
-			// Seluruh respons tempo, hentakan bass, akselerasi intro/reff, dan visual beat
-			// dikendalikan murni oleh Sound.PlaybackLoudness di client tanpa timeline BPM statis.
-			let activeColor = this.controlState.color;
-			if (!this.controlState.isRainbow && track) {
+			let activeColor = state.color;
+			if (!state.isRainbow && track) {
 				activeColor = track.coverColor;
-			} else if (this.controlState.isRainbow) {
+			} else if (state.isRainbow) {
 				const hue = (this.animationTime * 0.1) % 1;
 				activeColor = Color3.fromHSV(hue, 0.9, 1);
 			}
 
 			const seq = new ColorSequence(activeColor);
-
-			// Sinkronisasi warna cover track / rainbow di server tanpa mengunci Enabled (agar optical shutter strobo client berjalan mulus)
-			for (const f of this.fixtures) {
+			for (const f of fixtures) {
 				if (f.spotLight && f.spotLight.Color !== activeColor) {
 					f.spotLight.Color = activeColor;
 				}
@@ -598,89 +889,111 @@ export class ServerStageLightingService {
 					f.lensPart.Color = activeColor;
 				}
 			}
+			updateTimers(strobeTimer, strobeState, pulseTime);
 			return;
 		}
 
-		// ─── 2. MODE NON-MUSIK (STANDALONE EFFECTS) ──────────────────────────────
-
-		// Rainbow RGB Cycle Effect
-		if (this.controlState.isRainbow) {
+		// STANDALONE EFFECTS
+		if (state.isRainbow) {
 			const hue = (this.animationTime * 0.15) % 1;
 			const dynamicColor = Color3.fromHSV(hue, 0.9, 1);
 			const seq = new ColorSequence(dynamicColor);
-			for (const f of this.fixtures) {
+			for (const f of fixtures) {
 				if (f.spotLight) f.spotLight.Color = dynamicColor;
 				if (f.beam) f.beam.Color = seq;
 				if (f.lensPart) f.lensPart.Color = dynamicColor;
 			}
 		}
 
-		// Pulse / Breathing Effect
-		if (this.controlState.isPulse && this.controlState.strobeSpeed === 0) {
-			this.pulseTime += dt * 3;
-			const pulseFactor = (math.sin(this.pulseTime) + 1) / 2; // 0 s/d 1
-			const pulsedBrightness = math.max(0.2, this.controlState.brightness * (0.2 + 0.8 * pulseFactor));
-			for (const f of this.fixtures) {
+		if (state.isPulse && state.strobeSpeed === 0) {
+			pulseTime += dt * 3;
+			const pulseFactor = (math.sin(pulseTime) + 1) / 2;
+			const pulsedBrightness = math.max(0.2, state.brightness * (0.2 + 0.8 * pulseFactor));
+			for (const f of fixtures) {
 				if (f.spotLight) f.spotLight.Brightness = pulsedBrightness;
 			}
 		}
 
-		// Strobe Effect (Multi-speed)
-		const strobeSpeed = this.controlState.mode === StageLightMode.Strobe ? 2 : this.controlState.strobeSpeed;
+		const strobeSpeed = state.mode === StageLightMode.Strobe ? 2 : state.strobeSpeed;
 		if (strobeSpeed > 0) {
-			this.strobeTimer += dt;
+			strobeTimer += dt;
 			const threshold = strobeSpeed === 1 ? 0.2 : strobeSpeed === 2 ? 0.1 : 0.05;
-			if (this.strobeTimer >= threshold) {
-				this.strobeTimer = 0;
-				this.strobeState = !this.strobeState;
+			if (strobeTimer >= threshold) {
+				strobeTimer = 0;
+				strobeState = !strobeState;
 
-				const b = this.strobeState ? this.controlState.brightness * 1.4 : 0;
-				for (const f of this.fixtures) {
+				const b = strobeState ? state.brightness * 1.4 : 0;
+				for (const f of fixtures) {
 					if (f.spotLight) f.spotLight.Brightness = b;
-					if (f.beam) f.beam.Enabled = this.strobeState && this.controlState.beamEnabled;
+					if (f.beam) f.beam.Enabled = strobeState && state.beamEnabled;
 				}
 			}
 		}
 
-		// Pergerakan Motor Berdasarkan Mode Preset (Berpusat di Acuan Mic Panggung)
-		if (this.controlState.mode === StageLightMode.Wave) {
-			for (const f of this.fixtures) {
-				const [basePan, baseTilt] = this.getFixtureMicAim(f);
-				const colWave = math.sin(this.animationTime * 1.5 + f.column * 0.6) * 0.35;
-				const rowWave = math.cos(this.animationTime * 1.8 + f.column * 0.4) * 0.18;
-
-				this.applyFixtureAngles(f, basePan + colWave, baseTilt + rowWave);
+		// MOTIONS
+		if (state.mode === StageLightMode.Wave) {
+			for (const f of fixtures) {
+				const [basePan, baseTilt] = this.getFixtureAim(f, isDj);
+				const panAmp = isDj ? 0.22 : 0.35;
+				const tiltAmp = isDj ? 0.1 : 0.18;
+				const colWave = math.sin(this.animationTime * 1.5 + f.column * 0.6) * panAmp;
+				const rowWave = math.cos(this.animationTime * 1.8 + f.column * 0.4) * tiltAmp;
+				this.applyFixtureAngles(f, basePan + colWave, baseTilt + rowWave, isDj);
 			}
-		} else if (this.controlState.mode === StageLightMode.Circle) {
-			for (const f of this.fixtures) {
-				const [basePan, baseTilt] = this.getFixtureMicAim(f);
+		} else if (state.mode === StageLightMode.Circle) {
+			for (const f of fixtures) {
+				const [basePan, baseTilt] = this.getFixtureAim(f, isDj);
+				const panAmp = isDj ? 0.2 : 0.3;
+				const tiltAmp = isDj ? 0.1 : 0.18;
 				const phase = f.column * 0.65;
-				const pan = math.cos(this.animationTime * 2.0 + phase) * 0.3;
-				const tilt = math.sin(this.animationTime * 2.0 + phase) * 0.18;
-
-				this.applyFixtureAngles(f, basePan + pan, baseTilt + tilt);
+				const pan = math.cos(this.animationTime * 2.0 + phase) * panAmp;
+				const tilt = math.sin(this.animationTime * 2.0 + phase) * tiltAmp;
+				this.applyFixtureAngles(f, basePan + pan, baseTilt + tilt, isDj);
 			}
-		} else if (this.controlState.mode === StageLightMode.Ballyhoo) {
-			for (const f of this.fixtures) {
-				const [basePan, baseTilt] = this.getFixtureMicAim(f);
-				const fastPan = math.sin(this.animationTime * 2.6 + f.column * 1.1) * 0.55;
-				const fastTilt = math.sin(this.animationTime * 2.0 + f.column * 1.3) * 0.22;
-
-				this.applyFixtureAngles(f, basePan + fastPan, baseTilt + fastTilt);
+		} else if (state.mode === StageLightMode.Ballyhoo) {
+			for (const f of fixtures) {
+				const [basePan, baseTilt] = this.getFixtureAim(f, isDj);
+				const panAmp = isDj ? 0.3 : 0.55;
+				const tiltAmp = isDj ? 0.14 : 0.22;
+				const fastPan = math.sin(this.animationTime * 2.6 + f.column * 1.1) * panAmp;
+				const fastTilt = math.sin(this.animationTime * 2.0 + f.column * 1.3) * tiltAmp;
+				this.applyFixtureAngles(f, basePan + fastPan, baseTilt + fastTilt, isDj);
 			}
+		} else if (state.mode === StageLightMode.SpotlightCenter) {
+			this.applyCenterFocusAngles(isDj);
+		} else if (state.mode === StageLightMode.Static) {
+			this.applyStaticAngles(isDj);
 		}
+
+		updateTimers(strobeTimer, strobeState, pulseTime);
 	}
 
-	public getControlState(): StageLightingControlPayload {
-		return { ...this.controlState };
+	public getControlState(target: "main" | "dj" = "main"): StageLightingControlPayload {
+		return target === "dj" ? { ...this.djControlState } : { ...this.mainControlState };
 	}
 
-	public getMode(): StageLightMode {
-		return this.controlState.mode;
+	public getMainControlState(): StageLightingControlPayload {
+		return { ...this.mainControlState };
+	}
+
+	public getDjControlState(): StageLightingControlPayload {
+		return { ...this.djControlState };
+	}
+
+	public getMode(target: "main" | "dj" = "main"): StageLightMode {
+		return target === "dj" ? this.djControlState.mode : this.mainControlState.mode;
 	}
 
 	public getFixturesCount(): number {
-		return this.fixtures.size();
+		return this.mainFixtures.size() + this.djFixtures.size();
+	}
+
+	public getMainFixturesCount(): number {
+		return this.mainFixtures.size();
+	}
+
+	public getDjFixturesCount(): number {
+		return this.djFixtures.size();
 	}
 
 	public destroy(): void {
@@ -688,6 +1001,6 @@ export class ServerStageLightingService {
 			this.heartbeatConnection.Disconnect();
 			this.heartbeatConnection = undefined;
 		}
-		this.setMode(StageLightMode.Off);
+		this.setMode(StageLightMode.Off, "all");
 	}
 }

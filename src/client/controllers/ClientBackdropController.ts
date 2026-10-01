@@ -31,29 +31,36 @@ export class ClientBackdropController {
 
 		// 2. Dukung StreamingEnabled / late load
 		Workspace.DescendantAdded.Connect((desc) => {
-			if (desc.Name === "Backdrop" && desc.IsA("BasePart") && desc.Parent?.Name === "3dModel") {
+			if (
+				(desc.Name === "Backdrop" || desc.Name === "BackdropDJ") &&
+				desc.IsA("BasePart") &&
+				desc.Parent?.Name === "3dModel"
+			) {
 				this.registerPart(desc);
 			}
 		});
 
-		// 3. Dukung CollectionService tag "StageBackdrop"
-		for (const inst of CollectionService.GetTagged("StageBackdrop")) {
-			if (inst.IsA("BasePart")) {
-				this.registerPart(inst);
+		// 3. Dukung CollectionService tag "StageBackdrop" & "DjBackdrop"
+		const allBackdropTags = ["StageBackdrop", "MainBackdrop", "DjBackdrop"];
+		for (const tag of allBackdropTags) {
+			for (const inst of CollectionService.GetTagged(tag)) {
+				if (inst.IsA("BasePart")) {
+					this.registerPart(inst);
+				}
 			}
+
+			CollectionService.GetInstanceAddedSignal(tag).Connect((inst) => {
+				if (inst.IsA("BasePart")) {
+					this.registerPart(inst);
+				}
+			});
+
+			CollectionService.GetInstanceRemovedSignal(tag).Connect((inst) => {
+				if (inst.IsA("BasePart")) {
+					this.unregisterPart(inst);
+				}
+			});
 		}
-
-		CollectionService.GetInstanceAddedSignal("StageBackdrop").Connect((inst) => {
-			if (inst.IsA("BasePart")) {
-				this.registerPart(inst);
-			}
-		});
-
-		CollectionService.GetInstanceRemovedSignal("StageBackdrop").Connect((inst) => {
-			if (inst.IsA("BasePart")) {
-				this.unregisterPart(inst);
-			}
-		});
 
 		// 4. Centralized RenderStepped loop untuk update animasi GIF frame
 		this.renderConnection = RunService.RenderStepped.Connect((dt) => {
@@ -73,10 +80,19 @@ export class ClientBackdropController {
 			if (backdrop && backdrop.IsA("BasePart")) {
 				this.registerPart(backdrop);
 			}
+			const djBackdrop = targetModel.FindFirstChild("BackdropDJ");
+			if (djBackdrop && djBackdrop.IsA("BasePart")) {
+				this.registerPart(djBackdrop);
+			}
 
 			// Self-healing: Cek juga part di panggung jika bernama Part dengan dimensi layar (~25.6 x 14.4 atau ~31.3 x 14.4)
 			for (const child of targetModel.GetChildren()) {
-				if (child.IsA("BasePart") && (child.Name === "Backdrop" || (child.Size.X >= 24 && child.Size.X <= 33 && math.abs(child.Size.Y - 14.4) < 1))) {
+				if (
+					child.IsA("BasePart") &&
+					(child.Name === "Backdrop" ||
+						child.Name === "BackdropDJ" ||
+						(child.Size.X >= 24 && child.Size.X <= 33 && math.abs(child.Size.Y - 14.4) < 1))
+				) {
 					this.registerPart(child);
 				}
 			}

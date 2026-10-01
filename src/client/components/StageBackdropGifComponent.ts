@@ -1,19 +1,15 @@
-import { Workspace } from "@rbxts/services";
+import { CollectionService, Workspace } from "@rbxts/services";
 import { BACKDROP_GIF_PRESETS, BackdropGifPreset, DEFAULT_BACKDROP_PRESET_ID } from "shared/config";
 
 /**
  * StageBackdropGifComponent
  * Mengelola pemutaran animasi GIF / Sprite Sheet pada part Backdrop panggung (game.Workspace["3dModel"].Backdrop)
+ * dan BackdropDJ (game.Workspace["3dModel"].BackdropDJ)
  * menggunakan SurfaceGui emisi LED tinggi (LightInfluence = 0, Brightness = 2.0+).
- *
- * Mendukung:
- * 1. Preset GIF terpusat dari StageBackdropConfig.ts (dapat dikendalikan via Lighting Remote).
- * 2. Custom GIF langsung dari Attributes Studio (ImageId, Columns, Rows, TotalFrames, FPS).
- * 3. Mode Off / Blackout.
- * 4. Sinkronisasi real-time instan antar-client via ServerStageLightingService.
  */
 export class StageBackdropGifComponent {
 	public readonly part: BasePart;
+	public readonly isDjBackdrop: boolean;
 
 	private surfaceGui?: SurfaceGui;
 	private imageLabel?: ImageLabel;
@@ -41,6 +37,12 @@ export class StageBackdropGifComponent {
 
 	constructor(part: BasePart) {
 		this.part = part;
+		this.isDjBackdrop =
+			this.part.Name === "BackdropDJ" ||
+			this.part.GetAttribute("Stage") === "dj" ||
+			CollectionService.HasTag(this.part, "DjBackdrop") ||
+			this.part.Position.Y > 100;
+
 		this.setupSurfaceGui();
 		this.refreshConfig();
 		this.bindAttributeListeners();
@@ -108,8 +110,15 @@ export class StageBackdropGifComponent {
 	public refreshConfig(): void {
 		// 1. Cek nilai dari Attribute part atau Lighting folder
 		const lightingFolder = Workspace.FindFirstChild("Lighting");
-		const serverPreset = lightingFolder?.GetAttribute("StageLightingBackdropPreset") as string | undefined;
-		const serverBrightness = lightingFolder?.GetAttribute("StageLightingBackdropBrightness") as number | undefined;
+		const presetAttrKey = this.isDjBackdrop
+			? "DjStageLightingBackdropPreset"
+			: "StageLightingBackdropPreset";
+		const brightnessAttrKey = this.isDjBackdrop
+			? "DjStageLightingBackdropBrightness"
+			: "StageLightingBackdropBrightness";
+
+		const serverPreset = lightingFolder?.GetAttribute(presetAttrKey) as string | undefined;
+		const serverBrightness = lightingFolder?.GetAttribute(brightnessAttrKey) as number | undefined;
 
 		const partPreset = this.part.GetAttribute("Preset") as string | undefined;
 		const partBrightness = this.part.GetAttribute("Brightness") as number | undefined;
@@ -190,8 +199,15 @@ export class StageBackdropGifComponent {
 		// Listen attribute di Lighting folder
 		const lightingFolder = Workspace.FindFirstChild("Lighting");
 		if (lightingFolder) {
+			const presetAttrKey = this.isDjBackdrop
+				? "DjStageLightingBackdropPreset"
+				: "StageLightingBackdropPreset";
+			const brightnessAttrKey = this.isDjBackdrop
+				? "DjStageLightingBackdropBrightness"
+				: "StageLightingBackdropBrightness";
+
 			this.lightingAttrConn = lightingFolder.AttributeChanged.Connect((attrName) => {
-				if (attrName === "StageLightingBackdropPreset" || attrName === "StageLightingBackdropBrightness") {
+				if (attrName === presetAttrKey || attrName === brightnessAttrKey) {
 					this.refreshConfig();
 				}
 			});

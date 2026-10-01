@@ -7,6 +7,7 @@ import { LucideIcon } from "../components/LucideIcon";
 import {
 	StageLightMode,
 	StageLightingControlPayload,
+	StageTarget,
 } from "shared/types";
 import { BACKDROP_GIF_PRESETS } from "shared/config";
 import { StageCameraTab } from "./StageCameraTab";
@@ -21,6 +22,7 @@ export interface LightingRemoteComponentProps {
 export function LightingRemoteComponent({ visible, onClose }: LightingRemoteComponentProps) {
 	const adminService = AdminService.getInstance();
 	const [adminState, setAdminState] = useState(() => adminService.getState());
+	const [selectedStage, setSelectedStage] = useState<StageTarget>("main");
 	const [activeTab, setActiveTab] = useState<RemoteTab>("modes");
 	const [isCollapsed, setIsCollapsed] = useState(false);
 	const [isFogDragging, setIsFogDragging] = useState(false);
@@ -55,7 +57,7 @@ export function LightingRemoteComponent({ visible, onClose }: LightingRemoteComp
 		const targetBrightnessVal = math.floor(((newPercent / 100) * MAX_BRIGHTNESS) * 100 + 0.5) / 100;
 		if (forceSend || math.abs(targetBrightnessVal - lastSentBrightnessRef.current) >= 0.08) {
 			lastSentBrightnessRef.current = targetBrightnessVal;
-			adminService.setStageLighting({ brightness: targetBrightnessVal });
+			adminService.setStageLighting({ brightness: targetBrightnessVal }, selectedStage);
 		}
 	};
 
@@ -102,7 +104,7 @@ export function LightingRemoteComponent({ visible, onClose }: LightingRemoteComp
 
 		if (forceSend || math.abs(newIntensity - lastSentFogRef.current) >= 0.05) {
 			lastSentFogRef.current = newIntensity;
-			adminService.setStageLighting({ fogIntensity: newIntensity });
+			adminService.setStageLighting({ fogIntensity: newIntensity }, selectedStage);
 		}
 	};
 
@@ -150,7 +152,7 @@ export function LightingRemoteComponent({ visible, onClose }: LightingRemoteComp
 		const targetVal = math.floor(((newPercent / 100) * 4.0) * 100 + 0.5) / 100;
 		if (forceSend || math.abs(targetVal - lastSentBackdropBrightnessRef.current) >= 0.1) {
 			lastSentBackdropBrightnessRef.current = targetVal;
-			adminService.setStageLighting({ backdropBrightness: targetVal });
+			adminService.setStageLighting({ backdropBrightness: targetVal }, selectedStage);
 		}
 	};
 
@@ -192,21 +194,22 @@ export function LightingRemoteComponent({ visible, onClose }: LightingRemoteComp
 
 	if (!visible) return <></>;
 
-	const stageLighting: StageLightingControlPayload = adminState.stageLighting ?? {
-		mode: StageLightMode.MusicSync,
-		panAngle: 0,
-		tiltAngle: 0,
-		motorSpeed: 0.04,
-		color: Color3.fromRGB(0, 255, 255),
-		brightness: 2.5,
-		beamEnabled: true,
-		strobeSpeed: 0,
-		isRainbow: false,
-		isPulse: false,
-		isMusicSync: true,
-		fogEnabled: false,
-		fogIntensity: 0.5,
-	};
+	const stageLighting: StageLightingControlPayload =
+		(selectedStage === "dj" ? adminState.djStageLighting : adminState.stageLighting) ?? {
+			mode: StageLightMode.SpotlightCenter,
+			panAngle: 0,
+			tiltAngle: 0,
+			motorSpeed: 0.04,
+			color: selectedStage === "dj" ? Color3.fromRGB(0, 255, 255) : Color3.fromRGB(180, 240, 255),
+			brightness: selectedStage === "dj" ? 3.5 : 4.5,
+			beamEnabled: true,
+			strobeSpeed: 0,
+			isRainbow: false,
+			isPulse: false,
+			isMusicSync: false,
+			fogEnabled: false,
+			fogIntensity: 0.5,
+		};
 
 	const currentFogIntensity = fogIntensityVal ?? stageLighting.fogIntensity ?? 0.5;
 	const currentBrightnessPercent =
@@ -215,7 +218,11 @@ export function LightingRemoteComponent({ visible, onClose }: LightingRemoteComp
 
 	const motionModes: Array<{ mode: StageLightMode; label: string; icon: string }> = [
 		{ mode: StageLightMode.MusicSync, label: "Sync Musik", icon: "music" },
-		{ mode: StageLightMode.SpotlightCenter, label: "Fokus Stage", icon: "target" },
+		{
+			mode: StageLightMode.SpotlightCenter,
+			label: selectedStage === "dj" ? "Fokus DJ" : "Fokus Stage",
+			icon: "target",
+		},
 		{ mode: StageLightMode.Wave, label: "Wave", icon: "activity" },
 		{ mode: StageLightMode.Circle, label: "Orbit", icon: "compass" },
 		{ mode: StageLightMode.Ballyhoo, label: "Ballyhoo", icon: "sparkles" },
@@ -307,8 +314,8 @@ export function LightingRemoteComponent({ visible, onClose }: LightingRemoteComp
 						LayoutOrder={1}
 						Size={new UDim2(1, 0, 0, 14)}
 						BackgroundTransparency={1}
-						Text="STAGE CONTROLLER LIVE"
-						TextColor3={Color3.fromHex("#94a3b8")}
+						Text={selectedStage === "dj" ? "STAGE DJ LIVE" : "MAIN STAGE LIVE"}
+						TextColor3={selectedStage === "dj" ? Color3.fromHex("#38bdf8") : Color3.fromHex("#94a3b8")}
 						TextSize={9}
 						Font={Fonts.Bold}
 						TextXAlignment={Enum.TextXAlignment.Left}
@@ -317,7 +324,13 @@ export function LightingRemoteComponent({ visible, onClose }: LightingRemoteComp
 						LayoutOrder={2}
 						Size={new UDim2(1, 0, 0, 16)}
 						BackgroundTransparency={1}
-						Text={stageLighting.mode}
+						Text={
+							stageLighting.mode === StageLightMode.SpotlightCenter
+								? selectedStage === "dj"
+									? "Fokus DJ"
+									: "Fokus Stage"
+								: stageLighting.mode
+						}
 						TextColor3={Color3.fromHex("#ffffff")}
 						TextSize={12}
 						Font={Fonts.Medium}
@@ -340,7 +353,7 @@ export function LightingRemoteComponent({ visible, onClose }: LightingRemoteComp
 			key="LightingRemoteHUD"
 			Position={new UDim2(1, -24, 0.5, 0)}
 			AnchorPoint={new Vector2(1, 0.5)}
-			Size={new UDim2(0, 310, 0, 420)}
+			Size={new UDim2(0, 310, 0, 450)}
 			BackgroundColor3={Color3.fromHex("#0a0a0a")}
 			BackgroundTransparency={0.2}
 			BorderSizePixel={0}
@@ -382,14 +395,18 @@ export function LightingRemoteComponent({ visible, onClose }: LightingRemoteComp
 					/>
 					<frame LayoutOrder={1} Size={new UDim2(0, 28, 0, 28)} BackgroundColor3={stageLighting.color} BackgroundTransparency={0.2}>
 						<uicorner CornerRadius={new UDim(0, 8)} />
-						<LucideIcon name="activity" size={UDim2.fromOffset(16, 16)} color={Color3.fromRGB(255, 255, 255)} />
+						<LucideIcon
+							name={selectedStage === "dj" ? "headphones" : "activity"}
+							size={UDim2.fromOffset(16, 16)}
+							color={Color3.fromRGB(255, 255, 255)}
+						/>
 					</frame>
 					<frame LayoutOrder={2} Size={new UDim2(1, -36, 1, 0)} BackgroundTransparency={1}>
 						<uilistlayout FillDirection={Enum.FillDirection.Vertical} VerticalAlignment={Enum.VerticalAlignment.Center} />
 						<textlabel
 							Size={new UDim2(1, 0, 0, 16)}
 							BackgroundTransparency={1}
-							Text="STAGE CONTROLLER"
+							Text={selectedStage === "dj" ? "DJ STAGE CONTROLLER" : "STAGE CONTROLLER"}
 							TextColor3={Color3.fromHex("#ffffff")}
 							TextSize={12}
 							Font={Fonts.Bold}
@@ -398,8 +415,8 @@ export function LightingRemoteComponent({ visible, onClose }: LightingRemoteComp
 						<textlabel
 							Size={new UDim2(1, 0, 0, 12)}
 							BackgroundTransparency={1}
-							Text="Live Concert Stage & DMX Controller"
-							TextColor3={Color3.fromHex("#94a3b8")}
+							Text={selectedStage === "dj" ? "Fokus Objek game.Workspace.FocusDJLighting" : "Live Concert Stage & DMX Controller"}
+							TextColor3={selectedStage === "dj" ? Color3.fromHex("#38bdf8") : Color3.fromHex("#94a3b8")}
 							TextSize={9}
 							Font={Fonts.Regular}
 							TextXAlignment={Enum.TextXAlignment.Left}
@@ -451,9 +468,100 @@ export function LightingRemoteComponent({ visible, onClose }: LightingRemoteComp
 				</frame>
 			</frame>
 
-			{/* ─── Navigation Tabs ─── */}
+			{/* ─── Stage Target Selector (Main Stage vs DJ Stage) ─── */}
 			<frame
 				LayoutOrder={2}
+				Size={new UDim2(1, 0, 0, 30)}
+				BackgroundColor3={Color3.fromHex("#111827")}
+				BackgroundTransparency={0.5}
+			>
+				<uicorner CornerRadius={new UDim(0, 8)} />
+				<uilistlayout
+					FillDirection={Enum.FillDirection.Horizontal}
+					VerticalAlignment={Enum.VerticalAlignment.Center}
+					SortOrder={Enum.SortOrder.LayoutOrder}
+					Padding={new UDim(0, 4)}
+				/>
+				<uipadding
+					PaddingLeft={new UDim(0, 3)}
+					PaddingRight={new UDim(0, 3)}
+					PaddingTop={new UDim(0, 3)}
+					PaddingBottom={new UDim(0, 3)}
+				/>
+				{/* Main Stage Option */}
+				<textbutton
+					LayoutOrder={1}
+					Size={new UDim2(0.5, -2, 1, 0)}
+					BackgroundColor3={selectedStage === "main" ? Color3.fromHex("#2563eb") : Color3.fromRGB(0, 0, 0)}
+					BackgroundTransparency={selectedStage === "main" ? 0.2 : 1}
+					Text=""
+					AutoButtonColor={true}
+					Event={{
+						MouseButton1Click: () => setSelectedStage("main"),
+					}}
+				>
+					<uicorner CornerRadius={new UDim(0, 6)} />
+					<uilistlayout
+						FillDirection={Enum.FillDirection.Horizontal}
+						VerticalAlignment={Enum.VerticalAlignment.Center}
+						HorizontalAlignment={Enum.HorizontalAlignment.Center}
+						Padding={new UDim(0, 6)}
+					/>
+					<LucideIcon
+						name="mic"
+						size={UDim2.fromOffset(13, 13)}
+						color={selectedStage === "main" ? Color3.fromRGB(255, 255, 255) : Color3.fromHex("#94a3b8")}
+					/>
+					<textlabel
+						Size={new UDim2(0, 85, 1, 0)}
+						BackgroundTransparency={1}
+						Text="MAIN STAGE"
+						TextColor3={selectedStage === "main" ? Color3.fromRGB(255, 255, 255) : Color3.fromHex("#94a3b8")}
+						Font={selectedStage === "main" ? Fonts.Bold : Fonts.Medium}
+						TextSize={10}
+						TextXAlignment={Enum.TextXAlignment.Center}
+					/>
+				</textbutton>
+
+				{/* DJ Stage Option */}
+				<textbutton
+					LayoutOrder={2}
+					Size={new UDim2(0.5, -2, 1, 0)}
+					BackgroundColor3={selectedStage === "dj" ? Color3.fromHex("#0891b2") : Color3.fromRGB(0, 0, 0)}
+					BackgroundTransparency={selectedStage === "dj" ? 0.2 : 1}
+					Text=""
+					AutoButtonColor={true}
+					Event={{
+						MouseButton1Click: () => setSelectedStage("dj"),
+					}}
+				>
+					<uicorner CornerRadius={new UDim(0, 6)} />
+					<uilistlayout
+						FillDirection={Enum.FillDirection.Horizontal}
+						VerticalAlignment={Enum.VerticalAlignment.Center}
+						HorizontalAlignment={Enum.HorizontalAlignment.Center}
+						Padding={new UDim(0, 6)}
+					/>
+					<LucideIcon
+						name="headphones"
+						size={UDim2.fromOffset(13, 13)}
+						color={selectedStage === "dj" ? Color3.fromRGB(255, 255, 255) : Color3.fromHex("#94a3b8")}
+					/>
+					<textlabel
+						Size={new UDim2(0, 85, 1, 0)}
+						BackgroundTransparency={1}
+						Text="STAGE DJ"
+						TextColor3={selectedStage === "dj" ? Color3.fromRGB(255, 255, 255) : Color3.fromHex("#94a3b8")}
+						Font={selectedStage === "dj" ? Fonts.Bold : Fonts.Medium}
+						TextSize={10}
+						TextXAlignment={Enum.TextXAlignment.Center}
+					/>
+				</textbutton>
+			</frame>
+
+			{/* ─── Navigation Tabs ─── */}
+			<frame
+				LayoutOrder={3}
 				Size={new UDim2(1, 0, 0, 32)}
 				BackgroundColor3={Color3.fromHex("#111827")}
 				BackgroundTransparency={0.5}
@@ -498,8 +606,8 @@ export function LightingRemoteComponent({ visible, onClose }: LightingRemoteComp
 
 			{/* ─── Content Body ─── */}
 			<scrollingframe
-				LayoutOrder={3}
-				Size={new UDim2(1, 0, 1, -86)}
+				LayoutOrder={4}
+				Size={new UDim2(1, 0, 1, -126)}
 				BackgroundTransparency={1}
 				BorderSizePixel={0}
 				ScrollBarThickness={3}
@@ -545,7 +653,7 @@ export function LightingRemoteComponent({ visible, onClose }: LightingRemoteComp
 										AutoButtonColor={true}
 										Event={{
 											MouseButton1Click: () => {
-												adminService.setStageLighting({ mode: item.mode });
+												adminService.setStageLighting({ mode: item.mode }, selectedStage);
 											},
 										}}
 									>
@@ -614,7 +722,7 @@ export function LightingRemoteComponent({ visible, onClose }: LightingRemoteComp
 										TextSize={10}
 										Event={{
 											MouseButton1Click: () => {
-												adminService.setStageLighting({ motorSpeed: sp.val });
+												adminService.setStageLighting({ motorSpeed: sp.val }, selectedStage);
 											},
 										}}
 									>
@@ -665,10 +773,13 @@ export function LightingRemoteComponent({ visible, onClose }: LightingRemoteComp
 										AutoButtonColor={true}
 										Event={{
 											MouseButton1Click: () => {
-												adminService.setStageLighting({
-													color: cp.color,
-													isRainbow: false,
-												});
+												adminService.setStageLighting(
+													{
+														color: cp.color,
+														isRainbow: false,
+													},
+													selectedStage,
+												);
 											},
 										}}
 									>
@@ -714,7 +825,10 @@ export function LightingRemoteComponent({ visible, onClose }: LightingRemoteComp
 								TextSize={10}
 								Event={{
 									MouseButton1Click: () => {
-										adminService.setStageLighting({ isRainbow: !stageLighting.isRainbow });
+										adminService.setStageLighting(
+											{ isRainbow: !stageLighting.isRainbow },
+											selectedStage,
+										);
 									},
 								}}
 							>
@@ -732,7 +846,7 @@ export function LightingRemoteComponent({ visible, onClose }: LightingRemoteComp
 								TextSize={10}
 								Event={{
 									MouseButton1Click: () => {
-										adminService.setStageLighting({ isPulse: !stageLighting.isPulse });
+										adminService.setStageLighting({ isPulse: !stageLighting.isPulse }, selectedStage);
 									},
 								}}
 							>
@@ -768,7 +882,10 @@ export function LightingRemoteComponent({ visible, onClose }: LightingRemoteComp
 							TextSize={11}
 							Event={{
 								MouseButton1Click: () => {
-									adminService.setStageLighting({ beamEnabled: !stageLighting.beamEnabled });
+									adminService.setStageLighting(
+										{ beamEnabled: !stageLighting.beamEnabled },
+										selectedStage,
+									);
 								},
 							}}
 						>
@@ -888,7 +1005,7 @@ export function LightingRemoteComponent({ visible, onClose }: LightingRemoteComp
 										AutoButtonColor={false}
 										Event={{
 											MouseButton1Click: () => {
-												adminService.setStageLighting({ strobeSpeed: stp.speed });
+												adminService.setStageLighting({ strobeSpeed: stp.speed }, selectedStage);
 											},
 										}}
 									>
@@ -941,9 +1058,12 @@ export function LightingRemoteComponent({ visible, onClose }: LightingRemoteComp
 								AutoButtonColor={true}
 								Event={{
 									MouseButton1Click: () => {
-										adminService.setStageLighting({
-											fogEnabled: !stageLighting.fogEnabled,
-										});
+										adminService.setStageLighting(
+											{
+												fogEnabled: !stageLighting.fogEnabled,
+											},
+											selectedStage,
+										);
 									},
 								}}
 							>
@@ -968,7 +1088,7 @@ export function LightingRemoteComponent({ visible, onClose }: LightingRemoteComp
 								AutoButtonColor={true}
 								Event={{
 									MouseButton1Click: () => {
-										adminService.triggerFogBurst();
+										adminService.triggerFogBurst(selectedStage);
 									},
 								}}
 							>
@@ -1116,7 +1236,7 @@ export function LightingRemoteComponent({ visible, onClose }: LightingRemoteComp
 										AutoButtonColor={false}
 										Event={{
 											MouseButton1Click: () => {
-												adminService.setStageLighting({ backdropPreset: preset.id });
+												adminService.setStageLighting({ backdropPreset: preset.id }, selectedStage);
 											},
 										}}
 									>
@@ -1188,7 +1308,7 @@ export function LightingRemoteComponent({ visible, onClose }: LightingRemoteComp
 										AutoButtonColor={false}
 										Event={{
 											MouseButton1Click: () => {
-												adminService.setStageLighting({ backdropPreset: "off" });
+												adminService.setStageLighting({ backdropPreset: "off" }, selectedStage);
 											},
 										}}
 									>
@@ -1341,7 +1461,9 @@ export function LightingRemoteComponent({ visible, onClose }: LightingRemoteComp
 				)}
 
 				{/* ───────── TAB 6: CAMERA CONTROLLER ───────── */}
-				{activeTab === "camera" && <StageCameraTab />}
+				{activeTab === "camera" && (
+					<StageCameraTab stageTarget={selectedStage === "all" ? "main" : selectedStage} />
+				)}
 			</scrollingframe>
 		</frame>
 	);

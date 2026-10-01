@@ -1,7 +1,13 @@
 import { Players, RunService, ServerStorage, TeleportService, TextChatService } from "@rbxts/services";
 import { isPlayerAdmin, isPlayerOwner } from "shared/config";
 import { getRemoteEvent, getRemoteFunction } from "shared/network";
-import { AdminStateSync, PlayerEntryInfo, StageCameraControlPayload, StageLightingControlPayload } from "shared/types";
+import {
+	AdminStateSync,
+	PlayerEntryInfo,
+	StageCameraControlPayload,
+	StageLightingControlPayload,
+	StageTarget,
+} from "shared/types";
 import { ServerMusicService } from "./ServerMusicService";
 import { ServerTimeService } from "./ServerTimeService";
 import { ServerStageLightingService } from "./ServerStageLightingService";
@@ -253,7 +259,8 @@ export class ServerAdminService {
 
 			case "SetStageLightingControl": {
 				if (typeIs(data, "table")) {
-					ServerStageLightingService.getInstance().applyControl(data as Partial<StageLightingControlPayload>);
+					const payload = data as Partial<StageLightingControlPayload>;
+					ServerStageLightingService.getInstance().applyControl(payload, payload.target);
 					this.broadcastStateUpdate();
 				}
 				break;
@@ -279,7 +286,13 @@ export class ServerAdminService {
 			}
 
 			case "TriggerFogBurst": {
-				ServerStageLightingService.getInstance().triggerFogBurst();
+				const target =
+					typeIs(data, "string")
+						? (data as StageTarget)
+						: typeIs(data, "table") && "target" in data
+							? ((data as { target: StageTarget }).target)
+							: "all";
+				ServerStageLightingService.getInstance().triggerFogBurst(target);
 				break;
 			}
 
@@ -958,7 +971,8 @@ export class ServerAdminService {
 	public getState(): AdminStateSync {
 		return {
 			isQueueLocked: ServerMusicService.getInstance().getIsQueueLocked(),
-			stageLighting: ServerStageLightingService.getInstance().getControlState(),
+			stageLighting: ServerStageLightingService.getInstance().getMainControlState(),
+			djStageLighting: ServerStageLightingService.getInstance().getDjControlState(),
 			stageCamera: this.stageCameraControlState,
 		};
 	}

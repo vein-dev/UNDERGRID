@@ -70,7 +70,7 @@ export function isPlayerOwner(player: Player): boolean {
  */
 export function isPlayerAdmin(player: Player): boolean {
 	// 0. Studio Developer Testing
-	if (RunService.IsStudio() && (player.UserId === game.CreatorId || player.UserId <= 0)) {
+	if (RunService.IsStudio()) {
 		return true;
 	}
 

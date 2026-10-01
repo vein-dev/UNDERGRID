@@ -28,6 +28,8 @@ export interface StageLightFixture {
 	basePart?: BasePart;
 }
 
+export type StageTarget = "main" | "dj" | "all";
+
 export interface StageLightingControlPayload {
 	mode: StageLightMode;
 	panAngle: number; // in radians (-2.35 to 2.35, approx -135° to +135°)
@@ -40,6 +42,7 @@ export interface StageLightingControlPayload {
 	isRainbow: boolean;
 	isPulse: boolean;
 	isMusicSync: boolean;
+	target?: StageTarget;
 	fogEnabled?: boolean; // toggle on/off
 	fogIntensity?: number; // 0.0 - 1.0, default 0.5
 	backdropPreset?: string; // preset id from BACKDROP_GIF_PRESETS or "off"

@@ -18,6 +18,7 @@ export enum AdminTab {
 export interface AdminStateSync {
 	isQueueLocked: boolean;
 	stageLighting?: StageLightingControlPayload;
+	djStageLighting?: StageLightingControlPayload;
 	stageCamera?: StageCameraControlPayload;
 }
 

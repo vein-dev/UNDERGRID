@@ -6,7 +6,7 @@ import { ReplicatedStorage, RunService } from "@rbxts/services";
 function getRemoteFolder(): Folder {
 	let folder = ReplicatedStorage.FindFirstChild("Remotes") as Folder | undefined;
 	if (!folder) {
-		if (RunService.IsServer() || RunService.IsStudio()) {
+		if (RunService.IsServer()) {
 			folder = new Instance("Folder");
 			folder.Name = "Remotes";
 			folder.Parent = ReplicatedStorage;
@@ -25,7 +25,7 @@ export function getRemoteEvent(name: string): RemoteEvent {
 	let child = folder.FindFirstChild(name);
 
 	if (child && !child.IsA("RemoteEvent")) {
-		if (RunService.IsServer() || RunService.IsStudio()) {
+		if (RunService.IsServer()) {
 			child.Destroy();
 			child = undefined;
 		} else {
@@ -35,7 +35,7 @@ export function getRemoteEvent(name: string): RemoteEvent {
 
 	let event = child as RemoteEvent | undefined;
 	if (!event) {
-		if (RunService.IsServer() || RunService.IsStudio()) {
+		if (RunService.IsServer()) {
 			event = new Instance("RemoteEvent");
 			event.Name = name;
 			event.Parent = folder;
@@ -55,7 +55,7 @@ export function getRemoteFunction(name: string): RemoteFunction {
 	let child = folder.FindFirstChild(name);
 
 	if (child && !child.IsA("RemoteFunction")) {
-		if (RunService.IsServer() || RunService.IsStudio()) {
+		if (RunService.IsServer()) {
 			child.Destroy();
 			child = undefined;
 		} else {
@@ -65,7 +65,7 @@ export function getRemoteFunction(name: string): RemoteFunction {
 
 	let func = child as RemoteFunction | undefined;
 	if (!func) {
-		if (RunService.IsServer() || RunService.IsStudio()) {
+		if (RunService.IsServer()) {
 			func = new Instance("RemoteFunction");
 			func.Name = name;
 			func.Parent = folder;
@@ -85,7 +85,7 @@ export function getBindableEvent(name: string): BindableEvent {
 	let child = folder.FindFirstChild(name);
 
 	if (child && !child.IsA("BindableEvent")) {
-		if (RunService.IsServer() || RunService.IsStudio()) {
+		if (RunService.IsServer()) {
 			child.Destroy();
 			child = undefined;
 		} else {
@@ -95,7 +95,7 @@ export function getBindableEvent(name: string): BindableEvent {
 
 	let event = child as BindableEvent | undefined;
 	if (!event) {
-		if (RunService.IsServer() || RunService.IsStudio()) {
+		if (RunService.IsServer()) {
 			event = new Instance("BindableEvent");
 			event.Name = name;
 			event.Parent = folder;

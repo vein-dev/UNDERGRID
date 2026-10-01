@@ -15,4 +15,5 @@ export interface StageCameraControlPayload {
 	fov: number;
 	orbitSpeed: number;
 	fixedCamIndex?: number;
+	stageTarget?: "main" | "dj";
 }

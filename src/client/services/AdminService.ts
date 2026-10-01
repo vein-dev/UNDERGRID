@@ -1,5 +1,12 @@
 import { getRemoteEvent, getRemoteFunction } from "shared/network";
-import { AdminStateSync, PlayerEntryInfo, StageCameraControlPayload, StageLightingControlPayload } from "shared/types";
+import {
+	AdminStateSync,
+	PlayerEntryInfo,
+	StageCameraControlPayload,
+	StageLightingControlPayload,
+	StageLightMode,
+	StageTarget,
+} from "shared/types";
 import { AnnouncementOverlayView } from "client/ui/views/AnnouncementOverlayView";
 
 type StateUpdateCallback = (state: AdminStateSync) => void;
@@ -55,6 +62,11 @@ export class AdminService {
 				AnnouncementOverlayView.getInstance().show(rawText as string, 5.0);
 				for (const cb of this.announcementCallbacks) cb(rawText as string);
 			}
+		});
+
+		// Fetch initial state immediately on startup
+		task.defer(() => {
+			this.fetchFullState();
 		});
 	}
 
@@ -119,12 +131,64 @@ export class AdminService {
 		this.adminControlEvent.FireServer("SetCycleDuration", minutes);
 	}
 
-	public setStageLighting(payload: Partial<StageLightingControlPayload>): void {
-		this.adminControlEvent.FireServer("SetStageLightingControl", payload);
+	public setStageLighting(payload: Partial<StageLightingControlPayload>, target: StageTarget = "main"): void {
+		const data = { ...payload, target };
+
+		if (target === "dj" || target === "all") {
+			this.state.djStageLighting = {
+				...(this.state.djStageLighting ?? {
+					mode: StageLightMode.SpotlightCenter,
+					panAngle: 0,
+					tiltAngle: 0,
+					motorSpeed: 0.04,
+					color: Color3.fromRGB(0, 255, 255),
+					brightness: 3.5,
+					beamEnabled: true,
+					strobeSpeed: 0,
+					isRainbow: false,
+					isPulse: false,
+					isMusicSync: false,
+					target: "dj",
+					fogEnabled: false,
+					fogIntensity: 0.5,
+					backdropPreset: "gif_cyber_grid",
+					backdropBrightness: 2.0,
+				}),
+				...payload,
+			};
+		}
+		if (target === "main" || target === "all") {
+			this.state.stageLighting = {
+				...(this.state.stageLighting ?? {
+					mode: StageLightMode.SpotlightCenter,
+					panAngle: 0,
+					tiltAngle: 0,
+					motorSpeed: 0.04,
+					color: Color3.fromRGB(180, 240, 255),
+					brightness: 4.5,
+					beamEnabled: true,
+					strobeSpeed: 0,
+					isRainbow: false,
+					isPulse: false,
+					isMusicSync: false,
+					target: "main",
+					fogEnabled: false,
+					fogIntensity: 0.5,
+					backdropPreset: "gif_cyber_grid",
+					backdropBrightness: 2.0,
+				}),
+				...payload,
+			};
+		}
+
+		for (const cb of this.stateUpdateCallbacks) {
+			cb(this.state);
+		}
+		this.adminControlEvent.FireServer("SetStageLightingControl", data);
 	}
 
-	public triggerFogBurst(): void {
-		this.adminControlEvent.FireServer("TriggerFogBurst");
+	public triggerFogBurst(target?: StageTarget): void {
+		this.adminControlEvent.FireServer("TriggerFogBurst", target ?? "all");
 	}
 
 	public setStageCameraControl(payload: Partial<StageCameraControlPayload>): void {
