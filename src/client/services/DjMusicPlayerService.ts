@@ -68,6 +68,11 @@ export class DjMusicPlayerService {
 
 		this.initNetworkSync();
 		this.initProgressLoop();
+
+		// Request sync langsung ke server saat client boot
+		task.defer(() => {
+			this.syncEvent.FireServer("RequestSync");
+		});
 	}
 
 	public static getInstance(playlist: TrackData[] = DEFAULT_DJ_PLAYLIST): DjMusicPlayerService {
@@ -90,6 +95,7 @@ export class DjMusicPlayerService {
 
 		this.sound = new Instance("Sound");
 		this.sound.Name = "DjMusic";
+		this.sound.SoundId = this.currentTrack ? this.currentTrack.soundId : "";
 		this.sound.Volume = volume;
 		this.sound.Looped = false;
 		this.sound.Parent = SoundService;
@@ -107,6 +113,19 @@ export class DjMusicPlayerService {
 		this.equalizerEffect.LowGain = 0;
 		this.equalizerEffect.Enabled = false;
 		this.equalizerEffect.Parent = this.sound;
+
+		// Saat audio selesai dimuat dari Roblox CDN, sinkronkan posisi dan mulai putar
+		this.sound.Loaded.Connect(() => {
+			if (this.state === MusicPlayerState.Playing) {
+				const expectedPosition = this.getEstimatedServerPosition();
+				if (this.sound.TimeLength > 0 && expectedPosition < this.sound.TimeLength) {
+					this.sound.TimePosition = math.max(0, expectedPosition);
+				}
+				if (!this.sound.IsPlaying) {
+					this.sound.Play();
+				}
+			}
+		});
 
 		this.applyTrackAudioCorrection(this.currentTrack);
 	}
@@ -160,11 +179,22 @@ export class DjMusicPlayerService {
 		});
 	}
 
+	private getEstimatedServerPosition(): number {
+		if (this.state !== MusicPlayerState.Playing) {
+			return this.lastServerTimePosition;
+		}
+		const elapsed = math.max(0, Workspace.GetServerTimeNow() - this.lastServerTimestamp);
+		const speed = this.sound.PlaybackSpeed > 0 ? this.sound.PlaybackSpeed : 1.0;
+		return this.lastServerTimePosition + elapsed * speed;
+	}
+
 	private applySyncData(data: GlobalMusicSyncData): void {
-		const trackChanged = !this.currentTrack || this.currentTrack.id !== data.currentTrack.id;
+		if (!data || !data.currentTrack) return;
+
+		const trackChanged = !this.currentTrack || this.currentTrack.soundId !== data.currentTrack.soundId;
 		this.currentTrack = data.currentTrack;
 		this.state = data.state;
-		this.queue = data.queue;
+		this.queue = data.queue ?? [];
 
 		this.lastServerTimePosition = data.timePosition;
 		this.lastServerTimestamp = data.serverTimestamp;
@@ -179,21 +209,24 @@ export class DjMusicPlayerService {
 		for (const cb of this.stateChangedCallbacks) cb(this.state);
 
 		if (this.state === MusicPlayerState.Playing) {
-			const latency = Workspace.GetServerTimeNow() - data.serverTimestamp;
-			const targetPosition = data.timePosition + latency;
+			const expectedPosition = this.getEstimatedServerPosition();
 
-			if (math.abs(this.sound.TimePosition - targetPosition) > 1.5 || !this.sound.IsPlaying) {
-				this.sound.TimePosition = math.max(0, targetPosition);
+			if (this.sound.SoundId !== data.currentTrack.soundId) {
+				this.sound.SoundId = data.currentTrack.soundId;
+			}
+
+			if (this.sound.IsLoaded && this.sound.TimeLength > 0) {
+				if (math.abs(this.sound.TimePosition - expectedPosition) > 2.0) {
+					this.sound.TimePosition = math.clamp(expectedPosition, 0, this.sound.TimeLength);
+				}
 			}
 
 			if (!this.sound.IsPlaying) {
 				this.sound.Play();
 			}
 		} else if (this.state === MusicPlayerState.Paused) {
+			this.sound.Pause();
 			this.sound.TimePosition = data.timePosition;
-			if (this.sound.IsPlaying) {
-				this.sound.Pause();
-			}
 		} else {
 			this.sound.Stop();
 		}

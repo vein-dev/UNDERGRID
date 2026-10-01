@@ -118,7 +118,17 @@ export class ServerDjMusicService {
 			return this.handleRemoveQueue(player, queueIndex as number);
 		};
 
-		// Sinkronisasi untuk pemain baru yang bergabung
+		// Client resync request handler
+		this.syncEvent.OnServerEvent.Connect((player, action) => {
+			if (action === "RequestSync") {
+				this.broadcastSyncToPlayer(player);
+			}
+		});
+
+		// Sinkronisasi untuk pemain yang sudah ada maupun pemain baru yang bergabung
+		for (const player of Players.GetPlayers()) {
+			task.defer(() => this.broadcastSyncToPlayer(player));
+		}
 		Players.PlayerAdded.Connect((player) => {
 			task.defer(() => {
 				this.broadcastSyncToPlayer(player);
