@@ -2,7 +2,9 @@ import React, { useEffect, useState } from "@rbxts/react";
 import ReactRoblox, { Root } from "@rbxts/react-roblox";
 import { AdminService } from "client/services/AdminService";
 import { MusicPlayerService } from "client/services/MusicPlayerService";
+import { DjMusicPlayerService } from "client/services/DjMusicPlayerService";
 import { Fonts } from "client/ui/Typography";
+import { DEFAULT_DJ_PLAYLIST } from "shared/config";
 import { DEFAULT_SMARTPHONE_CONFIG, MusicPlayerState, TrackData } from "shared/types";
 import { LucideIcon } from "../../components/LucideIcon";
 
@@ -19,37 +21,61 @@ function formatTime(seconds: number): string {
 }
 
 export function AdminMusicTabComponent({ visible }: AdminMusicTabProps) {
-	const musicService = MusicPlayerService.getInstance();
+	const mainMusicService = MusicPlayerService.getInstance();
+	const djMusicService = DjMusicPlayerService.getInstance();
 	const adminService = AdminService.getInstance();
 
-	const [currentTrack, setCurrentTrack] = useState<TrackData | undefined>(() =>
-		musicService.getCurrentTrack(),
-	);
-	const [playerState, setPlayerState] = useState<MusicPlayerState>(() =>
-		musicService.getState(),
-	);
-	const [progress, setProgress] = useState({ position: 0, duration: 0 });
-	const [isQueueLocked, setIsQueueLocked] = useState(() => adminService.getState().isQueueLocked);
+	const [selectedStage, setSelectedStage] = useState<"main" | "dj">("main");
+
+	const [mainTrack, setMainTrack] = useState<TrackData | undefined>(() => mainMusicService.getCurrentTrack());
+	const [mainState, setMainState] = useState<MusicPlayerState>(() => mainMusicService.getState());
+	const [mainProgress, setMainProgress] = useState({ position: 0, duration: 0 });
+	const [mainQueueLocked, setMainQueueLocked] = useState(() => adminService.getState().isQueueLocked);
+
+	const [djTrack, setDjTrack] = useState<TrackData | undefined>(() => djMusicService.getCurrentTrack());
+	const [djState, setDjState] = useState<MusicPlayerState>(() => djMusicService.getState());
+	const [djProgress, setDjProgress] = useState({ position: 0, duration: 0 });
+	const [djQueueLocked, setDjQueueLocked] = useState(() => djMusicService.getIsQueueLocked());
 
 	useEffect(() => {
-		musicService.onTrackChanged((t) => setCurrentTrack(t));
-		musicService.onStateChanged((s) => setPlayerState(s));
-		musicService.onProgress((pos, dur) => setProgress({ position: pos, duration: dur }));
-
+		const unsubMainTrack = mainMusicService.onTrackChanged((t) => setMainTrack(t));
+		const unsubMainState = mainMusicService.onStateChanged((s) => setMainState(s));
+		const unsubMainProg = mainMusicService.onProgress((pos, dur) => setMainProgress({ position: pos, duration: dur }));
 		const unsubAdmin = adminService.onStateUpdated((state) => {
-			setIsQueueLocked(state.isQueueLocked);
+			setMainQueueLocked(state.isQueueLocked);
 		});
 
+		const unsubDjTrack = djMusicService.onTrackChanged((t) => setDjTrack(t));
+		const unsubDjState = djMusicService.onStateChanged((s) => setDjState(s));
+		const unsubDjProg = djMusicService.onProgress((pos, dur) => setDjProgress({ position: pos, duration: dur }));
+		const unsubDjLock = djMusicService.onQueueLockedChanged((l) => setDjQueueLocked(l));
+
 		return () => {
+			unsubMainTrack();
+			unsubMainState();
+			unsubMainProg();
 			unsubAdmin();
+			unsubDjTrack();
+			unsubDjState();
+			unsubDjProg();
+			unsubDjLock();
 		};
 	}, []);
 
 	if (!visible) return <></>;
 
+	const isDj = selectedStage === "dj";
+	const currentTrack = isDj ? djTrack : mainTrack;
+	const playerState = isDj ? djState : mainState;
+	const progress = isDj ? djProgress : mainProgress;
+	const isQueueLocked = isDj ? djQueueLocked : mainQueueLocked;
+	const activeService = isDj ? djMusicService : mainMusicService;
+
 	const isPlaying = playerState === MusicPlayerState.Playing;
 	const ratio = progress.duration > 0 ? math.clamp(progress.position / progress.duration, 0, 1) : 0;
-	const playlist = musicService.getDefaultPlaylist() ?? DEFAULT_SMARTPHONE_CONFIG.playlist;
+	const playlist = isDj
+		? (djMusicService.getDefaultPlaylist() ?? DEFAULT_DJ_PLAYLIST)
+		: (mainMusicService.getDefaultPlaylist() ?? DEFAULT_SMARTPHONE_CONFIG.playlist);
 
 	return (
 		<scrollingframe
@@ -69,6 +95,107 @@ export function AdminMusicTabComponent({ visible }: AdminMusicTabProps) {
 				PaddingLeft={new UDim(0, 14)}
 				PaddingRight={new UDim(0, 14)}
 			/>
+
+			{/* 0. Stage Selector Segmented Control */}
+			<frame
+				key="StageSelector"
+				LayoutOrder={0}
+				Size={new UDim2(1, 0, 0, 36)}
+				BackgroundColor3={Color3.fromHex("#161616")}
+				BackgroundTransparency={0.25}
+				ZIndex={11}
+			>
+				<uicorner CornerRadius={new UDim(0, 10)} />
+				<uistroke Color={Color3.fromHex("#282828")} Transparency={0.5} Thickness={1.1} />
+				<uilistlayout
+					FillDirection={Enum.FillDirection.Horizontal}
+					HorizontalAlignment={Enum.HorizontalAlignment.Center}
+					VerticalAlignment={Enum.VerticalAlignment.Center}
+					Padding={new UDim(0, 4)}
+				/>
+				<uipadding
+					PaddingTop={new UDim(0, 3)}
+					PaddingBottom={new UDim(0, 3)}
+					PaddingLeft={new UDim(0, 4)}
+					PaddingRight={new UDim(0, 4)}
+				/>
+
+				{/* Main Stage Button */}
+				<textbutton
+					key="BtnStageMain"
+					Size={new UDim2(0.5, -2, 1, 0)}
+					BackgroundColor3={Color3.fromHex(!isDj ? "#2c2c2c" : "#242424")}
+					BackgroundTransparency={!isDj ? 0 : 1}
+					Text=""
+					AutoButtonColor={false}
+					ZIndex={12}
+					Event={{
+						MouseButton1Click: () => setSelectedStage("main"),
+					}}
+				>
+					<uicorner CornerRadius={new UDim(0, 8)} />
+					<uilistlayout
+						FillDirection={Enum.FillDirection.Horizontal}
+						HorizontalAlignment={Enum.HorizontalAlignment.Center}
+						VerticalAlignment={Enum.VerticalAlignment.Center}
+						Padding={new UDim(0, 6)}
+					/>
+					<LucideIcon
+						name="music"
+						size={new UDim2(0, 14, 0, 14)}
+						color={Color3.fromHex(!isDj ? "#ffffff" : "#777777")}
+						zIndex={13}
+					/>
+					<textlabel
+						key="Label"
+						BackgroundTransparency={1}
+						AutomaticSize={Enum.AutomaticSize.XY}
+						Text="Main Stage"
+						TextColor3={Color3.fromHex(!isDj ? "#ffffff" : "#777777")}
+						Font={Fonts.Bold}
+						TextSize={12}
+						ZIndex={13}
+					/>
+				</textbutton>
+
+				{/* Rooftop DJ Stage Button */}
+				<textbutton
+					key="BtnStageDj"
+					Size={new UDim2(0.5, -2, 1, 0)}
+					BackgroundColor3={Color3.fromHex(isDj ? "#2c2c2c" : "#242424")}
+					BackgroundTransparency={isDj ? 0 : 1}
+					Text=""
+					AutoButtonColor={false}
+					ZIndex={12}
+					Event={{
+						MouseButton1Click: () => setSelectedStage("dj"),
+					}}
+				>
+					<uicorner CornerRadius={new UDim(0, 8)} />
+					<uilistlayout
+						FillDirection={Enum.FillDirection.Horizontal}
+						HorizontalAlignment={Enum.HorizontalAlignment.Center}
+						VerticalAlignment={Enum.VerticalAlignment.Center}
+						Padding={new UDim(0, 6)}
+					/>
+					<LucideIcon
+						name="radio"
+						size={new UDim2(0, 14, 0, 14)}
+						color={Color3.fromHex(isDj ? "#ffffff" : "#777777")}
+						zIndex={13}
+					/>
+					<textlabel
+						key="Label"
+						BackgroundTransparency={1}
+						AutomaticSize={Enum.AutomaticSize.XY}
+						Text="Rooftop DJ Stage"
+						TextColor3={Color3.fromHex(isDj ? "#ffffff" : "#777777")}
+						Font={Fonts.Bold}
+						TextSize={12}
+						ZIndex={13}
+					/>
+				</textbutton>
+			</frame>
 
 			{/* 1. Live Monitor Card */}
 			<frame
@@ -97,9 +224,9 @@ export function AdminMusicTabComponent({ visible }: AdminMusicTabProps) {
 				>
 					<textlabel
 						key="Title"
-						Size={new UDim2(0.6, 0, 1, 0)}
+						Size={new UDim2(0.65, 0, 1, 0)}
 						BackgroundTransparency={1}
-						Text="LIVE GIGS MONITOR"
+						Text={isDj ? "LIVE ROOFTOP DJ MONITOR" : "LIVE MAIN STAGE MONITOR"}
 						TextColor3={Color3.fromHex("#888888")}
 						Font={Fonts.Bold}
 						TextSize={11}
@@ -230,7 +357,7 @@ export function AdminMusicTabComponent({ visible }: AdminMusicTabProps) {
 					key="Title"
 					Size={new UDim2(1, 0, 0, 16)}
 					BackgroundTransparency={1}
-					Text="TRANSPORT CONTROLS"
+					Text={`TRANSPORT CONTROLS (${isDj ? "ROOFTOP DJ" : "MAIN STAGE"})`}
 					TextColor3={Color3.fromHex("#888888")}
 					Font={Fonts.Bold}
 					TextSize={11}
@@ -264,7 +391,7 @@ export function AdminMusicTabComponent({ visible }: AdminMusicTabProps) {
 						AutoButtonColor={false}
 						ZIndex={13}
 						Event={{
-							MouseButton1Click: () => musicService.requestPrevious(),
+							MouseButton1Click: () => activeService.requestPrevious(),
 						}}
 					>
 						<uicorner CornerRadius={new UDim(1, 0)} />
@@ -288,7 +415,7 @@ export function AdminMusicTabComponent({ visible }: AdminMusicTabProps) {
 						AutoButtonColor={false}
 						ZIndex={13}
 						Event={{
-							MouseButton1Click: () => musicService.requestPlayPause(),
+							MouseButton1Click: () => activeService.requestPlayPause(),
 						}}
 					>
 						<uicorner CornerRadius={new UDim(1, 0)} />
@@ -312,7 +439,7 @@ export function AdminMusicTabComponent({ visible }: AdminMusicTabProps) {
 						AutoButtonColor={false}
 						ZIndex={13}
 						Event={{
-							MouseButton1Click: () => musicService.requestNext(),
+							MouseButton1Click: () => activeService.requestNext(),
 						}}
 					>
 						<uicorner CornerRadius={new UDim(1, 0)} />
@@ -350,7 +477,7 @@ export function AdminMusicTabComponent({ visible }: AdminMusicTabProps) {
 					key="Title"
 					Size={new UDim2(1, 0, 0, 16)}
 					BackgroundTransparency={1}
-					Text="QUEUE GUARD (ANTI-SPAM)"
+					Text={`QUEUE GUARD - ${isDj ? "ROOFTOP DJ" : "MAIN STAGE"}`}
 					TextColor3={Color3.fromHex("#888888")}
 					Font={Fonts.Bold}
 					TextSize={11}
@@ -396,7 +523,11 @@ export function AdminMusicTabComponent({ visible }: AdminMusicTabProps) {
 						ZIndex={13}
 						Event={{
 							MouseButton1Click: () => {
-								adminService.setQueueLocked(!isQueueLocked);
+								if (isDj) {
+									djMusicService.setQueueLocked(!djQueueLocked);
+								} else {
+									adminService.setQueueLocked(!mainQueueLocked);
+								}
 							},
 						}}
 					>
@@ -453,7 +584,7 @@ export function AdminMusicTabComponent({ visible }: AdminMusicTabProps) {
 					key="Title"
 					Size={new UDim2(1, 0, 0, 18)}
 					BackgroundTransparency={1}
-					Text="SETLIST LAUNCHER"
+					Text={`SETLIST LAUNCHER (${isDj ? "ROOFTOP DJ" : "MAIN STAGE"})`}
 					TextColor3={Color3.fromHex("#888888")}
 					Font={Fonts.Bold}
 					TextSize={11}
@@ -529,7 +660,7 @@ export function AdminMusicTabComponent({ visible }: AdminMusicTabProps) {
 								ZIndex={14}
 								Event={{
 									MouseButton1Click: () => {
-										musicService.requestPlaySpecific(track);
+										activeService.requestPlaySpecific(track);
 									},
 								}}
 							>

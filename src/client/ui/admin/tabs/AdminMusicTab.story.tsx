@@ -4,7 +4,7 @@ import { AdminMusicTab } from "./AdminMusicTab";
 const story = CreateGenericStory(
 	{
 		name: "Admin Music Master Tab",
-		summary: "Tab 1: Audio Hub & Live Gigs Monitor, transport controls, setlist launcher, and queue lock",
+		summary: "Tab 1: Audio Hub - Main Stage & Rooftop DJ Stage Live Monitor, transport controls, queue guard, and setlist launcher",
 		controls: {},
 	},
 	(props) => {

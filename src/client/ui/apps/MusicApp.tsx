@@ -87,6 +87,16 @@ export function MusicComponent({ visible, onBack }: MusicComponentProps) {
 		};
 	}, [selectedStage]);
 
+	// Auto-switch between Main Stage and DJ Stage based on player's physical zone
+	useEffect(() => {
+		const unsubZone = ZoneAudioController.getInstance().onZoneChanged((inDj) => {
+			setSelectedStage(inDj ? "dj" : "main");
+		});
+		return () => {
+			unsubZone();
+		};
+	}, []);
+
 	const updateVolumeFromInput = (inputX: number) => {
 		const track = volumeTrackRef.current;
 		if (!track) return;
@@ -312,120 +322,88 @@ export function MusicComponent({ visible, onBack }: MusicComponentProps) {
 				<textlabel
 					key="Title"
 					Position={new UDim2(0, 48, 0, 0)}
-					Size={new UDim2(1, -96, 1, 0)}
+					Size={new UDim2(1, -196, 1, 0)}
 					BackgroundTransparency={1}
 					Text={showQueue ? (queueTab === "queue" ? "Queue" : "Request") : "Now Playing"}
 					TextColor3={Color3.fromHex("#ffffff")}
 					Font={Fonts.Bold}
 					TextSize={14}
+					TextXAlignment={Enum.TextXAlignment.Left}
 					ZIndex={10}
 				/>
-			</frame>
 
-			{/* Stage Switcher (Main Stage vs DJ Stage) */}
-			<frame
-				key="StageSwitcherContainer"
-				Position={new UDim2(0, 0, 0, 52)}
-				Size={new UDim2(1, 0, 0, 42)}
-				BackgroundColor3={Color3.fromHex("#0c0c0c")}
-				BackgroundTransparency={0}
-				ZIndex={9}
-			>
-				<frame
-					key="StageSegmented"
-					AnchorPoint={new Vector2(0.5, 0.5)}
-					Position={new UDim2(0.5, 0, 0.5, 0)}
-					Size={new UDim2(1, -24, 0, 32)}
-					BackgroundColor3={Color3.fromHex("#161616")}
+				{/* Quick Audio Refresh Button */}
+				<textbutton
+					key="RefreshAudioBtn"
+					AnchorPoint={new Vector2(1, 0.5)}
+					Position={new UDim2(1, selectedStage === "dj" ? -102 : -108, 0.5, 0)}
+					Size={new UDim2(0, 26, 0, 26)}
+					BackgroundColor3={Color3.fromHex("#1a1a1a")}
+					Text=""
+					AutoButtonColor={false}
 					ZIndex={10}
+					Event={{
+						Activated: () => {
+							activeMusicService.refreshAudio();
+							GlobalNotificationService.getInstance().show({
+								title: "Audio Disinkronkan",
+								message: `Memuat ulang audio ${selectedStage === "dj" ? "DJ Stage" : "Main Stage"}...`,
+								badgeIcon: "refresh-cw",
+								badgeColor: Color3.fromHex("#1db954"),
+								soundId: false,
+							});
+						},
+					}}
 				>
 					<uicorner CornerRadius={new UDim(0, 8)} />
-					<uistroke Color={Color3.fromHex("#262626")} Thickness={1} />
-					<uipadding
-						PaddingTop={new UDim(0, 2)}
-						PaddingBottom={new UDim(0, 2)}
-						PaddingLeft={new UDim(0, 2)}
-						PaddingRight={new UDim(0, 2)}
+					<uistroke Color={Color3.fromHex("#2a2a2a")} Thickness={1} />
+					<LucideIcon
+						name="rotate-cw"
+						size={new UDim2(0, 13, 0, 13)}
+						anchorPoint={new Vector2(0.5, 0.5)}
+						position={new UDim2(0.5, 0, 0.5, 0)}
+						color={Color3.fromHex("#cccccc")}
+						zIndex={11}
 					/>
+				</textbutton>
 
-					{/* Tab 1: Main Stage */}
-					<textbutton
-						key="TabMainStage"
-						Position={new UDim2(0, 0, 0, 0)}
-						Size={new UDim2(0.5, -2, 1, 0)}
-						BackgroundColor3={selectedStage === "main" ? Color3.fromHex("#ffffff") : Color3.fromHex("#161616")}
-						BackgroundTransparency={selectedStage === "main" ? 0 : 1}
-						Text=""
-						AutoButtonColor={false}
+				{/* Contextual Zone Badge (Auto-updates based on player location) */}
+				<frame
+					key="ZoneBadge"
+					AnchorPoint={new Vector2(1, 0.5)}
+					Position={new UDim2(1, -12, 0.5, 0)}
+					Size={new UDim2(0, selectedStage === "dj" ? 84 : 90, 0, 24)}
+					BackgroundColor3={selectedStage === "dj" ? Color3.fromHex("#181424") : Color3.fromHex("#121c15")}
+					ZIndex={10}
+				>
+					<uicorner CornerRadius={new UDim(0, 12)} />
+					<uistroke
+						Color={selectedStage === "dj" ? Color3.fromHex("#9333ea") : Color3.fromHex("#16a34a")}
+						Transparency={0.6}
+						Thickness={1}
+					/>
+					<uilistlayout
+						FillDirection={Enum.FillDirection.Horizontal}
+						HorizontalAlignment={Enum.HorizontalAlignment.Center}
+						VerticalAlignment={Enum.VerticalAlignment.Center}
+						Padding={new UDim(0, 5)}
+					/>
+					<LucideIcon
+						name={selectedStage === "dj" ? "headphones" : "disc-3"}
+						size={new UDim2(0, 11, 0, 11)}
+						color={selectedStage === "dj" ? Color3.fromHex("#c084fc") : Color3.fromHex("#4ade80")}
+						zIndex={11}
+					/>
+					<textlabel
+						key="ZoneText"
+						BackgroundTransparency={1}
+						AutomaticSize={Enum.AutomaticSize.XY}
+						Text={selectedStage === "dj" ? "DJ Stage" : "Main Stage"}
+						TextColor3={selectedStage === "dj" ? Color3.fromHex("#c084fc") : Color3.fromHex("#4ade80")}
+						Font={Fonts.Bold}
+						TextSize={10}
 						ZIndex={11}
-						Event={{
-							Activated: () => setSelectedStage("main"),
-						}}
-					>
-						<uicorner CornerRadius={new UDim(0, 6)} />
-						<uilistlayout
-							FillDirection={Enum.FillDirection.Horizontal}
-							HorizontalAlignment={Enum.HorizontalAlignment.Center}
-							VerticalAlignment={Enum.VerticalAlignment.Center}
-							Padding={new UDim(0, 6)}
-						/>
-						<LucideIcon
-							name="disc-3"
-							size={new UDim2(0, 13, 0, 13)}
-							color={selectedStage === "main" ? Color3.fromHex("#000000") : Color3.fromHex("#888888")}
-							zIndex={12}
-						/>
-						<textlabel
-							key="Label"
-							BackgroundTransparency={1}
-							AutomaticSize={Enum.AutomaticSize.XY}
-							Text="Main Stage"
-							TextColor3={selectedStage === "main" ? Color3.fromHex("#000000") : Color3.fromHex("#888888")}
-							Font={Fonts.Bold}
-							TextSize={11}
-							ZIndex={12}
-						/>
-					</textbutton>
-
-					{/* Tab 2: DJ Stage */}
-					<textbutton
-						key="TabDjStage"
-						AnchorPoint={new Vector2(1, 0)}
-						Position={new UDim2(1, 0, 0, 0)}
-						Size={new UDim2(0.5, -2, 1, 0)}
-						BackgroundColor3={selectedStage === "dj" ? Color3.fromHex("#ffffff") : Color3.fromHex("#161616")}
-						BackgroundTransparency={selectedStage === "dj" ? 0 : 1}
-						Text=""
-						AutoButtonColor={false}
-						ZIndex={11}
-						Event={{
-							Activated: () => setSelectedStage("dj"),
-						}}
-					>
-						<uicorner CornerRadius={new UDim(0, 6)} />
-						<uilistlayout
-							FillDirection={Enum.FillDirection.Horizontal}
-							HorizontalAlignment={Enum.HorizontalAlignment.Center}
-							VerticalAlignment={Enum.VerticalAlignment.Center}
-							Padding={new UDim(0, 6)}
-						/>
-						<LucideIcon
-							name="headphones"
-							size={new UDim2(0, 13, 0, 13)}
-							color={selectedStage === "dj" ? Color3.fromHex("#000000") : Color3.fromHex("#888888")}
-							zIndex={12}
-						/>
-						<textlabel
-							key="Label"
-							BackgroundTransparency={1}
-							AutomaticSize={Enum.AutomaticSize.XY}
-							Text="Stage DJ"
-							TextColor3={selectedStage === "dj" ? Color3.fromHex("#000000") : Color3.fromHex("#888888")}
-							Font={Fonts.Bold}
-							TextSize={11}
-							ZIndex={12}
-						/>
-					</textbutton>
+					/>
 				</frame>
 			</frame>
 
@@ -433,8 +411,8 @@ export function MusicComponent({ visible, onBack }: MusicComponentProps) {
 			{!showQueue ? (
 				<frame
 					key="PlayerBody"
-					Position={new UDim2(0, 0, 0, 94)}
-					Size={new UDim2(1, 0, 1, -94)}
+					Position={new UDim2(0, 0, 0, 52)}
+					Size={new UDim2(1, 0, 1, -52)}
 					BackgroundTransparency={1}
 					ZIndex={9}
 				>
@@ -729,8 +707,8 @@ export function MusicComponent({ visible, onBack }: MusicComponentProps) {
 				/* Queue & Song Request Screen */
 				<frame
 					key="QueueContainer"
-					Position={new UDim2(0, 0, 0, 94)}
-					Size={new UDim2(1, 0, 1, -94)}
+					Position={new UDim2(0, 0, 0, 52)}
+					Size={new UDim2(1, 0, 1, -52)}
 					BackgroundTransparency={1}
 					ZIndex={9}
 				>

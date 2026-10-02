@@ -17,6 +17,7 @@ import {
 	ServerSeatService,
 	ServerAfkService,
 	ServerDjMusicService,
+	ServerElevatorService,
 } from "./services";
 
 /**
@@ -61,6 +62,9 @@ function main() {
 
 	const seatService = ServerSeatService.getInstance();
 	seatService.init();
+
+	const elevatorService = ServerElevatorService.getInstance();
+	elevatorService.init();
 
 	ServerMusicService.getInstance();
 	ServerDjMusicService.getInstance();

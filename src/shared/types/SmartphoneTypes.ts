@@ -45,6 +45,15 @@ export interface TrackData {
 	 * Nilai langsung Sound.PlaybackSpeed (misal: 0.89). Alternatif langsung dari prop speed.
 	 */
 	playbackSpeed?: number;
+	/**
+	 * Nilai atenuasi/amplifikasi desibel saat bypass (misal: -4 untuk -4 dB).
+	 * Client otomatis mengompensasi gain sebaliknya (+4 dB = ~1.585x) agar volume kembali normal 100%.
+	 */
+	amplification?: number;
+	/**
+	 * Pengali volume kustom per lagu (misal: 1.5 untuk +50% volume lebih keras).
+	 */
+	volume?: number;
 	/** Beats per minute untuk sinkronisasi panggung konser & lighting (default 128 jika tidak disetel). */
 	bpm?: number;
 	/** Offset waktu (dalam detik) sampai ketukan pertama/downbeat lagu terdengar (default 0). */
@@ -188,6 +197,7 @@ export interface GlobalMusicSyncData {
 	timePosition: number;
 	serverTimestamp: number;
 	queue: MusicQueueItem[];
+	isQueueLocked?: boolean;
 }
 
 /** Result when a player requests to queue a song. */

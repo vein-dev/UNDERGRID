@@ -53,6 +53,27 @@ export class MusicPlayerService {
 
 	private lastServerTimePosition = 0;
 	private lastServerTimestamp = 0;
+	private userMasterVolume = 0.5;
+	private currentPhysicalVolume = 0.5;
+
+	/**
+	 * Menghitung pengali volume untuk mengompensasi atenuasi desibel bypass (-4 dB = 1.585x)
+	 * atau menggunakan konfigurasi volume/amplification kustom dari TrackData.
+	 */
+	public getTrackVolumeMultiplier(track?: TrackData): number {
+		if (!track) return 1.0;
+		if (track.volume !== undefined && track.volume > 0) {
+			return track.volume;
+		}
+		if (track.amplification !== undefined) {
+			return math.pow(10, -track.amplification / 20);
+		}
+		// Default otomatis untuk lagu hasil bypass kecepatan (standar tool bypass: -4 dB)
+		if (track.speed !== undefined && track.speed > 1) {
+			return 1.585; // +4 dB kompensasi penuh (10^(4/20) ≈ 1.585)
+		}
+		return 1.0;
+	}
 
 	private constructor(config: SmartphoneConfig) {
 		this.config = config;
@@ -253,10 +274,11 @@ export class MusicPlayerService {
 			this.pitchEffect.Enabled = false;
 		}
 
-		// Apply equalizer compensation if explicitly configured or gentle default if pitchShift is active
+		// Apply equalizer compensation if explicitly configured or gentle default if pitchShift/speed bypass is active
 		const isPitchShiftActive = this.pitchEffect.Enabled;
+		const isSpeedBypassed = track?.speed !== undefined && track.speed > 1;
 		const defaultBassBoost = isPitchShiftActive ? 1 : 0;
-		const defaultTrebleBoost = isPitchShiftActive ? 2 : 0;
+		const defaultTrebleBoost = isSpeedBypassed ? 2.5 : (isPitchShiftActive ? 2 : 0);
 
 		const bassBoost = track.bassBoost ?? defaultBassBoost;
 		const trebleBoost = track.trebleBoost ?? defaultTrebleBoost;
@@ -270,6 +292,9 @@ export class MusicPlayerService {
 			this.equalizerEffect.HighGain = 0;
 			this.equalizerEffect.Enabled = false;
 		}
+
+		// Segarkan volume fisik dengan pengali gain lagu saat ini
+		this.setPhysicalVolume(this.currentPhysicalVolume);
 	}
 
 	private initProgressLoop(): void {
@@ -304,7 +329,9 @@ export class MusicPlayerService {
 	}
 
 	public requestSeek(position: number): void {
-		this.controlEvent.FireServer(MusicControlAction.Seek, position);
+		const speedMultiplier = this.getSpeedMultiplier();
+		const actualPosition = speedMultiplier > 0 ? position / speedMultiplier : position;
+		this.controlEvent.FireServer(MusicControlAction.Seek, actualPosition);
 	}
 
 	public requestPlaySpecific(track: TrackData): void {
@@ -349,10 +376,16 @@ export class MusicPlayerService {
 		}
 	}
 
+	public setPhysicalVolume(volume: number): void {
+		this.currentPhysicalVolume = math.clamp(volume, 0, 1);
+		const mult = this.getTrackVolumeMultiplier(this.currentTrack);
+		this.sound.Volume = math.clamp(this.currentPhysicalVolume * mult, 0, 10);
+	}
+
 	public setVolume(volume: number): void {
-		const clamped = math.clamp(volume, 0, 1);
-		this.sound.Volume = clamped;
-		for (const cb of this.volumeChangedCallbacks) cb(clamped);
+		this.userMasterVolume = math.clamp(volume, 0, 1);
+		this.setPhysicalVolume(this.userMasterVolume);
+		for (const cb of this.volumeChangedCallbacks) cb(this.userMasterVolume);
 	}
 
 	// ─── Getters ──────────────────────────────────────────────────────────────
@@ -382,7 +415,7 @@ export class MusicPlayerService {
 	}
 
 	public getVolume(): number {
-		return this.sound.Volume;
+		return this.userMasterVolume;
 	}
 
 	public getDefaultPlaylist(): TrackData[] {
@@ -443,9 +476,20 @@ export class MusicPlayerService {
 		for (const cb of this.stateChangedCallbacks) cb(state);
 	}
 
+	private getSpeedMultiplier(): number {
+		if (this.currentTrack?.speed !== undefined && this.currentTrack.speed > 0) {
+			return this.currentTrack.speed;
+		}
+		if (this.currentTrack?.playbackSpeed !== undefined && this.currentTrack.playbackSpeed > 0) {
+			return 1 / this.currentTrack.playbackSpeed;
+		}
+		return 1.0;
+	}
+
 	private emitProgress(): void {
-		const pos = this.sound.TimePosition;
-		const dur = this.sound.TimeLength;
+		const speedMultiplier = this.getSpeedMultiplier();
+		const pos = this.sound.TimePosition * speedMultiplier;
+		const dur = this.sound.TimeLength * speedMultiplier;
 		for (const cb of this.progressCallbacks) cb(pos, dur);
 	}
 

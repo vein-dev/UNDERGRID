@@ -16,6 +16,7 @@ type StateChangedCallback = (state: MusicPlayerState) => void;
 type ProgressCallback = (position: number, duration: number) => void;
 type QueueUpdatedCallback = (queue: MusicQueueItem[]) => void;
 type VolumeChangedCallback = (volume: number) => void;
+type QueueLockedChangedCallback = (locked: boolean) => void;
 
 /**
  * DjMusicPlayerService
@@ -30,6 +31,7 @@ export class DjMusicPlayerService {
 	private currentTrack: TrackData;
 	private state: MusicPlayerState = MusicPlayerState.Idle;
 	private queue: MusicQueueItem[] = [];
+	private isQueueLocked = false;
 	private sound!: Sound;
 	private pitchEffect!: PitchShiftSoundEffect;
 	private equalizerEffect!: EqualizerSoundEffect;
@@ -48,10 +50,31 @@ export class DjMusicPlayerService {
 	private progressCallbacks: ProgressCallback[] = [];
 	private queueUpdatedCallbacks: QueueUpdatedCallback[] = [];
 	private volumeChangedCallbacks: VolumeChangedCallback[] = [];
+	private queueLockedCallbacks: QueueLockedChangedCallback[] = [];
 
 	private lastServerTimePosition = 0;
 	private lastServerTimestamp = 0;
 	private userMasterVolume = 1.0;
+	private currentPhysicalVolume = 0.0;
+
+	/**
+	 * Menghitung pengali volume untuk mengompensasi atenuasi desibel bypass (-4 dB = 1.585x)
+	 * atau menggunakan konfigurasi volume/amplification kustom dari TrackData.
+	 */
+	public getTrackVolumeMultiplier(track?: TrackData): number {
+		if (!track) return 1.0;
+		if (track.volume !== undefined && track.volume > 0) {
+			return track.volume;
+		}
+		if (track.amplification !== undefined) {
+			return math.pow(10, -track.amplification / 20);
+		}
+		// Default otomatis untuk lagu hasil bypass kecepatan (standar tool bypass: -4 dB)
+		if (track.speed !== undefined && track.speed > 1) {
+			return 1.585; // +4 dB kompensasi penuh (10^(4/20) ≈ 1.585)
+		}
+		return 1.0;
+	}
 
 	private constructor(playlist: TrackData[] = DEFAULT_DJ_PLAYLIST) {
 		this.playlist = playlist;
@@ -130,46 +153,85 @@ export class DjMusicPlayerService {
 		this.applyTrackAudioCorrection(this.currentTrack);
 	}
 
-	private applyTrackAudioCorrection(track?: TrackData): void {
-		if (!this.sound || !track) return;
+	/**
+	 * Manually refreshes and resyncs the DJ audio playback.
+	 * Re-creates the local Sound instance and requests fresh server synchronization.
+	 */
+	public refreshAudio(): void {
+		print("[DjMusicPlayerService] User triggered DJ audio refresh. Recreating sound instance...");
+		const currentVol = this.currentPhysicalVolume;
+		this.setupSoundInstance(currentVol);
 
-		const mode = track.pitchCorrectionMode ?? "pitchShift";
-
-		if (mode === "playbackSpeed") {
-			const desiredSpeed =
-				track.playbackSpeed !== undefined
-					? track.playbackSpeed
-					: track.speed !== undefined && track.speed > 0
-						? 1 / track.speed
-						: 1.0;
-
-			this.sound.PlaybackSpeed = desiredSpeed;
-			if (this.pitchEffect) this.pitchEffect.Enabled = false;
-			if (this.equalizerEffect) this.equalizerEffect.Enabled = false;
-		} else {
-			this.sound.PlaybackSpeed = 1.0;
-
-			if (track.pitch !== undefined && track.pitch !== 0) {
-				const semitoneRatio = 2 ** (-track.pitch / 12);
-				this.pitchEffect.Octave = math.clamp(semitoneRatio, 0.5, 2.0);
-				this.pitchEffect.Enabled = true;
-			} else {
-				this.pitchEffect.Octave = 1.0;
-				this.pitchEffect.Enabled = false;
-			}
-
-			const hasBass = track.bassBoost !== undefined && track.bassBoost !== 0;
-			const hasTreble = track.trebleBoost !== undefined && track.trebleBoost !== 0;
-
-			if (hasBass || hasTreble) {
-				this.equalizerEffect.LowGain = track.bassBoost ?? 0;
-				this.equalizerEffect.HighGain = track.trebleBoost ?? 0;
-				this.equalizerEffect.MidGain = 0;
-				this.equalizerEffect.Enabled = true;
-			} else {
-				this.equalizerEffect.Enabled = false;
+		if (this.currentTrack) {
+			this.sound.SoundId = this.currentTrack.soundId;
+			this.applyTrackAudioCorrection(this.currentTrack);
+			if (this.state === MusicPlayerState.Playing) {
+				const expected = this.getEstimatedServerPosition();
+				if (this.sound.IsLoaded && this.sound.TimeLength > 0) {
+					this.sound.TimePosition = math.clamp(expected, 0, this.sound.TimeLength);
+				}
+				this.sound.Play();
 			}
 		}
+
+		// Ensure current physical volume is restored with track gain compensation
+		this.setPhysicalVolume(this.currentPhysicalVolume);
+
+		// Request fresh sync from server
+		this.syncEvent.FireServer("RequestSync");
+		print("[DjMusicPlayerService] DJ audio refreshed successfully and server resync requested.");
+	}
+
+	private applyTrackAudioCorrection(track?: TrackData): void {
+		if (!this.sound) return;
+		if (!track) {
+			this.sound.PlaybackSpeed = 1.0;
+			if (this.pitchEffect) this.pitchEffect.Enabled = false;
+			if (this.equalizerEffect) this.equalizerEffect.Enabled = false;
+			return;
+		}
+
+		const semitones = track.pitch ?? 0;
+		const mode = track.pitchCorrectionMode ?? "pitchShift";
+
+		// 1. Konfigurasi PlaybackSpeed (resampling / koreksi tempo upload)
+		if (track.playbackSpeed !== undefined) {
+			this.sound.PlaybackSpeed = track.playbackSpeed;
+		} else if (track.speed !== undefined && track.speed !== 1) {
+			this.sound.PlaybackSpeed = 1 / track.speed;
+		} else if (semitones !== 0 && mode === "playbackSpeed") {
+			// Mode pure resampling menggunakan semitones
+			this.sound.PlaybackSpeed = math.pow(2, -semitones / 12);
+		} else {
+			this.sound.PlaybackSpeed = 1.0;
+		}
+
+		// 2. Konfigurasi PitchShiftSoundEffect (jika semitone disetel dan bukan mode resampling murni)
+		if (semitones !== 0 && mode !== "playbackSpeed") {
+			this.pitchEffect.Octave = math.clamp(math.pow(2, -semitones / 12), 0.5, 2.0);
+			this.pitchEffect.Enabled = true;
+		} else {
+			this.pitchEffect.Octave = 1.0;
+			this.pitchEffect.Enabled = false;
+		}
+
+		// 3. Konfigurasi Equalizer boost (mengembalikan kerenyahan nada tinggi yang hilang akibat perlambatan pitch)
+		const isSpeedBypassed = track.speed !== undefined && track.speed > 1;
+		const defaultTrebleBoost = isSpeedBypassed ? 2.5 : 0;
+		const bass = track.bassBoost ?? 0;
+		const treble = track.trebleBoost ?? defaultTrebleBoost;
+
+		if (bass !== 0 || treble !== 0) {
+			this.equalizerEffect.LowGain = bass;
+			this.equalizerEffect.HighGain = treble;
+			this.equalizerEffect.MidGain = 0;
+			this.equalizerEffect.Enabled = true;
+		} else {
+			this.equalizerEffect.Enabled = false;
+		}
+
+		// Segarkan volume fisik dengan pengali gain lagu saat ini
+		this.setPhysicalVolume(this.currentPhysicalVolume);
 	}
 
 	private initNetworkSync(): void {
@@ -203,10 +265,17 @@ export class DjMusicPlayerService {
 			this.sound.SoundId = data.currentTrack.soundId;
 			this.applyTrackAudioCorrection(data.currentTrack);
 			for (const cb of this.trackChangedCallbacks) cb(this.currentTrack);
+		} else {
+			this.applyTrackAudioCorrection(data.currentTrack);
 		}
 
 		for (const cb of this.queueUpdatedCallbacks) cb(this.queue);
 		for (const cb of this.stateChangedCallbacks) cb(this.state);
+
+		if (data.isQueueLocked !== undefined && data.isQueueLocked !== this.isQueueLocked) {
+			this.isQueueLocked = data.isQueueLocked;
+			for (const cb of this.queueLockedCallbacks) cb(this.isQueueLocked);
+		}
 
 		if (this.state === MusicPlayerState.Playing) {
 			const expectedPosition = this.getEstimatedServerPosition();
@@ -232,6 +301,17 @@ export class DjMusicPlayerService {
 		}
 	}
 
+	private getSpeedMultiplier(): number {
+		if (!this.currentTrack) return 1.0;
+		if (this.currentTrack.speed !== undefined && this.currentTrack.speed > 0) {
+			return this.currentTrack.speed;
+		}
+		if (this.currentTrack.playbackSpeed !== undefined && this.currentTrack.playbackSpeed > 0) {
+			return 1 / this.currentTrack.playbackSpeed;
+		}
+		return 1.0;
+	}
+
 	private initProgressLoop(): void {
 		let lastUpdate = 0;
 		this.heartbeatConn = RunService.Heartbeat.Connect(() => {
@@ -240,8 +320,11 @@ export class DjMusicPlayerService {
 			lastUpdate = now;
 
 			if (this.state === MusicPlayerState.Playing && this.sound && this.sound.IsPlaying) {
+				const mult = this.getSpeedMultiplier();
+				const displayPos = this.sound.TimePosition * mult;
+				const displayDur = this.sound.TimeLength * mult;
 				for (const cb of this.progressCallbacks) {
-					cb(this.sound.TimePosition, this.sound.TimeLength);
+					cb(displayPos, displayDur);
 				}
 			}
 		});
@@ -299,16 +382,52 @@ export class DjMusicPlayerService {
 	}
 
 	public seek(position: number): void {
-		this.control(MusicControlAction.Seek, position);
+		const mult = this.getSpeedMultiplier();
+		const soundPos = mult > 0 ? position / mult : position;
+		this.control(MusicControlAction.Seek, soundPos);
 	}
 
 	public playSpecific(track: TrackData): void {
 		this.control(MusicControlAction.PlaySpecific, track);
 	}
 
+	public requestPlayPause(): void {
+		this.togglePlayPause();
+	}
+
+	public requestNext(): void {
+		this.next();
+	}
+
+	public requestPrevious(): void {
+		this.previous();
+	}
+
+	public requestPlaySpecific(track: TrackData): void {
+		this.playSpecific(track);
+	}
+
+	public setQueueLocked(locked: boolean): void {
+		this.control("SetQueueLocked" as MusicControlAction, locked);
+	}
+
+	public getIsQueueLocked(): boolean {
+		return this.isQueueLocked;
+	}
+
+	public onQueueLockedChanged(cb: QueueLockedChangedCallback): () => void {
+		this.queueLockedCallbacks.push(cb);
+		return () => {
+			const idx = this.queueLockedCallbacks.indexOf(cb);
+			if (idx !== -1) this.queueLockedCallbacks.remove(idx);
+		};
+	}
+
 	public setPhysicalVolume(volume: number): void {
+		this.currentPhysicalVolume = math.clamp(volume, 0, 1);
 		if (this.sound) {
-			this.sound.Volume = math.clamp(volume, 0, 1);
+			const mult = this.getTrackVolumeMultiplier(this.currentTrack);
+			this.sound.Volume = math.clamp(this.currentPhysicalVolume * mult, 0, 10);
 		}
 	}
 

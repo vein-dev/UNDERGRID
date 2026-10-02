@@ -15,6 +15,8 @@ export class ZoneAudioController {
 
 	private isInitialized = false;
 	private heartbeatConn?: RBXScriptConnection;
+	private zoneChangedCallbacks: ((inDjArea: boolean) => void)[] = [];
+	private lastInDjArea?: boolean;
 
 	private currentMainVolume = 1.0;
 	private currentDjVolume = 0.0;
@@ -64,6 +66,12 @@ export class ZoneAudioController {
 		if (!localPlayer) return;
 
 		const inDjArea = isPlayerInDjArea(localPlayer);
+		if (this.lastInDjArea === undefined || inDjArea !== this.lastInDjArea) {
+			this.lastInDjArea = inDjArea;
+			for (const cb of this.zoneChangedCallbacks) {
+				cb(inDjArea);
+			}
+		}
 
 		// Target volume berdasarkan zona
 		const targetMain = inDjArea ? 0.0 : this.userMasterVolume;
@@ -75,21 +83,27 @@ export class ZoneAudioController {
 		this.currentMainVolume = this.currentMainVolume + (targetMain - this.currentMainVolume) * lerpFactor;
 		this.currentDjVolume = this.currentDjVolume + (targetDj - this.currentDjVolume) * lerpFactor;
 
-		// Terapkan volume fisik ke sound instances
+		// Terapkan volume fisik ke sound instances (memperhitungkan kompensasi gain lagu bypass)
 		const mainMusic = MusicPlayerService.getInstance();
 		const djMusic = DjMusicPlayerService.getInstance();
 
-		const mainSound = mainMusic.getSoundInstance();
-		if (mainSound) {
-			mainSound.Volume = math.clamp(this.currentMainVolume, 0, 1);
-		}
-
+		mainMusic.setPhysicalVolume(this.currentMainVolume);
 		djMusic.setPhysicalVolume(this.currentDjVolume);
 	}
 
 	public getIsInDjArea(): boolean {
 		const localPlayer = Players.LocalPlayer;
 		return localPlayer ? isPlayerInDjArea(localPlayer) : false;
+	}
+
+	public onZoneChanged(cb: (inDjArea: boolean) => void): () => void {
+		this.zoneChangedCallbacks.push(cb);
+		return () => {
+			const idx = this.zoneChangedCallbacks.indexOf(cb);
+			if (idx !== -1) {
+				this.zoneChangedCallbacks.remove(idx);
+			}
+		};
 	}
 
 	public setMasterVolume(vol: number): void {

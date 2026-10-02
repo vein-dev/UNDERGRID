@@ -68,6 +68,16 @@ export class ServerDjMusicService {
 		return ServerDjMusicService.instance;
 	}
 
+	private getTrackPlaybackSpeed(track?: TrackData): number {
+		if (!track) return 1.0;
+		if (track.playbackSpeed !== undefined) return track.playbackSpeed;
+		if (track.speed !== undefined && track.speed !== 1) return 1 / track.speed;
+		if (track.pitch !== undefined && track.pitch !== 0 && track.pitchCorrectionMode === "playbackSpeed") {
+			return math.pow(2, -track.pitch / 12);
+		}
+		return 1.0;
+	}
+
 	private init(): void {
 		this.sound.Ended.Connect(() => {
 			this.onTrackEnded();
@@ -78,7 +88,8 @@ export class ServerDjMusicService {
 			while (true) {
 				task.wait(1);
 				if (this.state === MusicPlayerState.Playing && this.currentTrack) {
-					const elapsed = Workspace.GetServerTimeNow() - this.playbackStartedTimestamp;
+					const speed = this.getTrackPlaybackSpeed(this.currentTrack);
+					const elapsed = (Workspace.GetServerTimeNow() - this.playbackStartedTimestamp) * speed;
 					const maxTrackDuration = this.sound.TimeLength > 0 ? this.sound.TimeLength : 180;
 					if (elapsed >= maxTrackDuration) {
 						warn(
@@ -148,21 +159,24 @@ export class ServerDjMusicService {
 	public play(): void {
 		if (!this.currentTrack) return;
 
+		const speed = this.getTrackPlaybackSpeed(this.currentTrack);
 		this.sound.SoundId = this.currentTrack.soundId;
+		this.sound.PlaybackSpeed = speed;
 		this.sound.TimePosition = this.pausedPosition;
 		this.sound.Play();
 
 		this.state = MusicPlayerState.Playing;
-		this.playbackStartedTimestamp = Workspace.GetServerTimeNow() - this.pausedPosition;
+		this.playbackStartedTimestamp = Workspace.GetServerTimeNow() - (this.pausedPosition / speed);
 
 		this.broadcastSync();
-		print(`[ServerDjMusicService] Now Playing: ${this.currentTrack.title} (${this.currentTrack.soundId})`);
+		print(`[ServerDjMusicService] Now Playing: ${this.currentTrack.title} (${this.currentTrack.soundId}) at ${speed}x`);
 	}
 
 	public pause(): void {
 		if (this.state !== MusicPlayerState.Playing) return;
 
-		this.pausedPosition = Workspace.GetServerTimeNow() - this.playbackStartedTimestamp;
+		const speed = this.getTrackPlaybackSpeed(this.currentTrack);
+		this.pausedPosition = math.max(0, (Workspace.GetServerTimeNow() - this.playbackStartedTimestamp) * speed);
 		this.sound.Pause();
 		this.state = MusicPlayerState.Paused;
 
@@ -206,7 +220,8 @@ export class ServerDjMusicService {
 		this.pausedPosition = math.max(0, timePosition);
 		if (this.state === MusicPlayerState.Playing) {
 			this.sound.TimePosition = this.pausedPosition;
-			this.playbackStartedTimestamp = Workspace.GetServerTimeNow() - this.pausedPosition;
+			const speed = this.getTrackPlaybackSpeed(this.currentTrack);
+			this.playbackStartedTimestamp = Workspace.GetServerTimeNow() - (this.pausedPosition / speed);
 		}
 		this.broadcastSync();
 	}
@@ -258,6 +273,13 @@ export class ServerDjMusicService {
 				const track = args[0] as TrackData;
 				if (typeIs(track, "table") && track.soundId) {
 					this.playSpecificTrack(track);
+				}
+				break;
+			}
+			case "SetQueueLocked" as MusicControlAction: {
+				const locked = args[0] as boolean;
+				if (typeIs(locked, "boolean")) {
+					this.setQueueLocked(locked);
 				}
 				break;
 			}
@@ -351,9 +373,10 @@ export class ServerDjMusicService {
 	}
 
 	public getSyncData(): GlobalMusicSyncData {
+		const speed = this.getTrackPlaybackSpeed(this.currentTrack);
 		const elapsed =
 			this.state === MusicPlayerState.Playing
-				? Workspace.GetServerTimeNow() - this.playbackStartedTimestamp
+				? (Workspace.GetServerTimeNow() - this.playbackStartedTimestamp) * speed
 				: this.pausedPosition;
 
 		return {
@@ -362,6 +385,7 @@ export class ServerDjMusicService {
 			timePosition: math.max(0, elapsed),
 			serverTimestamp: Workspace.GetServerTimeNow(),
 			queue: this.queue,
+			isQueueLocked: this.isQueueLocked,
 		};
 	}
 

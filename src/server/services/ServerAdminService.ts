@@ -1,8 +1,9 @@
-import { Players, RunService, ServerStorage, TeleportService, TextChatService } from "@rbxts/services";
-import { isPlayerAdmin, isPlayerOwner } from "shared/config";
+import { DataStoreService, Players, RunService, ServerStorage, TeleportService, TextChatService } from "@rbxts/services";
+import { isPlayerAdmin, isPlayerOwner, AdminConfig } from "shared/config";
 import { getRemoteEvent, getRemoteFunction } from "shared/network";
 import {
 	AdminStateSync,
+	BanRecord,
 	PlayerEntryInfo,
 	StageCameraControlPayload,
 	StageLightingControlPayload,
@@ -18,7 +19,7 @@ import { ServerAfkService } from "./ServerAfkService";
  * - Stage lighting visual effects
  * - Push announcements broadcast to all players
  * - Gigs music queue guard (Lock & Clear)
- * - Player management (Teleport To & Bring)
+ * - Player management (Teleport To, Bring, Kick, Ban, Unban)
  */
 export class ServerAdminService {
 	private static instance?: ServerAdminService;
@@ -29,6 +30,11 @@ export class ServerAdminService {
 	private adminAnnouncementBroadcast: RemoteEvent;
 	private adminStateUpdatedEvent: RemoteEvent;
 	private adminFlyToggleEvent: RemoteEvent;
+	private adminBansUpdatedEvent: RemoteEvent;
+
+	// Moderation Ban Storage
+	private banDataStore?: DataStore;
+	private bannedPlayers = new Map<number, BanRecord>();
 
 	// Cooldown tracker untuk public !re
 	private playerLastRefreshTimestamps = new Map<number, number>();
@@ -57,7 +63,9 @@ export class ServerAdminService {
 		this.adminAnnouncementBroadcast = getRemoteEvent("AdminAnnouncementBroadcast");
 		this.adminStateUpdatedEvent = getRemoteEvent("AdminStateUpdatedEvent");
 		this.adminFlyToggleEvent = getRemoteEvent("AdminFlyToggleEvent");
+		this.adminBansUpdatedEvent = getRemoteEvent("AdminBansUpdatedEvent");
 
+		this.initDataStore();
 		this.initRemotes();
 		this.initTextChatService();
 	}
@@ -70,10 +78,13 @@ export class ServerAdminService {
 	}
 
 	private initRemotes(): void {
-		// Handle admin state query & player list
-		this.adminQueryFunction.OnServerInvoke = (player: Player) => {
+		// Handle admin state query & player list & banned list
+		this.adminQueryFunction.OnServerInvoke = (player: Player, queryType?: unknown) => {
 			if (!isPlayerAdmin(player)) {
 				return undefined;
+			}
+			if (queryType === "GetBannedList") {
+				return this.getBannedList();
 			}
 			return this.getFullState();
 		};
@@ -94,6 +105,25 @@ export class ServerAdminService {
 			if (this.isServerRestarting) {
 				player.Kick("[SERVER RESTART]\n\nSERVER UPDATE IN PROGRESS...\nPlease join back in a few seconds.");
 				return;
+			}
+
+			// Moderation Ban Check
+			const banInfo = this.bannedPlayers.get(player.UserId);
+			if (banInfo) {
+				const now = os.time();
+				if (banInfo.durationSeconds === 0 || now - banInfo.bannedAt < banInfo.durationSeconds) {
+					const remainingSec =
+						banInfo.durationSeconds > 0 ? banInfo.bannedAt + banInfo.durationSeconds - now : 0;
+					const durMsg =
+						banInfo.durationSeconds === 0 ? "Permanen" : `${math.ceil(remainingSec / 60)} menit tersisa`;
+					player.Kick(
+						`[UNDERGRID SECURITY - BANNED]\n\nAlasan: ${banInfo.reason}\nOleh: ${banInfo.bannedBy}\nDurasi: ${durMsg}`,
+					);
+					return;
+				} else {
+					this.bannedPlayers.delete(player.UserId);
+					this.saveBansToDataStore();
+				}
 			}
 
 			task.defer(() => {
@@ -221,6 +251,62 @@ export class ServerAdminService {
 				break;
 			}
 
+			case "KickPlayer": {
+				if (typeIs(data, "table")) {
+					const payload = data as { targetUserId?: number; reason?: string };
+					if (payload.targetUserId !== undefined) {
+						this.kickPlayer(player, payload.targetUserId, payload.reason);
+					}
+				} else if (typeIs(data, "number")) {
+					this.kickPlayer(player, data as number);
+				}
+				break;
+			}
+
+			case "BanPlayer": {
+				if (typeIs(data, "table")) {
+					const payload = data as { targetUserId?: number; reason?: string; durationSeconds?: number };
+					if (payload.targetUserId !== undefined) {
+						this.banPlayer(player, payload.targetUserId, payload.reason, payload.durationSeconds);
+					}
+				} else if (typeIs(data, "number")) {
+					this.banPlayer(player, data as number);
+				}
+				break;
+			}
+
+			case "UnbanPlayer": {
+				if (typeIs(data, "table")) {
+					const payload = data as { targetUserId?: number };
+					if (payload.targetUserId !== undefined) {
+						this.unbanPlayer(player, payload.targetUserId);
+					}
+				} else if (typeIs(data, "number")) {
+					this.unbanPlayer(player, data as number);
+				}
+				break;
+			}
+
+			case "BanByUsername": {
+				if (typeIs(data, "table")) {
+					const payload = data as { username?: string; reason?: string; durationSeconds?: number };
+					if (payload.username !== undefined && payload.username.size() > 0) {
+						this.banByUsername(player, payload.username, payload.reason, payload.durationSeconds);
+					}
+				}
+				break;
+			}
+
+			case "UnbanByUsername": {
+				if (typeIs(data, "table")) {
+					const payload = data as { username?: string };
+					if (payload.username !== undefined && payload.username.size() > 0) {
+						this.unbanByUsername(player, payload.username);
+					}
+				}
+				break;
+			}
+
 			case "SetClockTime": {
 				if (typeIs(data, "number")) {
 					ServerTimeService.getInstance().setClockTime(data as number);
@@ -343,6 +429,206 @@ export class ServerAdminService {
 			if (adminRoot && targetRoot) {
 				targetRoot.CFrame = adminRoot.CFrame.mul(new CFrame(0, 0, -4));
 				print(`[ServerAdminService] Brought ${targetPlayer.Name} to admin ${adminPlayer.Name}`);
+			}
+		}
+	}
+
+	private kickPlayer(adminPlayer: Player, targetUserId: number, reason?: string): void {
+		const targetPlayer = Players.GetPlayerByUserId(targetUserId);
+		if (!targetPlayer) return;
+
+		// Security: Owner is always immune to kick
+		if (isPlayerOwner(targetPlayer)) {
+			warn(`[ServerAdminService] Cannot kick game owner ${targetPlayer.Name}`);
+			return;
+		}
+
+		// In live game: Regular admins cannot kick other admins unless by Owner
+		if (!RunService.IsStudio()) {
+			if (isPlayerAdmin(targetPlayer) && !isPlayerOwner(adminPlayer)) {
+				warn(`[ServerAdminService] Only game owner can kick another admin: ${targetPlayer.Name}`);
+				return;
+			}
+		}
+
+		const cleanReason = (reason && reason.size() > 0) ? reason : "Dikeluarkan oleh Admin";
+		print(`[ServerAdminService] Admin ${adminPlayer.Name} kicked player ${targetPlayer.Name} (${targetUserId}): ${cleanReason}`);
+		targetPlayer.Kick(`[Admin Kick]: ${cleanReason}`);
+	}
+
+	private banPlayer(adminPlayer: Player, targetUserId: number, reason?: string, durationSeconds = 0): void {
+		// Security: Owner is always immune to ban
+		if (targetUserId === AdminConfig.OWNER_USER_ID) {
+			warn(`[ServerAdminService] Cannot ban game owner userId ${targetUserId}`);
+			return;
+		}
+
+		// In live game: Only owner can ban another admin
+		if (!RunService.IsStudio() && AdminConfig.ADMIN_USER_IDS.includes(targetUserId) && !isPlayerOwner(adminPlayer)) {
+			warn(`[ServerAdminService] Only game owner can ban an admin userId ${targetUserId}`);
+			return;
+		}
+
+		let targetName = `User_${targetUserId}`;
+		const onlinePlayer = Players.GetPlayerByUserId(targetUserId);
+		if (onlinePlayer) {
+			targetName = onlinePlayer.Name;
+		} else {
+			pcall(() => {
+				targetName = Players.GetNameFromUserIdAsync(targetUserId as never);
+			});
+		}
+
+		const cleanReason = (reason && reason.size() > 0) ? reason : "Melanggar peraturan server";
+		const record: BanRecord = {
+			userId: targetUserId,
+			name: targetName,
+			reason: cleanReason,
+			bannedBy: adminPlayer.Name,
+			bannedAt: os.time(),
+			durationSeconds: durationSeconds,
+		};
+
+		this.bannedPlayers.set(targetUserId, record);
+		this.saveBansToDataStore();
+
+		// Native engine Ban API (fallback wrapped in pcall)
+		pcall(() => {
+			(Players as unknown as { BanAsync?: (config: unknown) => void }).BanAsync?.({
+				UserIds: [targetUserId],
+				Duration: durationSeconds > 0 ? durationSeconds : -1,
+				DisplayReason: cleanReason,
+				PrivateReason: `Banned by admin ${adminPlayer.Name}`,
+				ApplyToUniverse: true,
+			});
+		});
+
+		if (onlinePlayer) {
+			const durMsg = durationSeconds > 0 ? `${math.ceil(durationSeconds / 60)} menit` : "Permanen";
+			onlinePlayer.Kick(`[UNDERGRID SECURITY - BANNED]\n\nAlasan: ${cleanReason}\nOleh: ${adminPlayer.Name}\nDurasi: ${durMsg}`);
+		}
+
+		print(`[ServerAdminService] Admin ${adminPlayer.Name} banned player ${targetName} (${targetUserId})`);
+		this.broadcastBannedListUpdate();
+	}
+
+	private unbanPlayer(adminPlayer: Player, targetUserId: number): void {
+		this.bannedPlayers.delete(targetUserId);
+		this.saveBansToDataStore();
+
+		pcall(() => {
+			(Players as unknown as { UnbanAsync?: (config: unknown) => void }).UnbanAsync?.({
+				UserIds: [targetUserId],
+				ApplyToUniverse: true,
+			});
+		});
+
+		print(`[ServerAdminService] Admin ${adminPlayer.Name} unbanned userId ${targetUserId}`);
+		this.broadcastBannedListUpdate();
+	}
+
+	private banByUsername(adminPlayer: Player, username: string, reason?: string, durationSeconds = 0): void {
+		const [success, userId] = pcall(() => Players.GetUserIdFromNameAsync(username as never));
+		if (success && typeIs(userId, "number")) {
+			this.banPlayer(adminPlayer, userId, reason, durationSeconds);
+		} else {
+			warn(`[ServerAdminService] Could not find UserId for username: ${username}`);
+		}
+	}
+
+	private unbanByUsername(adminPlayer: Player, username: string): void {
+		const [success, userId] = pcall(() => Players.GetUserIdFromNameAsync(username as never));
+		if (success && typeIs(userId, "number")) {
+			this.unbanPlayer(adminPlayer, userId);
+		} else {
+			warn(`[ServerAdminService] Could not find UserId for username: ${username}`);
+		}
+	}
+
+	private initDataStore(): void {
+		pcall(() => {
+			this.banDataStore = DataStoreService.GetDataStore("AdminBans_v1");
+		});
+		if (this.banDataStore) {
+			this.loadBansFromDataStore();
+		} else {
+			warn("[ServerAdminService] DataStoreService unavailable or disabled in Studio");
+		}
+	}
+
+	private loadBansFromDataStore(): void {
+		const store = this.banDataStore;
+		if (!store) return;
+		task.spawn(() => {
+			const [success, result] = pcall(() => {
+				const [data] = store.GetAsync("ActiveBans");
+				return data;
+			});
+			if (success && typeIs(result, "table")) {
+				const list = result as BanRecord[];
+				const now = os.time();
+				for (const item of list) {
+					if (item && item.userId) {
+						if (item.durationSeconds > 0 && now - item.bannedAt > item.durationSeconds) {
+							continue;
+						}
+						this.bannedPlayers.set(item.userId, item);
+					}
+				}
+				print(`[ServerAdminService] Loaded ${this.bannedPlayers.size()} active ban records from DataStore.`);
+			}
+		});
+	}
+
+	private saveBansToDataStore(): void {
+		const store = this.banDataStore;
+		if (!store) return;
+		task.spawn(() => {
+			const list: BanRecord[] = [];
+			const now = os.time();
+			for (const [_, record] of this.bannedPlayers) {
+				if (record.durationSeconds > 0 && now - record.bannedAt > record.durationSeconds) {
+					continue;
+				}
+				list.push(record);
+			}
+			const [success, err] = pcall(() => {
+				store.SetAsync("ActiveBans", list);
+			});
+			if (!success) {
+				warn(`[ServerAdminService] Failed to save bans to DataStore: ${tostring(err)}`);
+			}
+		});
+	}
+
+	public getBannedList(): BanRecord[] {
+		const list: BanRecord[] = [];
+		const now = os.time();
+		const expiredIds: number[] = [];
+
+		for (const [userId, record] of this.bannedPlayers) {
+			if (record.durationSeconds > 0 && now - record.bannedAt > record.durationSeconds) {
+				expiredIds.push(userId);
+			} else {
+				list.push(record);
+			}
+		}
+
+		for (const id of expiredIds) {
+			this.bannedPlayers.delete(id);
+		}
+		if (expiredIds.size() > 0) {
+			this.saveBansToDataStore();
+		}
+
+		return list;
+	}
+
+	private broadcastBannedListUpdate(): void {
+		const list = this.getBannedList();
+		for (const p of Players.GetPlayers()) {
+			if (isPlayerAdmin(p)) {
+				this.adminBansUpdatedEvent.FireClient(p, list);
 			}
 		}
 	}
@@ -980,6 +1266,7 @@ export class ServerAdminService {
 	public getFullState(): {
 		state: AdminStateSync;
 		players: PlayerEntryInfo[];
+		banned: BanRecord[];
 	} {
 		const players: PlayerEntryInfo[] = [];
 		for (const p of Players.GetPlayers()) {
@@ -993,6 +1280,7 @@ export class ServerAdminService {
 		return {
 			state: this.getState(),
 			players,
+			banned: this.getBannedList(),
 		};
 	}
 

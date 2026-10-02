@@ -1,6 +1,7 @@
 import { getRemoteEvent, getRemoteFunction } from "shared/network";
 import {
 	AdminStateSync,
+	BanRecord,
 	PlayerEntryInfo,
 	StageCameraControlPayload,
 	StageLightingControlPayload,
@@ -11,6 +12,7 @@ import { AnnouncementOverlayView } from "client/ui/views/AnnouncementOverlayView
 
 type StateUpdateCallback = (state: AdminStateSync) => void;
 type AnnouncementCallback = (text: string) => void;
+type BannedUpdateCallback = (banned: BanRecord[]) => void;
 
 /**
  * Singleton client service managing admin panel actions and state synchronization.
@@ -22,20 +24,24 @@ export class AdminService {
 		isQueueLocked: false,
 	};
 	private players: PlayerEntryInfo[] = [];
+	private bannedPlayers: BanRecord[] = [];
 
 	private stateUpdateCallbacks: StateUpdateCallback[] = [];
 	private announcementCallbacks: AnnouncementCallback[] = [];
+	private bannedUpdateCallbacks: BannedUpdateCallback[] = [];
 
 	private adminControlEvent: RemoteEvent;
 	private adminQueryFunction: RemoteFunction;
 	private adminAnnouncementBroadcast: RemoteEvent;
 	private adminStateUpdatedEvent: RemoteEvent;
+	private adminBansUpdatedEvent: RemoteEvent;
 
 	private constructor() {
 		this.adminControlEvent = getRemoteEvent("AdminControlEvent");
 		this.adminQueryFunction = getRemoteFunction("AdminQueryFunction");
 		this.adminAnnouncementBroadcast = getRemoteEvent("AdminAnnouncementBroadcast");
 		this.adminStateUpdatedEvent = getRemoteEvent("AdminStateUpdatedEvent");
+		this.adminBansUpdatedEvent = getRemoteEvent("AdminBansUpdatedEvent");
 
 		this.initNetwork();
 	}
@@ -56,6 +62,14 @@ export class AdminService {
 			}
 		});
 
+		// Listen for real-time banned list updates from server
+		this.adminBansUpdatedEvent.OnClientEvent.Connect((rawBanned: unknown) => {
+			if (typeIs(rawBanned, "table")) {
+				this.bannedPlayers = rawBanned as BanRecord[];
+				for (const cb of this.bannedUpdateCallbacks) cb(this.bannedPlayers);
+			}
+		});
+
 		// Listen for broadcast announcements - Khusus tampil di Fullscreen Blur Overlay 5 detik
 		this.adminAnnouncementBroadcast.OnClientEvent.Connect((rawText: unknown) => {
 			if (typeIs(rawText, "string")) {
@@ -70,16 +84,20 @@ export class AdminService {
 		});
 	}
 
-	/** Fetch the latest admin state and server players list. */
-	public async fetchFullState(): Promise<{ state: AdminStateSync; players: PlayerEntryInfo[] } | undefined> {
+	/** Fetch the latest admin state, server players list, and banned players list. */
+	public async fetchFullState(): Promise<{ state: AdminStateSync; players: PlayerEntryInfo[]; banned: BanRecord[] } | undefined> {
 		try {
 			const res = this.adminQueryFunction.InvokeServer() as
-				| { state: AdminStateSync; players: PlayerEntryInfo[] }
+				| { state: AdminStateSync; players: PlayerEntryInfo[]; banned?: BanRecord[] }
 				| undefined;
 			if (res) {
 				this.state = res.state;
 				this.players = res.players;
-				return res;
+				if (res.banned) {
+					this.bannedPlayers = res.banned;
+					for (const cb of this.bannedUpdateCallbacks) cb(this.bannedPlayers);
+				}
+				return { state: this.state, players: this.players, banned: this.bannedPlayers };
 			}
 		} catch (err) {
 			warn(`[AdminService] Failed to query admin state: ${tostring(err)}`);
@@ -113,6 +131,38 @@ export class AdminService {
 
 	public bringPlayer(userId: number): void {
 		this.adminControlEvent.FireServer("BringPlayer", userId);
+	}
+
+	public kickPlayer(userId: number, reason?: string): void {
+		this.adminControlEvent.FireServer("KickPlayer", { targetUserId: userId, reason });
+	}
+
+	public banPlayer(userId: number, reason?: string, durationSeconds = 0): void {
+		this.adminControlEvent.FireServer("BanPlayer", { targetUserId: userId, reason, durationSeconds });
+	}
+
+	public unbanPlayer(userId: number): void {
+		this.adminControlEvent.FireServer("UnbanPlayer", { targetUserId: userId });
+	}
+
+	public banByUsername(username: string, reason?: string, durationSeconds = 0): void {
+		this.adminControlEvent.FireServer("BanByUsername", { username, reason, durationSeconds });
+	}
+
+	public unbanByUsername(username: string): void {
+		this.adminControlEvent.FireServer("UnbanByUsername", { username });
+	}
+
+	public getBannedList(): BanRecord[] {
+		return this.bannedPlayers;
+	}
+
+	public onBannedListUpdated(cb: BannedUpdateCallback): () => void {
+		this.bannedUpdateCallbacks.push(cb);
+		return () => {
+			const idx = this.bannedUpdateCallbacks.indexOf(cb);
+			if (idx !== -1) this.bannedUpdateCallbacks.remove(idx);
+		};
 	}
 
 	public setClockTime(hour: number): void {

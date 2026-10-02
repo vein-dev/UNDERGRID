@@ -4,7 +4,7 @@ import { AdminPlayerTab } from "./AdminPlayerTab";
 const story = CreateGenericStory(
 	{
 		name: "Admin Player Management Tab",
-		summary: "Tab 3: Player Management list with kick, mute, and teleport action buttons",
+		summary: "Player Management list with TP, Bring, Kick, Ban, and Banned List / Unban controls",
 		controls: {},
 	},
 	(props) => {

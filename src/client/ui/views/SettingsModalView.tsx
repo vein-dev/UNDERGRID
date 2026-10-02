@@ -3,6 +3,7 @@ import ReactRoblox, { Root } from "@rbxts/react-roblox";
 import { Players, TweenService, UserInputService, Workspace } from "@rbxts/services";
 import { MovementController } from "client/controllers/MovementController";
 import { MusicPlayerService } from "client/services/MusicPlayerService";
+import { DjMusicPlayerService } from "client/services/DjMusicPlayerService";
 import { LucideIcon } from "../components/LucideIcon";
 import { Fonts } from "../Typography";
 
@@ -301,6 +302,7 @@ export function SettingsModalComponent({ isOpen, onClose, onAnimationFinished }:
 		if (refreshState === "refreshing") return;
 		setRefreshState("refreshing");
 		MusicPlayerService.getInstance().refreshAudio();
+		DjMusicPlayerService.getInstance().refreshAudio();
 		task.delay(0.6, () => {
 			setRefreshState("done");
 			task.delay(2.0, () => {

@@ -34,3 +34,31 @@ export interface AdminActionResult {
 	success: boolean;
 	message: string;
 }
+
+/** Ban record for persistent moderation. */
+export interface BanRecord {
+	userId: number;
+	name: string;
+	reason: string;
+	bannedBy: string;
+	bannedAt: number; // unix timestamp in seconds
+	durationSeconds: number; // 0 = permanent
+}
+
+/** Payload for kicking a player. */
+export interface KickPayload {
+	targetUserId: number;
+	reason?: string;
+}
+
+/** Payload for banning a player. */
+export interface BanPayload {
+	targetUserId: number;
+	reason?: string;
+	durationSeconds?: number; // 0 = permanent
+}
+
+/** Payload for unbanning a player. */
+export interface UnbanPayload {
+	targetUserId: number;
+}
