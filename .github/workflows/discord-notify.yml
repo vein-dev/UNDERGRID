@@ -1,0 +1,23 @@
+name: Discord Push Notification
+
+on:
+  push:
+    branches: [ "main" ]  # Ganti dengan branch kamu jika menggunakan 'master'
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send Discord Notification
+        uses: sarisia/actions-status-discord@v1
+        with:
+          webhook: ${{ secrets.DISCORD_WEBHOOK }}
+          title: "🎮 Game Update & Patch Notes"
+          description: |
+            **Developer:** ${{ github.actor }}
+            **Branch:** `${{ github.ref_name }}`
+
+            **Detail Perubahan / Changelog:**
+            ${{ github.event.head_commit.message }}
+          color: 0x5865F2
+          url: ${{ github.event.head_commit.url }}
