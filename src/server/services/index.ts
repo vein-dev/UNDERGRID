@@ -18,3 +18,4 @@ export * from "./ServerSeatService";
 export * from "./ServerAfkService";
 export * from "./ServerDjMusicService";
 export * from "./ServerElevatorService";
+export * from "./ServerNpcService";

@@ -30,6 +30,7 @@ import {
 	ZoneAudioController,
 	MobileMovementController,
 	FreecamController,
+	NpcDialogueController,
 } from "./controllers";
 
 
@@ -122,6 +123,7 @@ function main() {
 	ZoneAudioController.getInstance().init();
 	MobileMovementController.getInstance().init();
 	FreecamController.getInstance().init();
+	NpcDialogueController.getInstance().init();
 
 	print("[Client] All controllers initialized successfully.");
 

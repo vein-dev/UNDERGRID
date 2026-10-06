@@ -15,3 +15,4 @@ export * from "./StreetlightConfig";
 export * from "./AfkConfig";
 export * from "./DjMusicConfig";
 export * from "./ElevatorConfig";
+export * from "./NpcConfig";

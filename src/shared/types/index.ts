@@ -38,3 +38,4 @@ export * from "./RollupDoorTypes";
 export * from "./StageCameraTypes";
 export * from "./AvatarContextMenuTypes";
 export * from "./AfkTypes";
+export * from "./NpcDialogueTypes";
