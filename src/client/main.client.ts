@@ -32,6 +32,7 @@ import {
 	FreecamController,
 	NpcDialogueController,
 	NpcHeadFollowController,
+	VoiceZoneController,
 } from "./controllers";
 
 
@@ -126,6 +127,7 @@ function main() {
 	FreecamController.getInstance().init();
 	NpcDialogueController.getInstance().init();
 	NpcHeadFollowController.getInstance().init();
+	VoiceZoneController.getInstance().init();
 
 	print("[Client] All controllers initialized successfully.");
 

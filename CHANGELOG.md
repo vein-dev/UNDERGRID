@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased] - 2026-10-07
 
 ### Added
+- **Spatial Voice Chat Zone System (`ServerVoiceZoneService` & `VoiceZoneController`)**:
+  - Implementasi kontrol mikrofon spasial otoritatif memanfaatkan fitur `VoiceChatService.UseAudioApi` (`AudioDeviceInput`).
+  - Pembatasan berbicara: mikrofon pemain otomatis dikunci (`Muted = true`) di luar zona, dan hanya dibuka (`Muted = false`) ketika menginjak `RooftopVoiceZone` atau `GarageVoiceZone`.
+  - Integrasi otomatis dengan `ZoneAudioController`: volume musik (Main Stage & DJ Rooftop) otomatis ducking halus (lerp) menjadi 50% saat berada di dalam Voice Zone agar suara obrolan terdengar jernih, dan kembali ke 100% saat keluar.
+  - Toleransi vertikal $\approx 30$ studs agar pemain yang melompat atau berdiri di atas part tetap dapat berbicara tanpa jeda.
+  - Notifikasi visual real-time pada Dynamic Island saat pemain masuk ke zona (`"VOICE ZONE ACTIVE"`, icon `mic`) dan keluar dari zona (`"VOICE MUTED"`, icon `mic-off`).
+  - Utilitas pendeteksi zona suara modular di `src/shared/utils/VoiceZoneUtils.ts`.
 - **NPC Realistic Head Follow Controller (`NpcHeadFollowController`)**:
   - Implementasi kontroler pelacak kepala NPC berbasis client menggunakan interpolasi halus (`RenderStepped` & `Lerp`).
   - Dukungan otomatis untuk seluruh NPC di dalam folder `Workspace.NPC` (Twins, Paul, Mang Kosim, Legion Riq) serta entitas dengan tag CollectionService `"NPC"`.

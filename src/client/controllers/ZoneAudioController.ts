@@ -2,6 +2,7 @@ import { Players, RunService } from "@rbxts/services";
 import { MusicPlayerService } from "client/services/MusicPlayerService";
 import { DjMusicPlayerService } from "client/services/DjMusicPlayerService";
 import { isPlayerInDjArea } from "shared/utils";
+import { VoiceZoneController } from "./VoiceZoneController";
 
 /**
  * ZoneAudioController
@@ -21,6 +22,8 @@ export class ZoneAudioController {
 	private currentMainVolume = 1.0;
 	private currentDjVolume = 0.0;
 
+	private isInVoiceZone = false;
+	private readonly VOICE_ZONE_VOLUME_MULTIPLIER = 0.5; // Reduksi volume musik menjadi 50% di Voice Zone
 	private userMasterVolume = 0.5; // Default volume smartphone
 	private readonly CROSSFADE_SPEED = 2.5; // ~1.2 detik transisi penuh
 
@@ -53,6 +56,13 @@ export class ZoneAudioController {
 			this.userMasterVolume = vol;
 		});
 
+		// Sinkronisasi status Voice Zone dari VoiceZoneController
+		const voiceZoneController = VoiceZoneController.getInstance();
+		this.isInVoiceZone = voiceZoneController.getIsInVoiceZone();
+		voiceZoneController.onVoiceZoneChanged((inVoiceZone) => {
+			this.isInVoiceZone = inVoiceZone;
+		});
+
 		// Loop Crossfade di Heartbeat
 		this.heartbeatConn = RunService.Heartbeat.Connect((dt) => {
 			this.updateZoneAudio(dt);
@@ -73,9 +83,13 @@ export class ZoneAudioController {
 			}
 		}
 
-		// Target volume berdasarkan zona
-		const targetMain = inDjArea ? 0.0 : this.userMasterVolume;
-		const targetDj = inDjArea ? this.userMasterVolume : 0.0;
+		// Hitung target volume dengan reduksi 50% jika berada di Voice Zone
+		const voiceMultiplier = this.isInVoiceZone ? this.VOICE_ZONE_VOLUME_MULTIPLIER : 1.0;
+		const effectiveMaster = this.userMasterVolume * voiceMultiplier;
+
+		// Target volume berdasarkan zona stage & DJ
+		const targetMain = inDjArea ? 0.0 : effectiveMaster;
+		const targetDj = inDjArea ? effectiveMaster : 0.0;
 
 		const lerpFactor = math.clamp(dt * this.CROSSFADE_SPEED, 0, 1);
 
@@ -112,6 +126,14 @@ export class ZoneAudioController {
 
 	public getMasterVolume(): number {
 		return this.userMasterVolume;
+	}
+
+	public setVoiceZoneActive(active: boolean): void {
+		this.isInVoiceZone = active;
+	}
+
+	public getIsInVoiceZone(): boolean {
+		return this.isInVoiceZone;
 	}
 
 	public destroy(): void {

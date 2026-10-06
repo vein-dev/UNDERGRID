@@ -29,3 +29,4 @@ export * from "./MobileMovementController";
 export * from "./FreecamController";
 export * from "./NpcDialogueController";
 export * from "./NpcHeadFollowController";
+export * from "./VoiceZoneController";

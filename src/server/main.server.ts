@@ -20,6 +20,7 @@ import {
 	ServerDjMusicService,
 	ServerElevatorService,
 	ServerNpcService,
+	ServerVoiceZoneService,
 } from "./services";
 
 /**
@@ -73,6 +74,9 @@ function main() {
 
 	const npcService = ServerNpcService.getInstance();
 	npcService.init();
+
+	const voiceZoneService = ServerVoiceZoneService.getInstance();
+	voiceZoneService.init();
 
 	ServerMusicService.getInstance();
 	ServerDjMusicService.getInstance();
