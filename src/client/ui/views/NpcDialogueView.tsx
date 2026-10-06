@@ -39,38 +39,30 @@ function NpcAvatarPortrait({ npcName, avatarImage, size }: NpcAvatarPortraitProp
 		if (!npcModel) return;
 
 		const camera = new Instance("Camera");
-		camera.FieldOfView = 48;
+		camera.FieldOfView = 45;
 		camera.Parent = vp;
 		vp.CurrentCamera = camera;
 
 		const worldModel = new Instance("WorldModel");
 		worldModel.Parent = vp;
 
-		const clone = new Instance("Model");
-		clone.Name = "AvatarClone";
-		clone.Parent = worldModel;
-
-		for (const child of npcModel.GetChildren()) {
-			if (
-				child.Name === "Head" ||
-				child.Name === "Torso" ||
-				child.Name === "Hat" ||
-				child.Name === "Ears" ||
-				child.IsA("Accessory") ||
-				child.IsA("Shirt") ||
-				child.IsA("BodyColors")
-			) {
-				const c = child.Clone();
-				c.Parent = clone;
+		const clone = npcModel.Clone();
+		for (const desc of clone.GetDescendants()) {
+			if (desc.IsA("BasePart")) {
+				desc.Anchored = true;
+			} else if (desc.IsA("ProximityPrompt") || desc.IsA("Script") || desc.IsA("LocalScript")) {
+				desc.Destroy();
 			}
 		}
+		clone.Parent = worldModel;
 
 		const head = clone.FindFirstChild("Head") as BasePart | undefined;
 		if (head) {
 			const headPos = head.Position;
 			const lookVec = head.CFrame.LookVector;
-			const camPos = headPos.add(lookVec.mul(2.2)).add(new Vector3(0, 0.1, 0));
+			const camPos = headPos.add(lookVec.mul(2.2)).add(new Vector3(0, 0.05, 0));
 			camera.CFrame = CFrame.lookAt(camPos, headPos.add(new Vector3(0, -0.05, 0)));
+			vp.LightDirection = camera.CFrame.LookVector;
 		}
 
 		return () => {
@@ -107,9 +99,9 @@ function NpcAvatarPortrait({ npcName, avatarImage, size }: NpcAvatarPortraitProp
 					ref={viewportRef}
 					Size={new UDim2(1, 0, 1, 0)}
 					BackgroundTransparency={1}
-					Ambient={Color3.fromRGB(180, 180, 180)}
+					Ambient={Color3.fromRGB(255, 255, 255)}
 					LightColor={Color3.fromRGB(255, 255, 255)}
-					LightDirection={new Vector3(-1, -1, -2)}
+					LightDirection={new Vector3(1, 0, 0)}
 				>
 					<uicorner CornerRadius={new UDim(0, 8)} />
 				</viewportframe>
