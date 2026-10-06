@@ -2,7 +2,7 @@ name: Discord Push Notification
 
 on:
   push:
-    branches: [ "main" ]  # Ganti dengan branch kamu jika menggunakan 'master'
+    branches: [ "main" ]
 
 jobs:
   notify:
@@ -12,12 +12,14 @@ jobs:
         uses: sarisia/actions-status-discord@v1
         with:
           webhook: ${{ secrets.DISCORD_WEBHOOK }}
-          title: "🎮 Game Update & Patch Notes"
-          description: |
-            **Developer:** ${{ github.actor }}
-            **Branch:** `${{ github.ref_name }}`
-
-            **Detail Perubahan / Changelog:**
-            ${{ github.event.head_commit.message }}
+          content: "@everyone"
+          title: "Game Update & Patch Notes"
+          noprefix: true
+          nodetail: true
           color: 0x5865F2
+          description: |
+            ${{ github.event.head_commit.message }}
+
+            —
+            **Dev:** ${{ github.actor }}
           url: ${{ github.event.head_commit.url }}
