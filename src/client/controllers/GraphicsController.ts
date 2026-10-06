@@ -231,15 +231,17 @@ export class GraphicsController {
 	}
 
 	/**
-	 * Mem-preload SELURUH aset game (World, Map, Models, Textures, Meshes, Sounds)
-	 * agar siap di render HD tanpa blur, mipmap downsampling, atau pop-in saat loading selesai.
+	 * Mem-preload SELURUH aset game dan map (World, Map, Models, Textures, Meshes, Sounds)
+	 * secara komprehensif sampai tuntas agar tidak ada pop-in tekstur atau mesh kosong saat spawn.
 	 *
 	 * @param onProgressCallback Callback opsional untuk update progress bar secara granular.
 	 */
-	public async preloadAllGameAssets(onProgressCallback?: (progress: number, assetName: string) => void): Promise<void> {
+	public async preloadAllGameAssets(
+		onProgressCallback?: (progress: number, assetName: string, loadedCount?: number, totalCount?: number) => void,
+	): Promise<void> {
 		const assetTargets: Instance[] = [];
 
-		// 1. Aset dari Workspace (Seluruh MeshPart, Decal, Texture, SurfaceAppearance)
+		// 1. Aset dari Workspace (Seluruh MeshPart, Decal, Texture, SurfaceAppearance, SpecialMesh)
 		for (const desc of Workspace.GetDescendants()) {
 			if (
 				desc.IsA("Decal") ||
@@ -259,6 +261,7 @@ export class GraphicsController {
 				desc.IsA("Texture") ||
 				desc.IsA("MeshPart") ||
 				desc.IsA("SpecialMesh") ||
+				desc.IsA("SurfaceAppearance") ||
 				desc.IsA("Animation") ||
 				desc.IsA("Sound")
 			) {
@@ -280,22 +283,23 @@ export class GraphicsController {
 			}
 		}
 
-		const totalAssets = math.min(assetTargets.size(), 120);
-		print(`[GraphicsController] Preloading up to ${totalAssets} priority visual & audio game assets...`);
+		const totalAssets = assetTargets.size();
+		print(`[GraphicsController] Preloading ALL ${totalAssets} map & visual assets completely...`);
 
 		if (totalAssets === 0) {
-			onProgressCallback?.(1, "Semua aset siap");
+			onProgressCallback?.(1, "Semua aset siap", 0, 0);
 			return;
 		}
 
-		// Preload dalam batch cepat
-		const batchSize = 25;
+		// Preload dalam batch efisien (100 aset per batch untuk performa optimal)
+		const batchSize = 100;
 		let loadedCount = 0;
+		const maxTimeout = 300.0; // Waktu pengaman sangat longgar agar tidak pernah memotong loading pemain
 		const startTime = os.clock();
 
 		for (let i = 0; i < totalAssets; i += batchSize) {
-			if (os.clock() - startTime > 2.0) {
-				// Timeout pengaman agar pemain tidak menunggu terlalu lama
+			if (os.clock() - startTime > maxTimeout) {
+				warn(`[GraphicsController] Preload reached extreme safety timeout (${maxTimeout}s).`);
 				break;
 			}
 
@@ -310,12 +314,57 @@ export class GraphicsController {
 
 			loadedCount += batch.size();
 			const progressRatio = math.clamp(loadedCount / totalAssets, 0, 1);
-			onProgressCallback?.(progressRatio, batch[0]?.Name || "Aset");
+			const currentName = batch[0]?.Name || "Aset";
+			onProgressCallback?.(progressRatio, currentName, loadedCount, totalAssets);
 
 			task.wait(0.01);
 		}
 
-		onProgressCallback?.(1, "Semua aset siap");
+		onProgressCallback?.(1, "Semua aset siap", loadedCount, totalAssets);
 		print(`[GraphicsController] Successfully preloaded ${loadedCount}/${totalAssets} assets to HD.`);
+	}
+
+	/**
+	 * Memaksa server Roblox streaming geometri map di sekitar spawn lokasi pemain.
+	 * Sangat krusial saat StreamingEnabled = true agar pemain tidak melihat map kosong.
+	 */
+	public async requestMapStreamAroundPlayer(): Promise<void> {
+		const player = Players.LocalPlayer;
+		let char = player.Character;
+		if (!char) {
+			char = player.CharacterAdded.Wait()[0];
+		}
+
+		const rootPart = (char.FindFirstChild("HumanoidRootPart") ??
+			char.WaitForChild("HumanoidRootPart", 12)) as BasePart | undefined;
+
+		if (rootPart) {
+			pcall(() => {
+				player.RequestStreamAroundAsync(rootPart.Position);
+			});
+			// Beri waktu engine streaming merespons replikasi part terdekat
+			task.wait(0.5);
+		}
+	}
+
+	/**
+	 * Memantau antrean unduhan internal Roblox (ContentProvider.RequestQueueSize).
+	 * Menunggu hingga seluruh tekstur, mesh, material, dan gambar diunduh 100% ke memori GPU.
+	 */
+	public async waitForTextureAndMeshQueue(onQueueUpdate?: (remaining: number) => void): Promise<void> {
+		const maxWait = 25.0; // Batas pengaman maksimal antrean CDN
+		const startTime = os.clock();
+
+		while (ContentProvider.RequestQueueSize > 0) {
+			if (os.clock() - startTime > maxWait) {
+				warn(
+					`[GraphicsController] ContentProvider queue wait reached safety limit with ${ContentProvider.RequestQueueSize} items remaining.`,
+				);
+				break;
+			}
+			const remaining = ContentProvider.RequestQueueSize;
+			onQueueUpdate?.(remaining);
+			task.wait(0.15);
+		}
 	}
 }

@@ -22,4 +22,11 @@ export const GameConfig = {
 		MIN_ZOOM_DISTANCE: 0.5,
 		MAX_ZOOM_DISTANCE: 32,
 	},
+
+	LOADING_SCREEN: {
+		/** Roblox Asset ID gambar background loading screen (contoh: "rbxassetid://1234567890" atau "" jika tidak ada) */
+		BACKGROUND_IMAGE: "rbxassetid://131049045044389",
+		/** Tingkat transparansi overlay gelap di atas gambar (0 = hitam pekat, 1 = transparan penuh) */
+		OVERLAY_TRANSPARENCY: 1,
+	},
 } as const;
