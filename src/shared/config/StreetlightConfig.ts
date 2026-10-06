@@ -30,12 +30,12 @@ export const StreetlightConfig = {
 
 	/** Nilai default jika Attribute tidak diatur secara eksplisit pada Part */
 	DEFAULTS: {
-		lightColor: Color3.fromRGB(255, 220, 160),
+		lightColor: Color3.fromRGB(255, 230, 180),
 		offColor: Color3.fromRGB(130, 130, 130),
-		brightness: 1.5,
-		range: 35,
-		angle: 90,
-		face: "Bottom", // "Bottom" | "Top" | "Front" | "Back" | "Left" | "Right"
+		brightness: 1.8,
+		range: 65,
+		angle: 140,
+		face: "Front", // "Bottom" | "Top" | "Front" | "Back" | "Left" | "Right"
 		shadows: true,
 		onClockTime: 18.0, // 18:00 (Sore/Senja)
 		offClockTime: 6.0, // 06:00 (Fajar/Pagi)

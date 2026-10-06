@@ -1153,6 +1153,11 @@ export class ServerCombatService {
 				this.playSoundOnCharacter(character, ARCZIS_COMBAT_CONFIG.Sounds.Equip, 1.0);
 			} else {
 				data.BaseWalkSpeed = MovementConfig.CROUCH.normalSpeed;
+				data.Stamina = ARCZIS_COMBAT_CONFIG.MaxStamina;
+				const stamVal = character.FindFirstChild("Stamina") as NumberValue | undefined;
+				if (stamVal) stamVal.Value = ARCZIS_COMBAT_CONFIG.MaxStamina;
+				humanoid.Health = humanoid.MaxHealth;
+				this.syncCharacterValues(character, data);
 				this.applySpeed(character, data);
 			}
 			return;

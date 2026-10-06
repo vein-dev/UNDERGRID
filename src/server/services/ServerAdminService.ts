@@ -1,5 +1,5 @@
 import { DataStoreService, Players, RunService, ServerStorage, TeleportService, TextChatService } from "@rbxts/services";
-import { isPlayerAdmin, isPlayerOwner, AdminConfig } from "shared/config";
+import { isPlayerAdmin, isPlayerOwner, isPlayerPermanentAdmin, isPlayerTemporaryAdmin, AdminConfig } from "shared/config";
 import { getRemoteEvent, getRemoteFunction } from "shared/network";
 import {
 	AdminStateSync,
@@ -307,6 +307,38 @@ export class ServerAdminService {
 				break;
 			}
 
+			case "GrantTempAdmin": {
+				if (!isPlayerPermanentAdmin(player)) {
+					warn(`[ServerAdminService] Unauthorized GrantTempAdmin attempt by ${player.Name}`);
+					return;
+				}
+				if (typeIs(data, "number")) {
+					const target = Players.GetPlayerByUserId(data as number);
+					if (target) {
+						target.SetAttribute("IsTemporaryAdmin", true);
+						print(`[ServerAdminService] Temporary Admin granted to ${target.Name} by ${player.Name}`);
+						this.broadcastAnnouncement(`[ADMIN] ${target.Name} telah diberikan akses Temporary Admin.`);
+					}
+				}
+				break;
+			}
+
+			case "RevokeTempAdmin": {
+				if (!isPlayerPermanentAdmin(player)) {
+					warn(`[ServerAdminService] Unauthorized RevokeTempAdmin attempt by ${player.Name}`);
+					return;
+				}
+				if (typeIs(data, "number")) {
+					const target = Players.GetPlayerByUserId(data as number);
+					if (target) {
+						target.SetAttribute("IsTemporaryAdmin", false);
+						print(`[ServerAdminService] Temporary Admin revoked from ${target.Name} by ${player.Name}`);
+						this.broadcastAnnouncement(`[ADMIN] Akses Temporary Admin untuk ${target.Name} telah dicabut.`);
+					}
+				}
+				break;
+			}
+
 			case "SetClockTime": {
 				if (typeIs(data, "number")) {
 					ServerTimeService.getInstance().setClockTime(data as number);
@@ -397,6 +429,19 @@ export class ServerAdminService {
 
 	// ─── Player Management Actions ───────────────────────────────────────────
 
+	/**
+	 * Releases a character from its current seat (if any) before it is moved.
+	 * Without this, the SeatWeld drags the seat along with the teleported character.
+	 */
+	private unseatCharacter(character: Model): void {
+		const humanoid = character.FindFirstChildOfClass("Humanoid");
+		const seat = humanoid?.SeatPart;
+		if (!humanoid || !seat) return;
+
+		seat.FindFirstChild("SeatWeld")?.Destroy();
+		humanoid.Sit = false;
+	}
+
 	private teleportAdminToPlayer(adminPlayer: Player, targetUserId: number): void {
 		const targetPlayer = Players.GetPlayerByUserId(targetUserId);
 		if (!targetPlayer) return;
@@ -409,6 +454,7 @@ export class ServerAdminService {
 			const targetRoot = targetChar.FindFirstChild("HumanoidRootPart") as BasePart | undefined;
 
 			if (adminRoot && targetRoot) {
+				this.unseatCharacter(adminChar);
 				adminRoot.CFrame = targetRoot.CFrame.mul(new CFrame(2, 0, 3));
 				print(`[ServerAdminService] Teleported admin ${adminPlayer.Name} to ${targetPlayer.Name}`);
 			}
@@ -427,6 +473,7 @@ export class ServerAdminService {
 			const targetRoot = targetChar.FindFirstChild("HumanoidRootPart") as BasePart | undefined;
 
 			if (adminRoot && targetRoot) {
+				this.unseatCharacter(targetChar);
 				targetRoot.CFrame = adminRoot.CFrame.mul(new CFrame(0, 0, -4));
 				print(`[ServerAdminService] Brought ${targetPlayer.Name} to admin ${adminPlayer.Name}`);
 			}
@@ -443,10 +490,10 @@ export class ServerAdminService {
 			return;
 		}
 
-		// In live game: Regular admins cannot kick other admins unless by Owner
+		// In live game: Temporary admins or regular admins cannot kick permanent admins unless by Owner
 		if (!RunService.IsStudio()) {
-			if (isPlayerAdmin(targetPlayer) && !isPlayerOwner(adminPlayer)) {
-				warn(`[ServerAdminService] Only game owner can kick another admin: ${targetPlayer.Name}`);
+			if (isPlayerPermanentAdmin(targetPlayer) && !isPlayerOwner(adminPlayer)) {
+				warn(`[ServerAdminService] Only game owner can kick a permanent admin: ${targetPlayer.Name}`);
 				return;
 			}
 		}
@@ -463,9 +510,9 @@ export class ServerAdminService {
 			return;
 		}
 
-		// In live game: Only owner can ban another admin
-		if (!RunService.IsStudio() && AdminConfig.ADMIN_USER_IDS.includes(targetUserId) && !isPlayerOwner(adminPlayer)) {
-			warn(`[ServerAdminService] Only game owner can ban an admin userId ${targetUserId}`);
+		// In live game: Only owner can ban another permanent admin, temp admin cannot ban permanent admins
+		if (!RunService.IsStudio() && isPlayerPermanentAdmin(Players.GetPlayerByUserId(targetUserId) ?? ({ UserId: targetUserId } as Player)) && !isPlayerOwner(adminPlayer)) {
+			warn(`[ServerAdminService] Only game owner can ban a permanent admin userId ${targetUserId}`);
 			return;
 		}
 
@@ -846,6 +893,10 @@ export class ServerAdminService {
 				{ name: "SpeedCmd", primary: "/speed" },
 				{ name: "WsCmd", primary: "/ws" },
 				{ name: "AnnounceCmd", primary: "/announce" },
+				{ name: "TempAdminCmd", primary: "/tempadmin" },
+				{ name: "AdminCmd", primary: "/admin" },
+				{ name: "UnadminCmd", primary: "/unadmin" },
+				{ name: "UntempadminCmd", primary: "/untempadmin" },
 			];
 
 			for (const def of commandDefs) {
@@ -1008,6 +1059,10 @@ export class ServerAdminService {
 			"announce",
 			"give",
 			"item",
+			"tempadmin",
+			"admin",
+			"unadmin",
+			"untempadmin",
 		]);
 
 		if (!validAdminCommands.has(commandName)) {
@@ -1020,6 +1075,45 @@ export class ServerAdminService {
 		}
 
 		switch (commandName) {
+			case "tempadmin":
+			case "admin": {
+				if (!isPlayerPermanentAdmin(sender)) {
+					warn(`[ServerAdminService] TempAdmin command denied: ${sender.Name} is not a Permanent Admin.`);
+					return true;
+				}
+				const targetArg = args[0];
+				if (targetArg) {
+					const target = this.findTargetPlayer(targetArg, sender);
+					if (target) {
+						target.SetAttribute("IsTemporaryAdmin", true);
+						print(`[ServerAdminService] Temporary Admin granted to ${target.Name} by ${sender.Name}`);
+						this.broadcastAnnouncement(`[ADMIN] ${target.Name} telah diberikan akses Temporary Admin.`);
+					} else {
+						warn(`[ServerAdminService] Target player '${targetArg}' tidak ditemukan.`);
+					}
+				}
+				break;
+			}
+
+			case "unadmin":
+			case "untempadmin": {
+				if (!isPlayerPermanentAdmin(sender)) {
+					warn(`[ServerAdminService] Unadmin command denied: ${sender.Name} is not a Permanent Admin.`);
+					return true;
+				}
+				const targetArg = args[0];
+				if (targetArg) {
+					const target = this.findTargetPlayer(targetArg, sender);
+					if (target) {
+						target.SetAttribute("IsTemporaryAdmin", false);
+						print(`[ServerAdminService] Temporary Admin revoked from ${target.Name} by ${sender.Name}`);
+						this.broadcastAnnouncement(`[ADMIN] Akses Temporary Admin untuk ${target.Name} telah dicabut.`);
+					} else {
+						warn(`[ServerAdminService] Target player '${targetArg}' tidak ditemukan.`);
+					}
+				}
+				break;
+			}
 			case "fly": {
 				const speed = tonumber(args[0]) ?? 50;
 				this.adminFlyToggleEvent.FireClient(sender, true, speed);

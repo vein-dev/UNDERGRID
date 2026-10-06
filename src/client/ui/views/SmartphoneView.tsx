@@ -9,6 +9,8 @@ import { NotificationBannerView } from "./NotificationBannerView";
 import { ChatService } from "client/services/ChatService";
 import { SocialService } from "client/services/SocialService";
 import { GlobalNotificationService } from "client/services/GlobalNotificationService";
+import { FreecamController } from "client/controllers/FreecamController";
+import { HotbarController } from "client/controllers/HotbarController";
 import type { ExternalDynamicIslandView } from "./ExternalDynamicIslandView";
 
 /**
@@ -39,7 +41,14 @@ export class SmartphoneView {
 	private openCallbacks: Array<() => void> = [];
 	private slideTween?: Tween;
 
+	private static instance?: SmartphoneView;
+
+	public static getInstance(): SmartphoneView | undefined {
+		return SmartphoneView.instance;
+	}
+
 	constructor(parentContainer?: Instance) {
+		SmartphoneView.instance = this;
 		const isGuiObject = parentContainer && parentContainer.IsA("GuiObject");
 
 		this.screenGui = new Instance("ScreenGui");
@@ -435,6 +444,16 @@ export class SmartphoneView {
 		});
 
 		this.homeScreen.onAppIconClicked((appId) => {
+			if (appId === AppId.Camera) {
+				const char = Players.LocalPlayer.Character;
+				const hum = char?.FindFirstChildOfClass("Humanoid");
+				if (hum) {
+					hum.UnequipTools();
+				}
+				this.close();
+				FreecamController.getInstance().startFreecam();
+				return;
+			}
 			this.homeScreen.hide();
 			this.homeContainer.Visible = false;
 			this.appContainer.Visible = true;
@@ -489,6 +508,12 @@ export class SmartphoneView {
 			() => this.isPhoneOpen,
 		);
 
+		FreecamController.getInstance().onStateChanged((state) => {
+			if (state.isActive && this.isPhoneOpen) {
+				this.close();
+			}
+		});
+
 		this.startClockLoop();
 	}
 
@@ -510,6 +535,12 @@ export class SmartphoneView {
 	public open(): void {
 		this.isPhoneOpen = true;
 		this.lastOpenTime = os.clock();
+
+		// Otomatis sembunyikan hotbar saat membuka HP
+		try {
+			HotbarController.getInstance().setVisible(false);
+		} catch {}
+
 		this.notificationBanner.forceHide();
 		GlobalNotificationService.getInstance().getExternalView().forceHide();
 		this.updateClock();
@@ -539,6 +570,14 @@ export class SmartphoneView {
 
 	public close(): void {
 		this.isPhoneOpen = false;
+
+		// Pulihkan hotbar hanya jika Freecam sedang tidak aktif
+		if (!FreecamController.getInstance().getIsActive()) {
+			try {
+				HotbarController.getInstance().setVisible(true);
+			} catch {}
+		}
+
 		this.notificationBanner.forceHide();
 		this.dimOverlay.Visible = false;
 
@@ -613,5 +652,8 @@ export class SmartphoneView {
 		this.phoneFrame.Destroy();
 		this.dimOverlay.Destroy();
 		this.screenGui.Destroy();
+		if (SmartphoneView.instance === this) {
+			SmartphoneView.instance = undefined;
+		}
 	}
 }

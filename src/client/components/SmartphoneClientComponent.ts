@@ -3,6 +3,7 @@ import { DEFAULT_SMARTPHONE_CONFIG, SMARTPHONE_ANIMATIONS } from "shared/types";
 import { IToolComponent } from "./IToolComponent";
 import { MusicPlayerService } from "client/services/MusicPlayerService";
 import { SmartphoneView } from "client/ui/views/SmartphoneView";
+import { FreecamController } from "client/controllers/FreecamController";
 
 /**
  * OOP Client Component bound to the "Smartphone" Tool for LocalPlayer.
@@ -15,6 +16,7 @@ import { SmartphoneView } from "client/ui/views/SmartphoneView";
 export class SmartphoneClientComponent implements IToolComponent {
 	private connections: RBXScriptConnection[] = [];
 	private equippedConnections: RBXScriptConnection[] = [];
+	private cleanupFreecamListener?: () => void;
 	private smartphoneView: SmartphoneView;
 
 	private isPhoneOpened = false;
@@ -83,6 +85,15 @@ export class SmartphoneClientComponent implements IToolComponent {
 		if (this.tool.Parent === Players.LocalPlayer.Character) {
 			this.onEquipped();
 		}
+
+		// Ketika Freecam aktif: hentikan animasi memegang HP & IK agar avatar berdiri Idle normal
+		this.cleanupFreecamListener = FreecamController.getInstance().onStateChanged((state) => {
+			if (state.isActive) {
+				this.stopUseAnimation();
+				this.setHeadLookAtPhone(false);
+				this.cleanupIKControl();
+			}
+		});
 
 		print("[SmartphoneClientComponent] Initialized: Toggle Open/Close on click.");
 	}
@@ -369,6 +380,8 @@ export class SmartphoneClientComponent implements IToolComponent {
 		this.cleanupIKControl();
 		this.stopAnimations();
 
+		this.cleanupFreecamListener?.();
+		this.cleanupFreecamListener = undefined;
 		this.smartphoneView.destroy();
 		print("[SmartphoneClientComponent] Destroyed.");
 	}

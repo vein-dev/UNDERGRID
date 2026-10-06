@@ -13,6 +13,7 @@ export * from "./ServerStageLightingService";
 export * from "./ServerGuitarService";
 export * from "./ServerDrumstickService";
 export * from "./ServerRollupDoorService";
+export * from "./ServerRooftopDoorService";
 export * from "./ServerSeatService";
 export * from "./ServerAfkService";
 export * from "./ServerDjMusicService";

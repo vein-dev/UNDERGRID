@@ -142,10 +142,12 @@ export class FallController {
 		const cfg = MovementConfig.FALL;
 		const sounds = MovementConfig.SOUNDS;
 
+		const isFighting = this.hrp.GetAttribute("IsFighting") === true;
+
 		if (fallDistance > cfg.highFallThreshold) {
 			// Large Fall
 			const damage = math.floor((fallDistance - cfg.minDamageHeight) * cfg.damageMultiplier);
-			if (damage > 0) {
+			if (damage > 0 && isFighting) {
 				getRemoteEvent("FallDamageEvent").FireServer(damage);
 			}
 
@@ -168,7 +170,7 @@ export class FallController {
 		} else if (fallDistance > cfg.minDamageHeight) {
 			// Small Fall
 			const damage = math.floor((fallDistance - cfg.minDamageHeight) * cfg.damageMultiplier);
-			if (damage > 0) {
+			if (damage > 0 && isFighting) {
 				getRemoteEvent("FallDamageEvent").FireServer(damage);
 			}
 

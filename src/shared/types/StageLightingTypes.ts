@@ -12,6 +12,9 @@ export enum StageLightMode {
 	Manual = "Manual",
 	Strobe = "Strobe",
 	MusicSync = "MusicSync",
+	CrossFire = "CrossFire",
+	FanSpread = "FanSpread",
+	Searchlight = "Searchlight",
 }
 
 export interface StageLightFixture {

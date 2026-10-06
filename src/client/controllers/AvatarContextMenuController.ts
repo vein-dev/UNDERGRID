@@ -3,6 +3,7 @@ import { EMOTE_CONFIG } from "shared/config";
 import { AvatarContextMenuAction, AvatarTargetPlayer, EmoteItem } from "shared/types";
 import { EmoteService } from "../services/EmoteService";
 import { AvatarContextMenuView } from "../ui/views/AvatarContextMenuView";
+import { CombatController } from "./CombatController";
 
 const MAX_INTERACT_DISTANCE = 80;
 
@@ -123,6 +124,11 @@ export class AvatarContextMenuController {
 	}
 
 	public init(): void {
+		// Nonaktifkan default AvatarContextMenu bawaan Roblox jika ada
+		pcall(() => {
+			StarterGui.SetCore("AvatarContextMenuEnabled", false);
+		});
+
 		// Setup view callbacks
 		this.view.setCallbacks({
 			onAction: (action, target) => this.handleAction(action, target),
@@ -181,6 +187,28 @@ export class AvatarContextMenuController {
 	 * Raycasts from cursor position to check if another player was clicked.
 	 */
 	private onWorldInput(): void {
+		// 1. Jangan proses atau buka ACM jika pemain sedang dalam mode kombat / bertarung
+		if (CombatController.getInstance().isCombatActive()) {
+			if (this.view.isVisible()) {
+				this.view.hide();
+				this.currentTarget = undefined;
+			}
+			return;
+		}
+
+		// 2. Jangan proses jika pemain sedang memegang Tool atau berstatus IsFighting
+		const localChar = this.localPlayer.Character;
+		if (
+			localChar &&
+			(localChar.GetAttribute("IsFighting") === true || localChar.FindFirstChildOfClass("Tool") !== undefined)
+		) {
+			if (this.view.isVisible()) {
+				this.view.hide();
+				this.currentTarget = undefined;
+			}
+			return;
+		}
+
 		const cam = Workspace.CurrentCamera;
 		if (!cam) return;
 
@@ -190,7 +218,6 @@ export class AvatarContextMenuController {
 		const rayParams = new RaycastParams();
 		rayParams.FilterType = Enum.RaycastFilterType.Exclude;
 
-		const localChar = this.localPlayer.Character;
 		if (localChar) {
 			rayParams.FilterDescendantsInstances = [localChar];
 		}
@@ -218,6 +245,11 @@ export class AvatarContextMenuController {
 		}
 
 		if (clickedPlayer && clickedPlayer !== this.localPlayer) {
+			// Jangan buka jika karakter target sedang dalam status bertarung
+			const targetChar = clickedPlayer.Character;
+			if (targetChar && targetChar.GetAttribute("IsFighting") === true) {
+				return;
+			}
 			this.openForPlayer(clickedPlayer);
 		} else if (this.view.isVisible()) {
 			// Clicked other environment objects -> close menu

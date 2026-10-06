@@ -52,7 +52,6 @@ const DJ_AIMS: Record<string, [number, number]> = {
 	StageLight_C1_R10: [-0.822, -1.201],
 };
 
-const TOTAL_PATTERNS = 5;
 
 /**
  * ClientStageLightingController
@@ -69,16 +68,20 @@ export class ClientStageLightingController {
 	private djFixtures: ClientFixture[] = [];
 
 	// Main Stage state tracking
-	private mainCurrentActiveMode: StageLightMode = StageLightMode.MusicSync;
-	private mainPreviousActiveMode: StageLightMode = StageLightMode.MusicSync;
+	private mainCurrentActiveMode: StageLightMode = StageLightMode.Off;
+	private mainPreviousActiveMode: StageLightMode = StageLightMode.Off;
 	private mainModeTransitionStartTime = 0;
 
 	// DJ Stage state tracking
-	private djCurrentActiveMode: StageLightMode = StageLightMode.SpotlightCenter;
-	private djPreviousActiveMode: StageLightMode = StageLightMode.SpotlightCenter;
+	private djCurrentActiveMode: StageLightMode = StageLightMode.Off;
+	private djPreviousActiveMode: StageLightMode = StageLightMode.Off;
 	private djModeTransitionStartTime = 0;
 
 	private readonly MODE_CROSSFADE_DURATION = 1.8;
+
+	// Smart pick koreografi MusicSync
+	private smoothedLoudness = 150;
+	private readonly smartPickCache = new Map<number, StageLightMode>();
 
 	private constructor() {}
 
@@ -171,17 +174,17 @@ export class ClientStageLightingController {
 
 			if (spot) {
 				spot.Face = Enum.NormalId.Front;
-				spot.Range = isDj ? 35 : 28;
-				spot.Angle = 55;
+				spot.Range = isDj ? 65 : 60;
+				spot.Angle = 85;
 				spot.Shadows = true;
 			}
 			if (beam) {
-				beam.Width0 = 0.9;
-				beam.Width1 = isDj ? 8.5 : 9.5;
+				beam.Width0 = 1.2;
+				beam.Width1 = isDj ? 18 : 20;
 				beam.LightEmission = 1;
 				beam.LightInfluence = 0;
 				if (beam.Attachment0) beam.Attachment0.Position = new Vector3(0, 0, -0.2);
-				if (beam.Attachment1) beam.Attachment1.Position = new Vector3(0, 0, -18);
+				if (beam.Attachment1) beam.Attachment1.Position = new Vector3(0, 0, -42);
 			}
 
 			const defaultAim = isDj
@@ -324,8 +327,10 @@ export class ClientStageLightingController {
 		isCrossfading: boolean;
 		smoothCrossfade: number;
 		motorSlewRate: number;
+		playbackLoudness: number;
 	} {
 		const isMusicPlaying = activeSound !== undefined && activeSound.IsPlaying;
+		const playbackLoudness = activeSound && activeSound.IsPlaying ? activeSound.PlaybackLoudness : 0;
 		const baseBpm = currentTrack?.bpm ?? 128;
 		const playbackSpeed = activeSound ? activeSound.PlaybackSpeed : 1.0;
 		const effectiveBpm = math.clamp(baseBpm * playbackSpeed, 40, 260);
@@ -345,11 +350,14 @@ export class ClientStageLightingController {
 		const leadBarPhase = isBeforeFirstBeat ? 0 : (leadAdjustedTime % barDuration) / barDuration;
 		const leadTotalBeats = isBeforeFirstBeat ? 0 : leadAdjustedTime / beatDuration;
 
-		const barsPerPattern = 8;
+		// Smoothing energi audio (EMA) untuk smart pick koreografi
+		this.smoothedLoudness = this.smoothedLoudness + (playbackLoudness - this.smoothedLoudness) * 0.02;
+
+		const barsPerPattern = 4;
 		const totalBars = leadAdjustedTime / barDuration;
 		const barInCycle = totalBars % barsPerPattern;
-		const currentPatternIdx = math.floor(totalBars / barsPerPattern) % TOTAL_PATTERNS;
-		const nextPatternIdx = (currentPatternIdx + 1) % TOTAL_PATTERNS;
+		const currentPatternIdx = math.floor(totalBars / barsPerPattern);
+		const nextPatternIdx = currentPatternIdx + 1;
 
 		const isCrossfading = barInCycle >= barsPerPattern - 1;
 		const crossfadeT = isCrossfading ? barInCycle - (barsPerPattern - 1) : 0;
@@ -366,58 +374,42 @@ export class ClientStageLightingController {
 			isCrossfading,
 			smoothCrossfade,
 			motorSlewRate,
+			playbackLoudness,
 		};
 	}
 
 	/**
-	 * Generator 5 Pola Koreografi Panggung yang Terkunci pada Birama Musik 4/4
+	 * Smart Pick: memilih koreografi untuk sebuah frasa musik (4 bar) berdasarkan
+	 * urutan variatif dan energi audio saat frasa pertama kali dievaluasi.
+	 * Hasil di-cache per frasa agar tidak berubah di tengah frasa.
 	 */
-	private evaluateMusicalPattern(
-		pattern: number,
-		f: ClientFixture,
-		barPhase: number,
-		totalBeats: number,
-		totalFixtures: number,
-	): [number, number] {
-		const mid = (totalFixtures + 1) / 2;
-		const colOffset = f.column - mid;
-		const isOdd = f.column % 2 === 1;
-		const twoPiBar = barPhase * math.pi * 2;
-		const scale = f.isDj ? 0.6 : 1.0;
+	private getSmartChoreography(phraseIdx: number): StageLightMode {
+		const cached = this.smartPickCache.get(phraseIdx);
+		if (cached !== undefined) return cached;
 
-		switch (pattern % TOTAL_PATTERNS) {
-			case 0: {
-				const fanSpread = colOffset * 0.16 * scale;
-				const pan = fanSpread + math.sin(twoPiBar) * 0.32 * scale;
-				const tilt = math.cos(twoPiBar) * 0.08 * scale;
-				return [pan, tilt];
-			}
-			case 1: {
-				const dir = isOdd ? 1 : -1;
-				const pan = math.sin(twoPiBar * 2) * 0.44 * dir * scale;
-				const tilt = math.cos(twoPiBar + colOffset * 0.35) * 0.12 * scale;
-				return [pan, tilt];
-			}
-			case 2: {
-				const phase = twoPiBar - f.column * 0.75;
-				const pan = math.sin(phase) * 0.38 * scale;
-				const tilt = math.cos(phase * 0.5) * 0.11 * scale;
-				return [pan, tilt];
-			}
-			case 3: {
-				const bloom = (math.sin(twoPiBar * 0.5) + 1) * 0.5;
-				const pan = colOffset * 0.35 * bloom * scale;
-				const tilt = -0.06 * bloom + math.sin(twoPiBar) * 0.05 * scale;
-				return [pan, tilt];
-			}
-			case 4:
-			default: {
-				const step = math.sin((totalBeats + (isOdd ? 0 : 1)) * math.pi) * 0.32 * scale;
-				const pan = colOffset * 0.12 * scale + step;
-				const tilt = (isOdd ? 0.05 : -0.05) * math.cos(twoPiBar * 2) * scale;
-				return [pan, tilt];
-			}
+		const loudness = this.smoothedLoudness;
+		let picked: StageLightMode;
+		if (loudness > 240) {
+			const high = [StageLightMode.Ballyhoo, StageLightMode.CrossFire, StageLightMode.Circle];
+			picked = high[phraseIdx % high.size()];
+		} else if (loudness < 80) {
+			const low = [StageLightMode.Searchlight, StageLightMode.FanSpread];
+			picked = low[phraseIdx % low.size()];
+		} else {
+			const seq = [
+				StageLightMode.Wave,
+				StageLightMode.CrossFire,
+				StageLightMode.Ballyhoo,
+				StageLightMode.Circle,
+				StageLightMode.FanSpread,
+				StageLightMode.Searchlight,
+			];
+			picked = seq[phraseIdx % seq.size()];
 		}
+
+		if (this.smartPickCache.size() >= 8) this.smartPickCache.clear();
+		this.smartPickCache.set(phraseIdx, picked);
+		return picked;
 	}
 
 	/**
@@ -448,51 +440,98 @@ export class ClientStageLightingController {
 			}
 
 			case StageLightMode.Wave: {
-				const panAmp = f.isDj ? 0.22 : 0.35;
-				const tiltAmp = f.isDj ? 0.10 : 0.18;
-				const colWave = math.sin(clockNow * 1.5 + f.column * 0.6) * panAmp;
-				const rowWave = math.cos(clockNow * 1.8 + f.column * 0.4) * tiltAmp;
-				return [colWave, rowWave];
+				// True traveling sinusoidal wave across columns with synchronized room sweep
+				const panAmp = f.isDj ? 0.35 : 0.50;
+				const tiltAmp = f.isDj ? 0.20 : 0.32;
+				const pan = math.sin(clockNow * 0.9) * panAmp;
+				const tilt = math.sin(clockNow * 2.2 - (f.column - 1) * 0.95) * tiltAmp;
+				return [pan, tilt];
 			}
 
 			case StageLightMode.Circle: {
-				const panAmp = f.isDj ? 0.20 : 0.30;
-				const tiltAmp = f.isDj ? 0.10 : 0.18;
-				const phase = f.column * 0.65;
-				const pan = math.cos(clockNow * 2.0 + phase) * panAmp;
-				const tilt = math.sin(clockNow * 2.0 + phase) * tiltAmp;
+				// Dual Counter-Rotating Double Helix Vortex
+				const panAmp = f.isDj ? 0.32 : 0.45;
+				const tiltAmp = f.isDj ? 0.18 : 0.26;
+				const dir = f.column % 2 === 1 ? 1 : -1;
+				const phase = f.column * 0.75;
+				const pan = math.cos(clockNow * 1.8 * dir + phase) * panAmp;
+				const tilt = math.sin(clockNow * 1.8 * dir + phase) * tiltAmp;
 				return [pan, tilt];
 			}
 
 			case StageLightMode.Ballyhoo: {
-				const panAmp = f.isDj ? 0.30 : 0.55;
-				const tiltAmp = f.isDj ? 0.14 : 0.22;
-				const fastPan = math.sin(clockNow * 2.6 + f.column * 1.1) * panAmp;
-				const fastTilt = math.sin(clockNow * 2.0 + f.column * 1.3) * tiltAmp;
-				return [fastPan, fastTilt];
+				// High-energy Figure-8 Lissajous Sky Cannon
+				const panAmp = f.isDj ? 0.38 : 0.58;
+				const tiltAmp = f.isDj ? 0.20 : 0.28;
+				const phaseOffset = f.column * 0.5;
+				const pan = math.sin(clockNow * 2.6 + phaseOffset) * panAmp;
+				const tilt = math.sin((clockNow * 2.6 + phaseOffset) * 2.0) * tiltAmp;
+				return [pan, tilt];
+			}
+
+			case StageLightMode.CrossFire: {
+				// X-Laser Scissors: outer and inner beams cross over through center
+				const mid = (totalFixtures + 1) / 2;
+				const colNorm = (f.column - mid) / 2;
+				const scissorWave = math.sin(clockNow * 1.6);
+				const pan = -colNorm * 0.55 * scissorWave;
+				const tilt = -math.abs(scissorWave) * (f.isDj ? 0.14 : 0.22);
+				return [pan, tilt];
+			}
+
+			case StageLightMode.FanSpread: {
+				// Peacock Sunburst & Angel Wings breathing
+				const mid = (totalFixtures + 1) / 2;
+				const fanSpread = (f.column - mid) * (f.isDj ? 0.18 : 0.28);
+				const breath = math.sin(clockNow * 1.3);
+				const pan = fanSpread * (1.1 + 0.45 * breath);
+				const tilt = math.cos(clockNow * 1.3) * (f.isDj ? 0.18 : 0.26);
+				return [pan, tilt];
+			}
+
+			case StageLightMode.Searchlight: {
+				// Sky Tracker / Suspenseful sweeping searchlights
+				const pan = math.sin(clockNow * 0.6 + f.column * 1.25) * (f.isDj ? 0.40 : 0.65);
+				const tilt = (math.cos(clockNow * 0.85 + f.column * 0.9) - 0.2) * (f.isDj ? 0.18 : 0.28);
+				return [pan, tilt];
 			}
 
 			case StageLightMode.MusicSync:
 			default: {
-				const [p1Pan, p1Tilt] = this.evaluateMusicalPattern(
-					currentMusicPatternIdx,
+				// Smart pick: pilih koreografi yang ada berdasarkan frasa beat & energi audio
+				const currentMode = this.getSmartChoreography(currentMusicPatternIdx);
+				const [p1Pan, p1Tilt] = this.getModeOffset(
+					currentMode,
 					f,
+					clockNow,
 					leadBarPhase,
 					leadTotalBeats,
 					totalFixtures,
+					currentMusicPatternIdx,
+					nextMusicPatternIdx,
+					false,
+					0,
 				);
 				if (isMusicCrossfading) {
-					const [p2Pan, p2Tilt] = this.evaluateMusicalPattern(
-						nextMusicPatternIdx,
-						f,
-						leadBarPhase,
-						leadTotalBeats,
-						totalFixtures,
-					);
-					return [
-						p1Pan + (p2Pan - p1Pan) * smoothMusicCrossfade,
-						p1Tilt + (p2Tilt - p1Tilt) * smoothMusicCrossfade,
-					];
+					const nextMode = this.getSmartChoreography(nextMusicPatternIdx);
+					if (nextMode !== currentMode) {
+						const [p2Pan, p2Tilt] = this.getModeOffset(
+							nextMode,
+							f,
+							clockNow,
+							leadBarPhase,
+							leadTotalBeats,
+							totalFixtures,
+							currentMusicPatternIdx,
+							nextMusicPatternIdx,
+							false,
+							0,
+						);
+						return [
+							p1Pan + (p2Pan - p1Pan) * smoothMusicCrossfade,
+							p1Tilt + (p2Tilt - p1Tilt) * smoothMusicCrossfade,
+						];
+					}
 				}
 				return [p1Pan, p1Tilt];
 			}
@@ -510,16 +549,16 @@ export class ClientStageLightingController {
 		const stageState = isDj ? adminState.djStageLighting : adminState.stageLighting;
 
 		const lightingFolder = Workspace.FindFirstChild("Lighting");
-		const prefix = isDj ? "DjStageLighting" : "StageLighting";
+		const prefix = isDj ? "DjLighting" : "StageLighting";
 		const attrMode = lightingFolder?.GetAttribute(`${prefix}Mode`) as StageLightMode | undefined;
 		const attrBright = lightingFolder?.GetAttribute(`${prefix}Brightness`) as number | undefined;
 		const attrBeam = lightingFolder?.GetAttribute(`${prefix}BeamEnabled`) as boolean | undefined;
 		const attrStrobe = lightingFolder?.GetAttribute(`${prefix}StrobeSpeed`) as number | undefined;
 
 		const defaultBrightness = isDj ? 3.5 : 4.5;
-		const mode = stageState?.mode ?? attrMode ?? (isDj ? StageLightMode.SpotlightCenter : StageLightMode.SpotlightCenter);
+		const mode = stageState?.mode ?? attrMode ?? StageLightMode.Off;
 		const brightness = stageState?.brightness ?? attrBright ?? defaultBrightness;
-		const beamEnabled = stageState?.beamEnabled ?? attrBeam ?? true;
+		const beamEnabled = stageState?.beamEnabled ?? attrBeam ?? false;
 		const strobeSpeed = stageState?.strobeSpeed ?? attrStrobe ?? 0;
 
 		return { isSyncActive: true, brightness, beamEnabled, strobeSpeed, mode };
@@ -553,6 +592,7 @@ export class ClientStageLightingController {
 			mainBeat.isCrossfading,
 			mainBeat.smoothCrossfade,
 			mainBeat.motorSlewRate,
+			mainBeat.playbackLoudness,
 		);
 
 		// ─── 2. PROSES DJ STAGE FIXTURES (Sync ke DjMusicPlayerService) ───
@@ -575,6 +615,7 @@ export class ClientStageLightingController {
 			djBeat.isCrossfading,
 			djBeat.smoothCrossfade,
 			djBeat.motorSlewRate,
+			djBeat.playbackLoudness,
 		);
 	}
 
@@ -593,6 +634,7 @@ export class ClientStageLightingController {
 		isCrossfading: boolean,
 		smoothCrossfade: number,
 		motorSlewRate: number,
+		playbackLoudness: number,
 	): void {
 		if (fixtures.size() === 0) return;
 
@@ -623,34 +665,26 @@ export class ClientStageLightingController {
 		const modeT = math.clamp(modeElapsed / this.MODE_CROSSFADE_DURATION, 0, 1);
 		const smoothModeBlend = modeT * modeT * (3 - 2 * modeT);
 
-		// Strobe timing calculation
-		let isStrobeFlash = true;
-		if (strobeSpeed > 0) {
-			const subDiv = strobeSpeed === 1 ? 1 : strobeSpeed === 2 ? 0.5 : strobeSpeed === 3 ? 0.25 : 0.125;
-			const subPhase = (songTime / (beatDuration * subDiv)) % 1.0;
-			isStrobeFlash = subPhase < 0.35;
-		}
-
-		// Brightness & Beam calculation
+		// Brightness base crossfade
 		const prevModeBrightness = prevMode === StageLightMode.Off ? 0 : brightness;
 		const currModeBrightness = currMode === StageLightMode.Off ? 0 : brightness;
 		const blendedBrightness = prevModeBrightness + (currModeBrightness - prevModeBrightness) * smoothModeBlend;
 
-		let finalBrightness = blendedBrightness;
-		let finalBeam = beamEnabled && currMode !== StageLightMode.Off;
+		const isMusicMode = currMode === StageLightMode.MusicSync;
+		const isIdleMusicSync = isMusicMode && !isMusicPlaying;
 
-		if (strobeSpeed > 0) {
-			if (isStrobeFlash) {
-				finalBrightness = math.max(0.5, blendedBrightness * 1.35);
-				finalBeam = beamEnabled;
-			} else {
-				finalBrightness = 0;
-				finalBeam = false;
-			}
-		}
+		// ─── BEAT & AUDIO-REACTIVE ENGINE ───
+		const beatPhase = (songTime % beatDuration) / beatDuration;
+		const kickHitDecay = math.exp(-beatPhase * 6.5);
+		const loudnessNorm = math.clamp((playbackLoudness - 40) / 260, 0, 1.2);
+		const audioPulse = isMusicPlaying
+			? math.clamp(0.45 + 0.42 * kickHitDecay + 0.30 * loudnessNorm, 0.45, 1.35)
+			: 1.0;
+
+		// Musical strobe subdivision (1: 1/2 beat, 2: 1/4 beat, 3: 1/8 beat, 4: 1/16 beat)
+		const subDiv = strobeSpeed === 1 ? 2 : strobeSpeed === 2 ? 1 : strobeSpeed === 3 ? 0.5 : 0.25;
 
 		const total = fixtures.size();
-		const isIdleMusicSync = currMode === StageLightMode.MusicSync && !isMusicPlaying;
 
 		for (const f of fixtures) {
 			if (!f.model.Parent) continue;
@@ -724,22 +758,94 @@ export class ClientStageLightingController {
 			if (f.panMotor) f.panMotor.C0 = BASE_PAN_C0.mul(CFrame.Angles(0, 0, f.currentPan));
 			if (f.tiltMotor) f.tiltMotor.C0 = BASE_TILT_C0.mul(CFrame.Angles(0, 0, safeTilt));
 
-			if (f.spot) {
-				const actualBrightness = isIdleMusicSync ? 0.8 : finalBrightness;
-				const actualBeam = isIdleMusicSync ? true : finalBeam;
+			// Strobe / Beat flash calculation per fixture
+			let actualBrightness = blendedBrightness;
+			let actualBeam = beamEnabled && currMode !== StageLightMode.Off;
 
+			if (strobeSpeed > 0) {
+				// Alternating odd/even chase flash on musical division
+				const colOffsetPhase = f.column % 2 === 0 && strobeSpeed >= 2 ? 0.5 : 0.0;
+				const strobeCycle = (songTime / (beatDuration * subDiv) + colOffsetPhase) % 1.0;
+				const isFlash = strobeCycle < 0.38;
+
+				if (isFlash) {
+					const strobeMultiplier = isMusicMode ? 1.25 + 0.45 * kickHitDecay : 1.35;
+					actualBrightness = math.max(0.5, blendedBrightness * strobeMultiplier);
+					actualBeam = beamEnabled;
+				} else {
+					actualBrightness = 0;
+					actualBeam = false;
+				}
+			} else if (isMusicMode && isMusicPlaying) {
+				// Pola koreografi 24-beat:
+				// 1. Ganjil-Genap (Beat 0-7)
+				// 2. Wave Loop Ping-Pong Kiri ke Kanan & Kanan ke Kiri (Beat 8-15)
+				// 3. All-Out Climax Flash (Beat 16-23)
+				const beatIndex = math.floor(leadTotalBeats);
+				const cycleStep = beatIndex % 24;
+				let isFixtureActive = true;
+
+				if (cycleStep < 8) {
+					// Pola 1: Ganjil-Genap bergantian per ketukan (Even: 1, 3, 5 | Odd: 2, 4)
+					const isEvenBeat = beatIndex % 2 === 0;
+					const isOddCol = f.column % 2 === 1;
+					isFixtureActive = isEvenBeat ? isOddCol : !isOddCol;
+				} else if (cycleStep < 16) {
+					// Pola Wave: Looping Kiri ke Kanan lalu Kanan ke Kiri (1 -> 2 -> 3 -> 4 -> 5 -> 4 -> 3 -> 2)
+					const cycleLen = math.max(2, (total - 1) * 2);
+					const stepInWave = (beatIndex - 8) % cycleLen;
+					const activeCol =
+						stepInWave < total ? stepInWave + 1 : total - (stepInWave - total + 1);
+					isFixtureActive = f.column === activeCol;
+				} else {
+					// Pola 4: All-out kick flash (seluruh lampu menyala serempak)
+					isFixtureActive = true;
+				}
+
+				if (isFixtureActive) {
+					actualBrightness = blendedBrightness * audioPulse;
+					actualBeam = beamEnabled;
+				} else {
+					actualBrightness = 0;
+					actualBeam = false;
+				}
+			}
+
+			if (isIdleMusicSync) {
+				actualBrightness = 0.8;
+				actualBeam = true;
+			}
+
+			if (f.spot) {
 				f.currentBrightness = actualBrightness;
 				f.spot.Brightness = actualBrightness;
 				f.spot.Enabled = actualBrightness > 0.05;
+			}
 
-				if (f.beam) {
-					f.beam.Enabled = actualBeam;
-					f.beam.Width1 = isDj ? 8.5 : 9.5;
-				}
-				if (f.lens) {
-					f.lens.Material =
-						actualBrightness > 0.05 && actualBeam ? Enum.Material.Neon : Enum.Material.SmoothPlastic;
-				}
+			if (f.beam) {
+				f.beam.Enabled = actualBeam && actualBrightness > 0.05;
+				f.beam.Width1 = isDj ? 18 : 20;
+
+				const bFactor = math.clamp(actualBrightness / 5.0, 0, 1.5);
+				const t0 = math.clamp(1 - 0.95 * math.min(1, bFactor), 0, 0.98);
+				const t1 = math.clamp(1 - 0.85 * math.min(1, bFactor), 0, 0.98);
+				const t2 = math.clamp(1 - 0.65 * math.min(1, bFactor), 0, 0.99);
+				const t3 = math.clamp(1 - 0.35 * math.min(1, bFactor), 0, 1.0);
+				const t4 = math.clamp(1 - 0.10 * math.min(1, bFactor), 0.5, 1.0);
+
+				f.beam.Transparency = new NumberSequence([
+					new NumberSequenceKeypoint(0.0, t0),
+					new NumberSequenceKeypoint(0.15, t1),
+					new NumberSequenceKeypoint(0.4, t2),
+					new NumberSequenceKeypoint(0.7, t3),
+					new NumberSequenceKeypoint(0.88, t4),
+					new NumberSequenceKeypoint(1.0, 1.0),
+				]);
+			}
+
+			if (f.lens) {
+				f.lens.Material =
+					actualBrightness > 0.05 && actualBeam ? Enum.Material.Neon : Enum.Material.SmoothPlastic;
 			}
 		}
 	}

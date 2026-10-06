@@ -79,6 +79,7 @@ export enum AppId {
 	Settings = "Settings",
 	Social = "Social",
 	Events = "Events",
+	Camera = "Camera",
 }
 
 /** Represents a single status post on the Social Media app. */

@@ -20,6 +20,7 @@ interface ParsedStreetlightAttributes {
 interface StreetlightEntry {
 	part: BasePart;
 	spotLight: SpotLight;
+	pointLight?: PointLight;
 	attributes: ParsedStreetlightAttributes;
 	connections: RBXScriptConnection[];
 	originalColor: Color3;
@@ -85,11 +86,20 @@ export class StreetlightController {
 		if (inst.IsA("BasePart")) {
 			this.registerPart(inst);
 		} else if (inst.IsA("Model")) {
-			// Jika Model yang ditag, cari BasePart yang merupakan lampu utama atau daftarkan part turunannya
-			const primary = (inst.FindFirstChild("Light", true) ??
-				inst.FindFirstChild("Bulb", true) ??
-				inst.FindFirstChild("Lamp", true) ??
-				inst.FindFirstChildWhichIsA("BasePart", true)) as BasePart | undefined;
+			// Jika Model yang ditag, prioritaskan BasePart yang sudah memiliki SpotLight
+			let primary: BasePart | undefined;
+			for (const desc of inst.GetDescendants()) {
+				if (desc.IsA("SpotLight") && desc.Parent?.IsA("BasePart")) {
+					primary = desc.Parent as BasePart;
+					break;
+				}
+			}
+			if (!primary) {
+				primary = (inst.FindFirstChild("Light", true) ??
+					inst.FindFirstChild("Bulb", true) ??
+					inst.FindFirstChild("Lamp", true) ??
+					inst.FindFirstChildWhichIsA("BasePart", true)) as BasePart | undefined;
+			}
 			if (primary) {
 				this.registerPart(primary);
 			}
@@ -129,13 +139,22 @@ export class StreetlightController {
 			spotLight.Parent = part;
 		}
 
-		// 2. Baca attributes dari part
+		// 2. Temukan atau buat PointLight (Fill Light GTA V 360°)
+		let pointLight = part.FindFirstChild("StreetPointLight") as PointLight | undefined;
+		if (!pointLight) {
+			pointLight = new Instance("PointLight");
+			pointLight.Name = "StreetPointLight";
+			pointLight.Parent = part;
+		}
+
+		// 3. Baca attributes dari part
 		const attributes = this.readAttributes(part);
 
-		// 3. Simpan state awal part untuk restorasi saat off
+		// 4. Simpan state awal part untuk restorasi saat off
 		const entry: StreetlightEntry = {
 			part,
 			spotLight,
+			pointLight,
 			attributes,
 			connections: [],
 			originalColor: part.Color,
@@ -205,12 +224,19 @@ export class StreetlightController {
 			return val !== undefined ? (val as T) : fallback;
 		};
 
+		const existingSpot = part.FindFirstChildWhichIsA("SpotLight");
 		const lightColor = getAttr<Color3>(attrNames.LIGHT_COLOR, cfg.lightColor);
 		const offColor = getAttr<Color3>(attrNames.OFF_COLOR, cfg.offColor);
 		const brightness = getAttr<number>(attrNames.BRIGHTNESS, cfg.brightness);
 		const range = getAttr<number>(attrNames.RANGE, cfg.range);
 		const angle = getAttr<number>(attrNames.ANGLE, cfg.angle);
-		const faceStr = getAttr<string>(attrNames.FACE, cfg.face);
+		const faceStr = (part.GetAttribute(attrNames.FACE) ?? parent?.GetAttribute(attrNames.FACE)) as
+			| string
+			| undefined;
+		const face =
+			faceStr !== undefined
+				? this.parseNormalId(faceStr)
+				: (existingSpot?.Face ?? this.parseNormalId(cfg.face));
 		const shadows = getAttr<boolean>(attrNames.SHADOWS, cfg.shadows);
 		const onClockTime = getAttr<number>(attrNames.ON_CLOCK_TIME, cfg.onClockTime);
 		const offClockTime = getAttr<number>(attrNames.OFF_CLOCK_TIME, cfg.offClockTime);
@@ -226,7 +252,7 @@ export class StreetlightController {
 			brightness,
 			range,
 			angle,
-			face: this.parseNormalId(faceStr),
+			face,
 			shadows,
 			onClockTime,
 			offClockTime,
@@ -288,6 +314,7 @@ export class StreetlightController {
 
 		const attrs = entry.attributes;
 		const spot = entry.spotLight;
+		const point = entry.pointLight;
 		const part = entry.part;
 
 		if (shouldBeOn) {
@@ -298,14 +325,26 @@ export class StreetlightController {
 			spot.Range = attrs.range;
 			spot.Angle = attrs.angle;
 			spot.Face = attrs.face;
-			spot.Shadows = attrs.shadows;
+			spot.Shadows = true;
+
+			// Aktifkan PointLight fill (360 derajat pendaran lembut GTA V)
+			if (point) {
+				point.Enabled = true;
+				point.Color = attrs.lightColor;
+				point.Brightness = math.clamp(attrs.brightness * 0.45, 0.4, 1.0);
+				point.Range = 45;
+				point.Shadows = false;
+			}
 
 			// Aktifkan material Neon pada part
 			part.Material = Enum.Material.Neon;
 			part.Color = attrs.lightColor;
 		} else {
-			// Matikan SpotLight
+			// Matikan SpotLight & PointLight
 			spot.Enabled = false;
+			if (point) {
+				point.Enabled = false;
+			}
 
 			// Kembalikan part ke material SmoothPlastic dan warna redup
 			part.Material = Enum.Material.SmoothPlastic;

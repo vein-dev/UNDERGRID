@@ -51,6 +51,11 @@ export class ServerPlayerService {
 		fallDamageEvent.OnServerEvent.Connect((player: Player, ...args: unknown[]) => {
 			const damage = typeIs(args[0], "number") ? args[0] : 0;
 			if (damage <= 0) return;
+
+			// Kerusakan darah hanya aktif jika pemain sedang berada dalam mode combat
+			const isFighting = player.Character?.GetAttribute("IsFighting") === true;
+			if (!isFighting) return;
+
 			const cappedDamage = math.min(damage, 100);
 			const humanoid = player.Character?.FindFirstChildOfClass("Humanoid");
 			if (humanoid && humanoid.Health > 0) {

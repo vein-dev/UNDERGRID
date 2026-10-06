@@ -1,4 +1,5 @@
 import { AppId } from "shared/types";
+import { CameraApp } from "./apps/CameraApp";
 import { ChatApp } from "./apps/ChatApp";
 import { EventApp } from "./apps/EventApp";
 import { MusicApp } from "./apps/MusicApp";
@@ -15,6 +16,7 @@ export class AppRouter {
 	private settingsApp: SettingsApp;
 	private socialApp: SocialApp;
 	private eventApp: EventApp;
+	private cameraApp: CameraApp;
 	private activeApp?: AppId;
 	private onAppClosedCallbacks: Array<() => void> = [];
 
@@ -24,6 +26,7 @@ export class AppRouter {
 		this.settingsApp = new SettingsApp(parent);
 		this.socialApp = new SocialApp(parent);
 		this.eventApp = new EventApp(parent);
+		this.cameraApp = new CameraApp(parent);
 
 		// Back buttons in apps route through the router
 		this.chatApp.onBack(() => this.closeApp());
@@ -31,6 +34,7 @@ export class AppRouter {
 		this.settingsApp.onBack(() => this.closeApp());
 		this.socialApp.onBack(() => this.closeApp());
 		this.eventApp.onBack(() => this.closeApp());
+		this.cameraApp.onBack(() => this.closeApp());
 	}
 
 	/** Opens the specified app and hides all others. */
@@ -48,6 +52,8 @@ export class AppRouter {
 			this.socialApp.show();
 		} else if (appId === AppId.Events) {
 			this.eventApp.show();
+		} else if (appId === AppId.Camera) {
+			this.cameraApp.show();
 		}
 
 		print(`[AppRouter] Opened: ${appId}`);
@@ -120,12 +126,17 @@ export class AppRouter {
 		return this.activeApp;
 	}
 
+	public getCameraApp(): CameraApp {
+		return this.cameraApp;
+	}
+
 	private hideAllApps(): void {
 		this.chatApp.hide();
 		this.musicApp.hide();
 		this.settingsApp.hide();
 		this.socialApp.hide();
 		this.eventApp.hide();
+		this.cameraApp.hide();
 	}
 
 	public destroy(): void {
@@ -134,6 +145,7 @@ export class AppRouter {
 		this.settingsApp.destroy();
 		this.socialApp.destroy();
 		this.eventApp.destroy();
+		this.cameraApp.destroy();
 	}
 }
 

@@ -14,6 +14,7 @@ import {
 	ServerGuitarService,
 	ServerDrumstickService,
 	ServerRollupDoorService,
+	ServerRooftopDoorService,
 	ServerSeatService,
 	ServerAfkService,
 	ServerDjMusicService,
@@ -59,6 +60,9 @@ function main() {
 
 	const rollupDoorService = ServerRollupDoorService.getInstance();
 	rollupDoorService.init();
+
+	const rooftopDoorService = ServerRooftopDoorService.getInstance();
+	rooftopDoorService.init();
 
 	const seatService = ServerSeatService.getInstance();
 	seatService.init();

@@ -105,36 +105,40 @@ export class TimeService {
 	}
 
 	/**
-	 * Melakukan interpolasi warna pencahayaan (Lerp) yang mulus di antara 4 titik anchor:
-	 * Dawn (06:00), Day (12:00), Dusk (18:00), Night (24:00/00:00).
+	 * Melakukan interpolasi warna pencahayaan (Lerp) yang super mulus di antara 8 titik anchor
+	 * 24-jam bernuansa Los Angeles / New York City, dengan horizon 100% jernih tanpa garis kaku.
 	 */
 	private interpolateLighting(time: number): void {
-		const profiles = TimeConfig.PROFILES;
+		const anchors = TimeConfig.ANCHORS;
+		const normalizedTime = ((time % 24) + 24) % 24;
 
-		let pA: LightingProfile;
-		let pB: LightingProfile;
+		let pA: LightingProfile = anchors[0].profile;
+		let pB: LightingProfile = anchors[0].profile;
 		let alpha = 0;
 
-		if (time >= 0 && time < 6) {
-			// Midnight (00:00) -> Dawn (06:00)
-			pA = profiles[TimePeriod.Night];
-			pB = profiles[TimePeriod.Dawn];
-			alpha = (time - 0) / 6;
-		} else if (time >= 6 && time < 12) {
-			// Dawn (06:00) -> Day (12:00)
-			pA = profiles[TimePeriod.Dawn];
-			pB = profiles[TimePeriod.Day];
-			alpha = (time - 6) / 6;
-		} else if (time >= 12 && time < 18) {
-			// Day (12:00) -> Dusk (18:00)
-			pA = profiles[TimePeriod.Day];
-			pB = profiles[TimePeriod.Dusk];
-			alpha = (time - 12) / 6;
-		} else {
-			// Dusk (18:00) -> Midnight (24:00)
-			pA = profiles[TimePeriod.Dusk];
-			pB = profiles[TimePeriod.Night];
-			alpha = (time - 18) / 6;
+		const count = anchors.size();
+		let found = false;
+
+		for (let i = 0; i < count - 1; i++) {
+			const a1 = anchors[i];
+			const a2 = anchors[i + 1];
+			if (normalizedTime >= a1.hour && normalizedTime < a2.hour) {
+				pA = a1.profile;
+				pB = a2.profile;
+				alpha = (normalizedTime - a1.hour) / (a2.hour - a1.hour);
+				found = true;
+				break;
+			}
+		}
+
+		if (!found) {
+			// Interval terakhir: Anchor terakhir -> 24.0 (wrap around ke Anchor 0)
+			const lastAnchor = anchors[count - 1];
+			const firstAnchor = anchors[0];
+			pA = lastAnchor.profile;
+			pB = firstAnchor.profile;
+			const duration = 24.0 - lastAnchor.hour;
+			alpha = duration > 0 ? (normalizedTime - lastAnchor.hour) / duration : 0;
 		}
 
 		alpha = math.clamp(alpha, 0, 1);
@@ -147,27 +151,68 @@ export class TimeService {
 		Lighting.ColorShift_Bottom = pA.colorShiftBottom.Lerp(pB.colorShiftBottom, alpha);
 		Lighting.ExposureCompensation =
 			pA.exposureCompensation + (pB.exposureCompensation - pA.exposureCompensation) * alpha;
+
+		// Interpolasi Image-Based Lighting (IBL)
+		if (pA.environmentDiffuseScale !== undefined && pB.environmentDiffuseScale !== undefined) {
+			Lighting.EnvironmentDiffuseScale =
+				pA.environmentDiffuseScale + (pB.environmentDiffuseScale - pA.environmentDiffuseScale) * alpha;
+		}
+		if (pA.environmentSpecularScale !== undefined && pB.environmentSpecularScale !== undefined) {
+			Lighting.EnvironmentSpecularScale =
+				pA.environmentSpecularScale + (pB.environmentSpecularScale - pA.environmentSpecularScale) * alpha;
+		}
+
+		// Interpolasi Atmosphere dinamis (menjaga visual kabut/langit 100% jernih tanpa garis batas kaku)
+		const atmosphere = Lighting.FindFirstChildOfClass("Atmosphere");
+		if (atmosphere) {
+			if (pA.atmosphereColor && pB.atmosphereColor) {
+				atmosphere.Color = pA.atmosphereColor.Lerp(pB.atmosphereColor, alpha);
+			}
+			if (pA.atmosphereDecay && pB.atmosphereDecay) {
+				atmosphere.Decay = pA.atmosphereDecay.Lerp(pB.atmosphereDecay, alpha);
+			}
+			if (pA.atmosphereHaze !== undefined && pB.atmosphereHaze !== undefined) {
+				atmosphere.Haze = pA.atmosphereHaze + (pB.atmosphereHaze - pA.atmosphereHaze) * alpha;
+			}
+			if (pA.atmosphereDensity !== undefined && pB.atmosphereDensity !== undefined) {
+				atmosphere.Density = pA.atmosphereDensity + (pB.atmosphereDensity - pA.atmosphereDensity) * alpha;
+			}
+			if (pA.atmosphereOffset !== undefined && pB.atmosphereOffset !== undefined) {
+				atmosphere.Offset = pA.atmosphereOffset + (pB.atmosphereOffset - pA.atmosphereOffset) * alpha;
+			}
+			if (pA.atmosphereGlare !== undefined && pB.atmosphereGlare !== undefined) {
+				atmosphere.Glare = pA.atmosphereGlare + (pB.atmosphereGlare - pA.atmosphereGlare) * alpha;
+			}
+		}
 	}
 
 	/**
 	 * Mematikan semua lampu jalan / map lights secara permanen di Workspace.
 	 */
 	private disableAllMapLights(): void {
-		const namePatterns = ["streetlight", "streetlamp", "thelight", "lamp", "walllamp"];
+		const namePatterns = ["thelight"];
 		for (const desc of Workspace.GetDescendants()) {
-			// Lewati part atau model yang ditag StreetLight
-			if (
+			// Lewati part atau model yang ditag StreetLight atau turunan dari model ber-tag
+			const isStreetLight =
 				CollectionService.HasTag(desc, StreetlightConfig.TAG) ||
-				(desc.Parent !== undefined && CollectionService.HasTag(desc.Parent, StreetlightConfig.TAG))
-			) {
+				(desc.Parent !== undefined && CollectionService.HasTag(desc.Parent, StreetlightConfig.TAG)) ||
+				(desc.FindFirstAncestorWhichIsA("Model") !== undefined &&
+					CollectionService.HasTag(desc.FindFirstAncestorWhichIsA("Model")!, StreetlightConfig.TAG));
+
+			if (isStreetLight) {
+				continue;
+			}
+
+			// Lindungi lampu fungsional seperti wallLamp dari penonaktifan
+			const partName = desc.Name.lower();
+			const parentName = desc.Parent?.Name.lower() ?? "";
+			if (partName.find("walllamp")[0] !== undefined || parentName.find("walllamp")[0] !== undefined) {
 				continue;
 			}
 
 			if (desc.IsA("Light")) {
 				desc.Enabled = false;
 			} else if (desc.IsA("BasePart") && desc.Material === Enum.Material.Neon) {
-				const partName = desc.Name.lower();
-				const parentName = desc.Parent?.Name.lower() ?? "";
 				let matches = false;
 				for (const p of namePatterns) {
 					if (partName.find(p)[0] !== undefined || parentName.find(p)[0] !== undefined) {
@@ -181,7 +226,7 @@ export class TimeService {
 				}
 			}
 		}
-		print("[TimeService] All streetlights and map lights permanently disabled.");
+		print("[TimeService] Legacy map lights safely processed.");
 	}
 
 	// ─── Public API ──────────────────────────────────────────────────────────

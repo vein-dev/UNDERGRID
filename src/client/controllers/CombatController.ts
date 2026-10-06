@@ -9,6 +9,7 @@ import {
 	UserInputService,
 	Workspace,
 } from "@rbxts/services";
+import { AvatarContextMenuView } from "client/ui/views/AvatarContextMenuView";
 import { CombatHudView } from "client/ui/views/CombatHudView";
 import { getRemoteEvent } from "shared/network";
 import { ARCZIS_COMBAT_CONFIG } from "shared/types";
@@ -97,6 +98,10 @@ export class CombatController {
 		return CombatController.instance;
 	}
 
+	public isCombatActive(): boolean {
+		return this.isEquipped && !this.isPaused;
+	}
+
 	public init(): void {
 		// Fetch Remotes
 		this.combatEvent = getRemoteEvent("CombatEvent");
@@ -174,6 +179,25 @@ export class CombatController {
 		UserInputService.InputBegan.Connect((input, processed) => this.onInputBegan(input, processed));
 		UserInputService.InputEnded.Connect((input, processed) => this.onInputEnded(input, processed));
 		RunService.RenderStepped.Connect(() => {
+			if (this.isEquipped && !this.isPaused) {
+				// Pastikan mouse selalu terkunci di tengah layar dan kursor disembunyikan (ShiftLock)
+				if (UserInputService.MouseBehavior !== Enum.MouseBehavior.LockCenter) {
+					UserInputService.MouseBehavior = Enum.MouseBehavior.LockCenter;
+				}
+				if (UserInputService.MouseIconEnabled) {
+					UserInputService.MouseIconEnabled = false;
+				}
+
+				// Rotasikan orientasi karakter menghadap sudut pandang horizontal kamera
+				if (this.humanoidRootPart && this.humanoid && this.humanoid.Health > 0) {
+					const camera = Workspace.CurrentCamera;
+					if (camera) {
+						const [, yaw] = camera.CFrame.ToOrientation();
+						const currentPos = this.humanoidRootPart.Position;
+						this.humanoidRootPart.CFrame = new CFrame(currentPos).mul(CFrame.Angles(0, yaw, 0));
+					}
+				}
+			}
 			this.updateMovement();
 		});
 
@@ -256,6 +280,7 @@ export class CombatController {
 			});
 		}
 		UserInputService.MouseBehavior = Enum.MouseBehavior.Default;
+		UserInputService.MouseIconEnabled = true;
 		this.setCombatCamera(false);
 
 		this.watchCharacterValues();
@@ -566,17 +591,21 @@ export class CombatController {
 			this.humanoidRootPart.SetAttribute("IsFighting", true);
 		}
 
-		// Non-ShiftLock: Karakter bebas berputar dengan AutoRotate aktif & kamera mengikuti arah gerak
+		// Auto ShiftLock & Sembunyikan Kursor saat bertarung
 		if (this.humanoid) {
-			this.humanoid.AutoRotate = true;
-			this.humanoid.CameraOffset = new Vector3(0, 0, 0);
+			this.humanoid.AutoRotate = false;
+			this.humanoid.CameraOffset = new Vector3(1.75, 0.25, 0);
 			// Disable Jump while in fight mode
 			this.humanoid.SetStateEnabled(Enum.HumanoidStateType.Jumping, false);
 			this.humanoid.JumpPower = 0;
 			this.humanoid.JumpHeight = 0;
 		}
-		UserInputService.MouseBehavior = Enum.MouseBehavior.Default;
-		this.setCombatCamera(true);
+		UserInputService.MouseBehavior = Enum.MouseBehavior.LockCenter;
+		UserInputService.MouseIconEnabled = false;
+		this.setCombatCamera(false);
+
+		// Tutup Avatar Context Menu jika sedang terbuka saat masuk fight mode
+		AvatarContextMenuView.getInstance().hide();
 
 		// Hentikan animasi tool bawaan Roblox (toolnone / slash)
 		this.suppressToolNoneAnimations();
@@ -624,7 +653,7 @@ export class CombatController {
 
 		this.cleanToolNoneListeners();
 
-		// Pulihkan Jump & normal WalkSpeed
+		// Pulihkan ShiftLock, Cursor, Jump & normal WalkSpeed & Health penuh
 		if (this.humanoid) {
 			this.humanoid.AutoRotate = true;
 			this.humanoid.CameraOffset = new Vector3(0, 0, 0);
@@ -632,8 +661,16 @@ export class CombatController {
 			this.humanoid.UseJumpPower = true;
 			this.humanoid.JumpPower = MovementConfig.JUMP.jumpPower;
 			this.humanoid.WalkSpeed = MovementConfig.CROUCH.normalSpeed;
+			this.humanoid.Health = this.humanoid.MaxHealth;
 		}
+
+		const staminaVal = this.character?.FindFirstChild("Stamina") as NumberValue | undefined;
+		if (staminaVal) {
+			staminaVal.Value = ARCZIS_COMBAT_CONFIG.MaxStamina;
+		}
+
 		UserInputService.MouseBehavior = Enum.MouseBehavior.Default;
+		UserInputService.MouseIconEnabled = true;
 		this.setCombatCamera(false);
 
 		this.combatHud.setVisible(false);
@@ -661,7 +698,7 @@ export class CombatController {
 			this.setProceduralBlock(false);
 			this.cleanToolNoneListeners();
 
-			// Pulihkan camera dan mouse saat paused
+			// Pulihkan camera, cursor, dan mouse saat paused
 			if (this.humanoid) {
 				this.humanoid.AutoRotate = true;
 				this.humanoid.CameraOffset = new Vector3(0, 0, 0);
@@ -670,17 +707,19 @@ export class CombatController {
 				this.humanoid.JumpPower = MovementConfig.JUMP.jumpPower;
 			}
 			UserInputService.MouseBehavior = Enum.MouseBehavior.Default;
+			UserInputService.MouseIconEnabled = true;
 			this.setCombatCamera(false);
 		} else if (this.isEquipped) {
 			if (this.humanoid) {
-				this.humanoid.AutoRotate = true;
-				this.humanoid.CameraOffset = new Vector3(0, 0, 0);
+				this.humanoid.AutoRotate = false;
+				this.humanoid.CameraOffset = new Vector3(1.75, 0.25, 0);
 				this.humanoid.SetStateEnabled(Enum.HumanoidStateType.Jumping, false);
 				this.humanoid.JumpPower = 0;
 				this.humanoid.JumpHeight = 0;
 			}
-			UserInputService.MouseBehavior = Enum.MouseBehavior.Default;
-			this.setCombatCamera(true);
+			UserInputService.MouseBehavior = Enum.MouseBehavior.LockCenter;
+			UserInputService.MouseIconEnabled = false;
+			this.setCombatCamera(false);
 			this.suppressToolNoneAnimations();
 			this.combatHud.setVisible(true);
 			this.updateMovement();
@@ -688,7 +727,7 @@ export class CombatController {
 	}
 
 	/**
-	 * Mengatur mode kamera kombat (Follow untuk mengikuti arah gerakan, Custom untuk kamera standar).
+	 * Mengatur mode kamera kombat (Custom untuk kamera standar berorientasi Mouse Lock).
 	 */
 	private setCombatCamera(follow: boolean): void {
 		const camera = Workspace.CurrentCamera;

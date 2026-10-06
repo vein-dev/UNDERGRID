@@ -11,7 +11,7 @@ const story = CreateGenericStory(
 			isChargingOllie: Boolean(false),
 			isPushing: Boolean(false),
 			isBraking: Boolean(false),
-			steerDirection: Choose([-1, 0, 1], 0),
+			steerDirection: Choose(["Neutral", "Left", "Right"], 1),
 		},
 	},
 	(props) => {
@@ -21,12 +21,30 @@ const story = CreateGenericStory(
 
 		const mobileView = new SkateboardMobileView(props.target);
 
+		mobileView.setCallbacks({
+			onPushDown: () => print("[UI-Labs Skateboard] Push Down"),
+			onPushUp: () => print("[UI-Labs Skateboard] Push Up"),
+			onBrakeDown: () => print("[UI-Labs Skateboard] Brake Down"),
+			onBrakeUp: () => print("[UI-Labs Skateboard] Brake Up"),
+			onOllieDown: () => print("[UI-Labs Skateboard] Ollie Down"),
+			onOllieUp: () => print("[UI-Labs Skateboard] Ollie Up"),
+			onSteerLeftDown: () => print("[UI-Labs Skateboard] Steer Left Down"),
+			onSteerLeftUp: () => print("[UI-Labs Skateboard] Steer Left Up"),
+			onSteerRightDown: () => print("[UI-Labs Skateboard] Steer Right Down"),
+			onSteerRightUp: () => print("[UI-Labs Skateboard] Steer Right Up"),
+			onTrick: (trickName) => print(`[UI-Labs Skateboard] Trick: ${trickName}`),
+			onDismount: () => print("[UI-Labs Skateboard] Dismount clicked"),
+		});
+
 		const applyControls = (c: typeof props.controls) => {
 			mobileView.setVisible(c.visible);
 			mobileView.setChargingOllie(c.isChargingOllie);
 			mobileView.setPushing(c.isPushing);
 			mobileView.setBraking(c.isBraking);
-			mobileView.setSteerDirection(c.steerDirection);
+
+			const steerVal =
+				c.steerDirection === "Left" ? -1 : c.steerDirection === "Right" ? 1 : 0;
+			mobileView.setSteerDirection(steerVal);
 		};
 
 		applyControls(props.controls);

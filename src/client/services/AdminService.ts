@@ -153,6 +153,14 @@ export class AdminService {
 		this.adminControlEvent.FireServer("UnbanByUsername", { username });
 	}
 
+	public grantTempAdmin(userId: number): void {
+		this.adminControlEvent.FireServer("GrantTempAdmin", userId);
+	}
+
+	public revokeTempAdmin(userId: number): void {
+		this.adminControlEvent.FireServer("RevokeTempAdmin", userId);
+	}
+
 	public getBannedList(): BanRecord[] {
 		return this.bannedPlayers;
 	}

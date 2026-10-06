@@ -78,6 +78,26 @@ export class StaminaController {
 		}
 
 		const cfg = MovementConfig.STAMINA;
+
+		// Sistem stamina HANYA aktif saat mode combat (IsFighting === true).
+		// Di luar mode combat (eksplorasi), stamina selalu 100%, bebas lari tanpa batas, dan no heartbeat.
+		const isFighting =
+			this.hrp.GetAttribute("IsFighting") === true ||
+			this.player.Character?.GetAttribute("IsFighting") === true;
+
+		if (!isFighting) {
+			if (this.heartbeatSound) {
+				this.stopHeartbeatSound();
+			}
+			if (this.stamina !== cfg.maxStamina || this.exhausted) {
+				this.stamina = cfg.maxStamina;
+				this.exhausted = false;
+				this.hrp.SetAttribute("CanSprint", true);
+				this.notifyStateChanged();
+			}
+			return;
+		}
+
 		const isMoving = this.hrp.AssemblyLinearVelocity.Magnitude > 0.5;
 		const isSprinting = this.humanoid.WalkSpeed >= cfg.sprintSpeedThreshold && isMoving;
 

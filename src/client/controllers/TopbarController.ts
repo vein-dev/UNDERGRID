@@ -38,6 +38,7 @@ export class TopbarController {
 		let isSyncing = false;
 
 		backpackIcon.bindEvent("toggled", (_self, isSelected) => {
+			if (!this.isTopbarEnabled) return;
 			if (isSyncing) return;
 			isSyncing = true;
 			BackpackController.getInstance().toggle(isSelected);
@@ -46,6 +47,7 @@ export class TopbarController {
 
 		// Sinkronisasi dua arah jika backpack ditutup via UI / Backdrop
 		BackpackController.getInstance().onToggle((isOpen) => {
+			if (!this.isTopbarEnabled) return;
 			if (isSyncing) return;
 			isSyncing = true;
 			if (isOpen && !backpackIcon.isSelected) {
@@ -70,6 +72,7 @@ export class TopbarController {
 		let isSyncingEmote = false;
 
 		emoteIcon.bindEvent("toggled", (_self, isSelected) => {
+			if (!this.isTopbarEnabled) return;
 			if (isSyncingEmote) return;
 			isSyncingEmote = true;
 			emoteView.toggle(isSelected);
@@ -77,6 +80,7 @@ export class TopbarController {
 		});
 
 		emoteView.onToggle((isOpen) => {
+			if (!this.isTopbarEnabled) return;
 			if (isSyncingEmote) return;
 			isSyncingEmote = true;
 			if (isOpen && !emoteIcon.isSelected) {
@@ -126,81 +130,12 @@ export class TopbarController {
 
 		this.icons.set("HotbarToggle", hotbarIcon);
 
-		// 4. Icon Admin Panel & Stage Controller (Hanya untuk Player berhak Admin)
-		if (isPlayerAdmin(Players.LocalPlayer)) {
-			const adminView = AdminPanelView.getInstance();
+		// 4. Icon Admin Panel & Stage Controller (Dikelola dinamis untuk Permanent & Temporary Admin)
+		this.updateAdminIcons();
+		Players.LocalPlayer.GetAttributeChangedSignal("IsTemporaryAdmin").Connect(() => {
+			this.updateAdminIcons();
+		});
 
-			const adminIcon = new Icon()
-				.setName("Admin")
-				// .setLabel("Admin")
-				.setCaption("Admin")
-				.setImage(GetIconUri("shield"))
-				.autoDeselect(false)
-				.bindToggleKey(Enum.KeyCode.P);
-
-			let isSyncingAdmin = false;
-
-			adminIcon.bindEvent("toggled", (_self, isSelected) => {
-				if (isSyncingAdmin) return;
-				isSyncingAdmin = true;
-				adminView.toggle(isSelected);
-				isSyncingAdmin = false;
-			});
-
-			adminView.onToggle((isOpen) => {
-				if (isSyncingAdmin) return;
-				isSyncingAdmin = true;
-				if (isOpen && !adminIcon.isSelected) {
-					adminIcon.select();
-				} else if (!isOpen && adminIcon.isSelected) {
-					adminIcon.deselect();
-				}
-				isSyncingAdmin = false;
-			});
-
-			this.icons.set("Admin", adminIcon);
-			print("[TopbarController] Admin icon mounted for administrator.");
-
-			// 5. Icon Stage Controller (Terhubung dengan LightingRemoteView & keybind L)
-			const stageView = LightingRemoteView.getInstance();
-
-			const stageIcon = new Icon()
-				.setName("StageController")
-				.setCaption("Stage Controller (L)")
-				.setImage(GetIconUri("activity"))
-				.autoDeselect(false)
-				.bindToggleKey(Enum.KeyCode.L);
-
-			let isSyncingStage = false;
-
-			stageIcon.bindEvent("toggled", (_self, isSelected) => {
-				if (isSyncingStage) return;
-				isSyncingStage = true;
-				stageView.toggle(isSelected);
-				isSyncingStage = false;
-			});
-
-			stageView.onOpen(() => {
-				if (isSyncingStage) return;
-				isSyncingStage = true;
-				if (!stageIcon.isSelected) {
-					stageIcon.select();
-				}
-				isSyncingStage = false;
-			});
-
-			stageView.onClose(() => {
-				if (isSyncingStage) return;
-				isSyncingStage = true;
-				if (stageIcon.isSelected) {
-					stageIcon.deselect();
-				}
-				isSyncingStage = false;
-			});
-
-			this.icons.set("StageController", stageIcon);
-			print("[TopbarController] Stage Controller icon mounted for administrator.");
-		}
 
 		// 4. Icon Settings (Terhubung dengan SettingsModalView)
 		const settingsView = SettingsModalView.getInstance();
@@ -214,6 +149,7 @@ export class TopbarController {
 		let isSyncingSettings = false;
 
 		settingsIcon.bindEvent("toggled", (_self, isSelected) => {
+			if (!this.isTopbarEnabled) return;
 			if (isSyncingSettings) return;
 			isSyncingSettings = true;
 			settingsView.toggle(isSelected);
@@ -221,6 +157,7 @@ export class TopbarController {
 		});
 
 		settingsView.onToggle((isOpen) => {
+			if (!this.isTopbarEnabled) return;
 			if (isSyncingSettings) return;
 			isSyncingSettings = true;
 			if (isOpen && !settingsIcon.isSelected) {
@@ -264,4 +201,105 @@ export class TopbarController {
 	public getIcon(name: string): Icon | undefined {
 		return this.icons.get(name);
 	}
+
+	private updateAdminIcons(): void {
+		const shouldHaveAdmin = isPlayerAdmin(Players.LocalPlayer);
+		const hasAdminIcon = this.icons.has("Admin");
+
+		if (shouldHaveAdmin && !hasAdminIcon) {
+			const adminView = AdminPanelView.getInstance();
+			const adminIcon = new Icon()
+				.setName("Admin")
+				.setCaption("Admin (P)")
+				.setImage(GetIconUri("shield"))
+				.autoDeselect(false)
+				.bindToggleKey(Enum.KeyCode.P);
+
+			let isSyncingAdmin = false;
+
+			adminIcon.bindEvent("toggled", (_self, isSelected) => {
+				if (isSyncingAdmin) return;
+				isSyncingAdmin = true;
+				adminView.toggle(isSelected);
+				isSyncingAdmin = false;
+			});
+
+			adminView.onToggle((isOpen) => {
+				if (isSyncingAdmin) return;
+				isSyncingAdmin = true;
+				if (isOpen && !adminIcon.isSelected) {
+					adminIcon.select();
+				} else if (!isOpen && adminIcon.isSelected) {
+					adminIcon.deselect();
+				}
+				isSyncingAdmin = false;
+			});
+
+			this.icons.set("Admin", adminIcon);
+			print("[TopbarController] Admin icon mounted for administrator.");
+
+			const stageView = LightingRemoteView.getInstance();
+			const stageIcon = new Icon()
+				.setName("StageController")
+				.setCaption("Stage Controller (L)")
+				.setImage(GetIconUri("activity"))
+				.autoDeselect(false)
+				.bindToggleKey(Enum.KeyCode.L);
+
+			let isSyncingStage = false;
+
+			stageIcon.bindEvent("toggled", (_self, isSelected) => {
+				if (!this.isTopbarEnabled) return;
+				if (isSyncingStage) return;
+				isSyncingStage = true;
+				stageView.toggle(isSelected);
+				isSyncingStage = false;
+			});
+
+			stageView.onOpen(() => {
+				if (!this.isTopbarEnabled) return;
+				if (isSyncingStage) return;
+				isSyncingStage = true;
+				if (!stageIcon.isSelected) {
+					stageIcon.select();
+				}
+				isSyncingStage = false;
+			});
+
+			stageView.onClose(() => {
+				if (!this.isTopbarEnabled) return;
+				if (isSyncingStage) return;
+				isSyncingStage = true;
+				if (stageIcon.isSelected) {
+					stageIcon.deselect();
+				}
+				isSyncingStage = false;
+			});
+
+			this.icons.set("StageController", stageIcon);
+			print("[TopbarController] Stage Controller icon mounted for administrator.");
+
+			if (!this.isTopbarEnabled) {
+				adminIcon.setEnabled(false);
+				stageIcon.setEnabled(false);
+			}
+		} else if (!shouldHaveAdmin && hasAdminIcon) {
+			const adminIcon = this.icons.get("Admin");
+			if (adminIcon) {
+				adminIcon.destroy();
+				this.icons.delete("Admin");
+			}
+
+			const stageIcon = this.icons.get("StageController");
+			if (stageIcon) {
+				stageIcon.destroy();
+				this.icons.delete("StageController");
+			}
+
+			AdminPanelView.getInstance().toggle(false);
+			LightingRemoteView.getInstance().toggle(false);
+			print("[TopbarController] Admin icons unmounted and views closed.");
+		}
+	}
 }
+

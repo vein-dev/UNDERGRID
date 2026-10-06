@@ -1,6 +1,12 @@
 import { Players, RunService, TweenService, UserInputService, Workspace } from "@rbxts/services";
 import { MovementConfig } from "shared/config/MovementConfig";
 
+export interface MovementControlState {
+	isSprinting: boolean;
+	isCrouching: boolean;
+	isCrawling: boolean;
+}
+
 export class CrouchController {
 	private static instance?: CrouchController;
 
@@ -35,6 +41,8 @@ export class CrouchController {
 	private camOffsetTween?: Tween;
 
 	private isPaused = false;
+	private sprintListeners = new Set<(isSprinting: boolean) => void>();
+	private movementStateListeners = new Set<(state: MovementControlState) => void>();
 
 	private constructor() {
 		this.player = Players.LocalPlayer;
@@ -46,6 +54,98 @@ export class CrouchController {
 			CrouchController.instance = new CrouchController();
 		}
 		return CrouchController.instance;
+	}
+
+	public isSprintActive(): boolean {
+		return this.isSprinting;
+	}
+
+	public isCrouchActive(): boolean {
+		return this.isCrouching;
+	}
+
+	public isCrawlActive(): boolean {
+		return this.isCrawling;
+	}
+
+	public getMovementState(): MovementControlState {
+		return {
+			isSprinting: this.isSprinting,
+			isCrouching: this.isCrouching,
+			isCrawling: this.isCrawling,
+		};
+	}
+
+	public onSprintChanged(listener: (isSprinting: boolean) => void): () => void {
+		this.sprintListeners.add(listener);
+		listener(this.isSprinting);
+		return () => {
+			this.sprintListeners.delete(listener);
+		};
+	}
+
+	public onMovementStateChanged(listener: (state: MovementControlState) => void): () => void {
+		this.movementStateListeners.add(listener);
+		listener(this.getMovementState());
+		return () => {
+			this.movementStateListeners.delete(listener);
+		};
+	}
+
+	private notifyMovementStateChanged(): void {
+		const state = this.getMovementState();
+		for (const listener of this.sprintListeners) {
+			try {
+				listener(state.isSprinting);
+			} catch (e) {
+				warn("[CrouchController] Error in sprint listener:", e);
+			}
+		}
+		for (const listener of this.movementStateListeners) {
+			try {
+				listener(state);
+			} catch (e) {
+				warn("[CrouchController] Error in movement state listener:", e);
+			}
+		}
+	}
+
+	public toggleSprint(): boolean {
+		if (this.isSprinting) {
+			this.stopSprint();
+		} else {
+			if (this.isCrawling) {
+				this.stopCrawl();
+			}
+			if (this.isCrouching) {
+				this.toggleCrouch();
+			}
+			this.startSprint();
+		}
+		return this.isSprinting;
+	}
+
+	public toggleCrouchAction(): void {
+		if (this.isCrawling) {
+			this.stopCrawl();
+		} else {
+			this.toggleCrouch();
+		}
+	}
+
+	public toggleCrawlAction(): void {
+		if (this.isCrawling) {
+			this.stopCrawl();
+		} else if (this.isCrouching) {
+			this.doCrawl();
+		} else {
+			this.toggleCrouch();
+			task.delay(0.1, () => {
+				if (this.isCrouching && !this.isCrawling) {
+					this.doCrawl();
+				}
+			});
+		}
 	}
 
 	public setPaused(paused: boolean): void {
@@ -121,6 +221,7 @@ export class CrouchController {
 		this.isCrawling = false;
 		this.isTransitioning = false;
 		this.isSprinting = false;
+		this.notifyMovementStateChanged();
 		this.currentCrouchAnim = undefined;
 		this.currentCrawlAnim = undefined;
 
@@ -258,6 +359,7 @@ export class CrouchController {
 		this.isSprinting = true;
 		this.applySpeed();
 		this.tweenFOV(MovementConfig.CROUCH.sprintFOV, MovementConfig.CROUCH.sprintFOVTime);
+		this.notifyMovementStateChanged();
 	}
 
 	public stopSprint(): void {
@@ -267,6 +369,7 @@ export class CrouchController {
 		if (!this.isCrouching && !this.isCrawling) {
 			this.tweenFOV(MovementConfig.CROUCH.defaultFOV, MovementConfig.CROUCH.defaultFOVTime);
 		}
+		this.notifyMovementStateChanged();
 	}
 
 	// ----------------------------------------------------
@@ -306,6 +409,7 @@ export class CrouchController {
 			task.delay(MovementConfig.CROUCH.crouchCooldown, () => {
 				this.crouchDebounce = true;
 			});
+			this.notifyMovementStateChanged();
 		} else {
 			this.crouchDebounce = false;
 			this.isSprinting = false;
@@ -323,6 +427,7 @@ export class CrouchController {
 			task.delay(MovementConfig.CROUCH.crouchCooldown, () => {
 				this.crouchDebounce = true;
 			});
+			this.notifyMovementStateChanged();
 		}
 	}
 
@@ -341,6 +446,7 @@ export class CrouchController {
 
 		this.rootPart.SetAttribute("CrawlLock", true);
 		this.rootPart.SetAttribute("IsCrawling", true);
+		this.notifyMovementStateChanged();
 
 		this.stopCrouchAnims();
 		this.tweenFOV(MovementConfig.CROUCH.crawlFOV, MovementConfig.CROUCH.crawlFOVTime);
@@ -385,6 +491,7 @@ export class CrouchController {
 		this.isCrawling = false;
 		this.isTransitioning = true;
 		this.rootPart.SetAttribute("IsCrawling", false);
+		this.notifyMovementStateChanged();
 
 		this.stopCrawlAnims();
 		this.tweenFOV(MovementConfig.CROUCH.crouchFOV, MovementConfig.CROUCH.crouchFOVTime);

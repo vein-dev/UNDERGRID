@@ -26,39 +26,39 @@ export class ServerStageLightingService {
 	private djFixtures: StageLightFixture[] = [];
 
 	private mainControlState: StageLightingControlPayload = {
-		mode: StageLightMode.SpotlightCenter,
+		mode: StageLightMode.Off,
 		panAngle: 0,
 		tiltAngle: 0,
 		motorSpeed: 0.04,
 		color: Color3.fromRGB(180, 240, 255),
 		brightness: 4.5,
-		beamEnabled: true,
+		beamEnabled: false,
 		strobeSpeed: 0,
 		isRainbow: false,
 		isPulse: false,
 		isMusicSync: false,
 		target: "main",
 		fogEnabled: false,
-		fogIntensity: 0.5,
+		fogIntensity: 0.6,
 		backdropPreset: "gif_cyber_grid",
 		backdropBrightness: 2.0,
 	};
 
 	private djControlState: StageLightingControlPayload = {
-		mode: StageLightMode.SpotlightCenter,
+		mode: StageLightMode.Off,
 		panAngle: 0,
 		tiltAngle: 0,
 		motorSpeed: 0.04,
 		color: Color3.fromRGB(0, 255, 255),
 		brightness: 3.5,
-		beamEnabled: true,
+		beamEnabled: false,
 		strobeSpeed: 0,
 		isRainbow: false,
 		isPulse: false,
 		isMusicSync: false,
 		target: "dj",
 		fogEnabled: false,
-		fogIntensity: 0.5,
+		fogIntensity: 0.6,
 		backdropPreset: "gif_cyber_grid",
 		backdropBrightness: 2.0,
 	};
@@ -182,25 +182,28 @@ export class ServerStageLightingService {
 
 				if (spotLight) {
 					spotLight.Face = Enum.NormalId.Front;
-					spotLight.Range = row >= 6 ? 35 : 28;
-					spotLight.Angle = 55;
+					spotLight.Range = row >= 6 ? 65 : 60;
+					spotLight.Angle = 85;
 					spotLight.Shadows = true;
 				}
 				if (beam) {
-					beam.Width0 = 0.9;
-					beam.Width1 = row >= 6 ? 8.5 : 9.5;
+					beam.Width0 = 1.2;
+					beam.Width1 = row >= 6 ? 18 : 20;
 					beam.LightEmission = 1;
 					beam.LightInfluence = 0;
 					beam.Transparency = new NumberSequence([
-						new NumberSequenceKeypoint(0, 0.1),
-						new NumberSequenceKeypoint(0.5, 0.45),
-						new NumberSequenceKeypoint(1, 1.0),
+						new NumberSequenceKeypoint(0.0, 0.05),
+						new NumberSequenceKeypoint(0.15, 0.15),
+						new NumberSequenceKeypoint(0.4, 0.35),
+						new NumberSequenceKeypoint(0.7, 0.65),
+						new NumberSequenceKeypoint(0.88, 0.9),
+						new NumberSequenceKeypoint(1.0, 1.0),
 					]);
 					if (beam.Attachment0) {
 						beam.Attachment0.Position = new Vector3(0, 0, -0.2);
 					}
 					if (beam.Attachment1) {
-						beam.Attachment1.Position = new Vector3(0, 0, -18);
+						beam.Attachment1.Position = new Vector3(0, 0, -42);
 					}
 				}
 
@@ -402,16 +405,34 @@ export class ServerStageLightingService {
 			const targetBrightness = isOff ? 0 : this.mainControlState.brightness;
 			const targetBeam = !isOff && this.mainControlState.beamEnabled;
 
+			const bFactor = math.clamp(targetBrightness / 5.0, 0, 1.5);
+			const t0 = math.clamp(1 - 0.95 * math.min(1, bFactor), 0, 0.98);
+			const t1 = math.clamp(1 - 0.85 * math.min(1, bFactor), 0, 0.98);
+			const t2 = math.clamp(1 - 0.65 * math.min(1, bFactor), 0, 0.99);
+			const t3 = math.clamp(1 - 0.35 * math.min(1, bFactor), 0, 1.0);
+			const t4 = math.clamp(1 - 0.10 * math.min(1, bFactor), 0.5, 1.0);
+			const beamSeq = new NumberSequence([
+				new NumberSequenceKeypoint(0.0, t0),
+				new NumberSequenceKeypoint(0.15, t1),
+				new NumberSequenceKeypoint(0.4, t2),
+				new NumberSequenceKeypoint(0.7, t3),
+				new NumberSequenceKeypoint(0.88, t4),
+				new NumberSequenceKeypoint(1.0, 1.0),
+			]);
+
 			for (const f of this.mainFixtures) {
 				if (f.spotLight) {
 					f.spotLight.Brightness = targetBrightness;
-					f.spotLight.Enabled = targetBrightness > 0;
+					f.spotLight.Enabled = targetBrightness > 0.05;
 				}
 				if (f.beam) {
-					f.beam.Enabled = targetBeam;
+					f.beam.Enabled = targetBeam && targetBrightness > 0.05;
+					f.beam.Width1 = 20;
+					f.beam.Transparency = beamSeq;
 				}
 				if (f.lensPart) {
-					f.lensPart.Material = targetBeam ? Enum.Material.Neon : Enum.Material.SmoothPlastic;
+					f.lensPart.Material =
+						targetBeam && targetBrightness > 0.05 ? Enum.Material.Neon : Enum.Material.SmoothPlastic;
 				}
 			}
 		}
@@ -421,16 +442,34 @@ export class ServerStageLightingService {
 			const targetBrightness = isOff ? 0 : this.djControlState.brightness;
 			const targetBeam = !isOff && this.djControlState.beamEnabled;
 
+			const bFactor = math.clamp(targetBrightness / 5.0, 0, 1.5);
+			const t0 = math.clamp(1 - 0.95 * math.min(1, bFactor), 0, 0.98);
+			const t1 = math.clamp(1 - 0.85 * math.min(1, bFactor), 0, 0.98);
+			const t2 = math.clamp(1 - 0.65 * math.min(1, bFactor), 0, 0.99);
+			const t3 = math.clamp(1 - 0.35 * math.min(1, bFactor), 0, 1.0);
+			const t4 = math.clamp(1 - 0.10 * math.min(1, bFactor), 0.5, 1.0);
+			const djBeamSeq = new NumberSequence([
+				new NumberSequenceKeypoint(0.0, t0),
+				new NumberSequenceKeypoint(0.15, t1),
+				new NumberSequenceKeypoint(0.4, t2),
+				new NumberSequenceKeypoint(0.7, t3),
+				new NumberSequenceKeypoint(0.88, t4),
+				new NumberSequenceKeypoint(1.0, 1.0),
+			]);
+
 			for (const f of this.djFixtures) {
 				if (f.spotLight) {
 					f.spotLight.Brightness = targetBrightness;
-					f.spotLight.Enabled = targetBrightness > 0;
+					f.spotLight.Enabled = targetBrightness > 0.05;
 				}
 				if (f.beam) {
-					f.beam.Enabled = targetBeam;
+					f.beam.Enabled = targetBeam && targetBrightness > 0.05;
+					f.beam.Width1 = 18;
+					f.beam.Transparency = djBeamSeq;
 				}
 				if (f.lensPart) {
-					f.lensPart.Material = targetBeam ? Enum.Material.Neon : Enum.Material.SmoothPlastic;
+					f.lensPart.Material =
+						targetBeam && targetBrightness > 0.05 ? Enum.Material.Neon : Enum.Material.SmoothPlastic;
 				}
 			}
 		}
@@ -489,6 +528,9 @@ export class ServerStageLightingService {
 			case StageLightMode.Wave:
 			case StageLightMode.Ballyhoo:
 			case StageLightMode.Circle:
+			case StageLightMode.CrossFire:
+			case StageLightMode.FanSpread:
+			case StageLightMode.Searchlight:
 			case StageLightMode.Strobe:
 				this.updateIntensity(targetStage);
 				break;
@@ -710,26 +752,26 @@ export class ServerStageLightingService {
 				}
 
 				emitter.Texture = "rbxasset://textures/particles/smoke_main.dds";
-				emitter.Rate = 20;
-				emitter.Lifetime = new NumberRange(3, 6);
-				emitter.Speed = new NumberRange(3, 8);
-				emitter.SpreadAngle = new Vector2(15, 15);
+				emitter.Rate = 0;
+				emitter.Lifetime = new NumberRange(3.0, 5.0);
+				emitter.Speed = new NumberRange(1.5, 3.5);
+				emitter.SpreadAngle = new Vector2(90, 45);
 				emitter.Size = new NumberSequence([
-					new NumberSequenceKeypoint(0, 5),
-					new NumberSequenceKeypoint(0.5, 15),
-					new NumberSequenceKeypoint(1, 25),
+					new NumberSequenceKeypoint(0, 4),
+					new NumberSequenceKeypoint(0.5, 10),
+					new NumberSequenceKeypoint(1, 16),
 				]);
 				emitter.Transparency = new NumberSequence([
-					new NumberSequenceKeypoint(0, 0.3),
-					new NumberSequenceKeypoint(0.3, 0.5),
+					new NumberSequenceKeypoint(0, 0.8),
+					new NumberSequenceKeypoint(0.4, 0.9),
 					new NumberSequenceKeypoint(1, 1),
 				]);
 				emitter.Color = new ColorSequence(Color3.fromRGB(220, 220, 230));
-				emitter.LightEmission = 0.1;
-				emitter.LightInfluence = 0.8;
-				emitter.RotSpeed = new NumberRange(-20, 20);
-				emitter.Acceleration = new Vector3(0, 2, 0);
-				emitter.Drag = 3;
+				emitter.LightEmission = 0;
+				emitter.LightInfluence = 0.35;
+				emitter.RotSpeed = new NumberRange(-15, 15);
+				emitter.Acceleration = new Vector3(0, 0.25, 0);
+				emitter.Drag = 3.0;
 				emitter.ZOffset = 1;
 				emitter.EmissionDirection = Enum.NormalId.Top;
 				emitter.Enabled = false;
@@ -760,40 +802,52 @@ export class ServerStageLightingService {
 	}
 
 	private applyFog(target: StageTarget = "all"): void {
+		const updateGroup = (emitters: ParticleEmitter[], enabled: boolean, intensity: number) => {
+			const isEffectivelyOn = enabled && intensity > 0.01;
+			const tStart = math.clamp(0.94 - intensity * 0.30, 0.64, 0.96);
+			const tMid = math.clamp(0.97 - intensity * 0.18, 0.79, 0.98);
+			const fogTransSeq = new NumberSequence([
+				new NumberSequenceKeypoint(0.0, tStart),
+				new NumberSequenceKeypoint(0.4, tMid),
+				new NumberSequenceKeypoint(1.0, 1.0),
+			]);
+			const rate = isEffectivelyOn ? math.clamp(intensity * 9, 1, 10) : 0;
+
+			for (const emitter of emitters) {
+				emitter.Enabled = isEffectivelyOn;
+				emitter.Rate = rate;
+				emitter.Transparency = fogTransSeq;
+				emitter.SpreadAngle = new Vector2(90, 45);
+				emitter.Speed = new NumberRange(1.5, 3.5);
+				emitter.Acceleration = new Vector3(0, 0.25, 0);
+				emitter.Drag = 3.0;
+				emitter.LightEmission = 0;
+				emitter.LightInfluence = 0.35;
+			}
+		};
+
 		if (target === "main" || target === "all") {
 			const enabled = this.mainControlState.fogEnabled ?? false;
 			const intensity = this.mainControlState.fogIntensity ?? 0.5;
-
-			for (const emitter of this.mainFogEmitters) {
-				emitter.Enabled = enabled;
-				if (enabled) {
-					emitter.Rate = 5 + intensity * 25;
-				}
-			}
+			updateGroup(this.mainFogEmitters, enabled, intensity);
 		}
 
 		if (target === "dj" || target === "all") {
 			const enabled = this.djControlState.fogEnabled ?? false;
 			const intensity = this.djControlState.fogIntensity ?? 0.5;
-
-			for (const emitter of this.djFogEmitters) {
-				emitter.Enabled = enabled;
-				if (enabled) {
-					emitter.Rate = 5 + intensity * 25;
-				}
-			}
+			updateGroup(this.djFogEmitters, enabled, intensity);
 		}
 	}
 
 	public triggerFogBurst(target: StageTarget = "all"): void {
 		if (target === "main" || target === "all") {
 			for (const emitter of this.mainFogEmitters) {
-				emitter.Emit(30);
+				emitter.Emit(12);
 			}
 		}
 		if (target === "dj" || target === "all") {
 			for (const emitter of this.djFogEmitters) {
-				emitter.Emit(30);
+				emitter.Emit(12);
 			}
 		}
 	}
@@ -870,9 +924,7 @@ export class ServerStageLightingService {
 			}
 
 			let activeColor = state.color;
-			if (!state.isRainbow && track) {
-				activeColor = track.coverColor;
-			} else if (state.isRainbow) {
+			if (state.isRainbow) {
 				const hue = (this.animationTime * 0.1) % 1;
 				activeColor = Color3.fromHSV(hue, 0.9, 1);
 			}
@@ -934,30 +986,59 @@ export class ServerStageLightingService {
 		if (state.mode === StageLightMode.Wave) {
 			for (const f of fixtures) {
 				const [basePan, baseTilt] = this.getFixtureAim(f, isDj);
-				const panAmp = isDj ? 0.22 : 0.35;
-				const tiltAmp = isDj ? 0.1 : 0.18;
-				const colWave = math.sin(this.animationTime * 1.5 + f.column * 0.6) * panAmp;
-				const rowWave = math.cos(this.animationTime * 1.8 + f.column * 0.4) * tiltAmp;
-				this.applyFixtureAngles(f, basePan + colWave, baseTilt + rowWave, isDj);
+				const panAmp = isDj ? 0.35 : 0.50;
+				const tiltAmp = isDj ? 0.20 : 0.32;
+				const pan = math.sin(this.animationTime * 0.9) * panAmp;
+				const tilt = math.sin(this.animationTime * 2.2 - (f.column - 1) * 0.95) * tiltAmp;
+				this.applyFixtureAngles(f, basePan + pan, baseTilt + tilt, isDj);
 			}
 		} else if (state.mode === StageLightMode.Circle) {
 			for (const f of fixtures) {
 				const [basePan, baseTilt] = this.getFixtureAim(f, isDj);
-				const panAmp = isDj ? 0.2 : 0.3;
-				const tiltAmp = isDj ? 0.1 : 0.18;
-				const phase = f.column * 0.65;
-				const pan = math.cos(this.animationTime * 2.0 + phase) * panAmp;
-				const tilt = math.sin(this.animationTime * 2.0 + phase) * tiltAmp;
+				const panAmp = isDj ? 0.32 : 0.45;
+				const tiltAmp = isDj ? 0.18 : 0.26;
+				const dir = f.column % 2 === 1 ? 1 : -1;
+				const phase = f.column * 0.75;
+				const pan = math.cos(this.animationTime * 1.8 * dir + phase) * panAmp;
+				const tilt = math.sin(this.animationTime * 1.8 * dir + phase) * tiltAmp;
 				this.applyFixtureAngles(f, basePan + pan, baseTilt + tilt, isDj);
 			}
 		} else if (state.mode === StageLightMode.Ballyhoo) {
 			for (const f of fixtures) {
 				const [basePan, baseTilt] = this.getFixtureAim(f, isDj);
-				const panAmp = isDj ? 0.3 : 0.55;
-				const tiltAmp = isDj ? 0.14 : 0.22;
-				const fastPan = math.sin(this.animationTime * 2.6 + f.column * 1.1) * panAmp;
-				const fastTilt = math.sin(this.animationTime * 2.0 + f.column * 1.3) * tiltAmp;
-				this.applyFixtureAngles(f, basePan + fastPan, baseTilt + fastTilt, isDj);
+				const panAmp = isDj ? 0.38 : 0.58;
+				const tiltAmp = isDj ? 0.20 : 0.28;
+				const phaseOffset = f.column * 0.5;
+				const pan = math.sin(this.animationTime * 2.6 + phaseOffset) * panAmp;
+				const tilt = math.sin((this.animationTime * 2.6 + phaseOffset) * 2.0) * tiltAmp;
+				this.applyFixtureAngles(f, basePan + pan, baseTilt + tilt, isDj);
+			}
+		} else if (state.mode === StageLightMode.CrossFire) {
+			for (const f of fixtures) {
+				const [basePan, baseTilt] = this.getFixtureAim(f, isDj);
+				const mid = (fixtures.size() + 1) / 2;
+				const colNorm = (f.column - mid) / 2;
+				const scissorWave = math.sin(this.animationTime * 1.6);
+				const pan = -colNorm * 0.55 * scissorWave;
+				const tilt = -math.abs(scissorWave) * (isDj ? 0.14 : 0.22);
+				this.applyFixtureAngles(f, basePan + pan, baseTilt + tilt, isDj);
+			}
+		} else if (state.mode === StageLightMode.FanSpread) {
+			for (const f of fixtures) {
+				const [basePan, baseTilt] = this.getFixtureAim(f, isDj);
+				const mid = (fixtures.size() + 1) / 2;
+				const fanSpread = (f.column - mid) * (isDj ? 0.18 : 0.28);
+				const breath = math.sin(this.animationTime * 1.3);
+				const pan = fanSpread * (1.1 + 0.45 * breath);
+				const tilt = math.cos(this.animationTime * 1.3) * (isDj ? 0.18 : 0.26);
+				this.applyFixtureAngles(f, basePan + pan, baseTilt + tilt, isDj);
+			}
+		} else if (state.mode === StageLightMode.Searchlight) {
+			for (const f of fixtures) {
+				const [basePan, baseTilt] = this.getFixtureAim(f, isDj);
+				const pan = math.sin(this.animationTime * 0.6 + f.column * 1.25) * (isDj ? 0.40 : 0.65);
+				const tilt = (math.cos(this.animationTime * 0.85 + f.column * 0.9) - 0.2) * (isDj ? 0.18 : 0.28);
+				this.applyFixtureAngles(f, basePan + pan, baseTilt + tilt, isDj);
 			}
 		} else if (state.mode === StageLightMode.SpotlightCenter) {
 			this.applyCenterFocusAngles(isDj);

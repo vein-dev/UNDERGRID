@@ -2,10 +2,11 @@
  * SkateboardMobileView.tsx
  * Antarmuka kontrol sentuh (Mobile Touch Controls) untuk skateboard R6.
  * Menggunakan React TSX, Lucide Icons, estetika iOS Glassmorphism,
+ * 100% responsif berbasis Scale (Offset = 0), UIAspectRatioConstraint,
  * serta Class Adapter Pattern untuk komunikasi mulus dengan SkateboardController.
  */
 
-import React, { useState } from "@rbxts/react";
+import React, { useEffect, useRef, useState } from "@rbxts/react";
 import ReactRoblox, { Root } from "@rbxts/react-roblox";
 import { Players, UserInputService } from "@rbxts/services";
 import { SkateboardTrickName } from "shared/types";
@@ -40,25 +41,27 @@ interface SkateButtonProps {
 	name: string;
 	label: string;
 	icon: string;
-	size: number;
-	position: UDim2;
-	iconSize?: number;
+	size?: UDim2;
+	position?: UDim2;
+	layoutOrder?: number;
 	accentColor?: Color3;
 	isActive?: boolean;
+	dimmed?: boolean;
 	onActivated?: () => void;
-	onPressDown?: () => void;
-	onPressUp?: () => void;
+	onPressDown?: (input: InputObject) => void;
+	onPressUp?: (input: InputObject) => void;
 }
 
 function SkateRoundButton({
 	name,
 	label,
 	icon,
-	size,
+	size = new UDim2(0.26, 0, 0.26, 0),
 	position,
-	iconSize = 22,
+	layoutOrder,
 	accentColor = Color3.fromHex("#ffffff"),
 	isActive = false,
+	dimmed = false,
 	onActivated,
 	onPressDown,
 	onPressUp,
@@ -66,14 +69,38 @@ function SkateRoundButton({
 	const [isPressed, setIsPressed] = useState(false);
 	const active = isActive || isPressed;
 
+	let bgTransparency = 0.35;
+	let strokeTransparency = 0.35;
+	let strokeColor = Color3.fromHex("#38383a");
+	let strokeThickness = 1.2;
+	let contentColor = Color3.fromHex("#f4f4f5");
+	let labelColor = Color3.fromHex("#a1a1aa");
+
+	if (active) {
+		bgTransparency = 0.08;
+		strokeTransparency = 0.05;
+		strokeColor = Color3.fromHex("#ffffff");
+		strokeThickness = 2;
+		contentColor = Color3.fromHex("#0a0a0a");
+		labelColor = Color3.fromHex("#0a0a0a");
+	} else if (dimmed) {
+		bgTransparency = 0.65;
+		strokeTransparency = 0.7;
+		strokeColor = Color3.fromHex("#27272a");
+		strokeThickness = 1;
+		contentColor = Color3.fromHex("#71717a");
+		labelColor = Color3.fromHex("#52525b");
+	}
+
 	return (
 		<textbutton
 			key={name}
+			LayoutOrder={layoutOrder}
 			AnchorPoint={new Vector2(0.5, 0.5)}
 			Position={position}
-			Size={new UDim2(0, size, 0, size)}
+			Size={size}
 			BackgroundColor3={active ? Color3.fromHex("#ffffff") : Color3.fromHex("#141416")}
-			BackgroundTransparency={active ? 0.08 : 0.35}
+			BackgroundTransparency={bgTransparency}
 			AutoButtonColor={false}
 			Active={true}
 			Text=""
@@ -86,7 +113,7 @@ function SkateRoundButton({
 						input.UserInputType === Enum.UserInputType.MouseButton1
 					) {
 						setIsPressed(true);
-						onPressDown?.();
+						onPressDown?.(input);
 					}
 				},
 				InputEnded: (_, input) => {
@@ -95,32 +122,37 @@ function SkateRoundButton({
 						input.UserInputType === Enum.UserInputType.MouseButton1
 					) {
 						setIsPressed(false);
-						onPressUp?.();
+						onPressUp?.(input);
 					}
 				},
 				MouseLeave: () => {
 					if (isPressed) {
 						setIsPressed(false);
-						onPressUp?.();
+						onPressUp?.(undefined as unknown as InputObject);
 					}
 				},
 			}}
 		>
 			<uicorner CornerRadius={new UDim(1, 0)} />
+			<uiaspectratioconstraint
+				AspectRatio={1}
+				AspectType={Enum.AspectType.ScaleWithParentSize}
+				DominantAxis={Enum.DominantAxis.Height}
+			/>
 			<uistroke
-				Color={active ? Color3.fromHex("#ffffff") : Color3.fromHex("#38383a")}
-				Thickness={active ? 2 : 1.2}
-				Transparency={active ? 0.05 : 0.35}
+				Color={strokeColor}
+				Thickness={strokeThickness}
+				Transparency={strokeTransparency}
 				ApplyStrokeMode={Enum.ApplyStrokeMode.Border}
 			/>
 
 			{/* Icon */}
 			<LucideIcon
 				name={icon}
-				size={new UDim2(0, iconSize, 0, iconSize)}
+				size={new UDim2(0.46, 0, 0.46, 0)}
 				anchorPoint={new Vector2(0.5, 0.5)}
 				position={new UDim2(0.5, 0, 0.38, 0)}
-				color={active ? Color3.fromHex("#0a0a0a") : Color3.fromHex("#f4f4f5")}
+				color={contentColor}
 				zIndex={56}
 			/>
 
@@ -128,20 +160,59 @@ function SkateRoundButton({
 			<textlabel
 				key="ButtonLabel"
 				AnchorPoint={new Vector2(0.5, 1)}
-				Position={new UDim2(0.5, 0, 1, -5)}
-				Size={new UDim2(1, -4, 0, 11)}
+				Position={new UDim2(0.5, 0, 0.92, 0)}
+				Size={new UDim2(0.88, 0, 0.26, 0)}
 				BackgroundTransparency={1}
 				Text={label}
-				TextColor3={active ? Color3.fromHex("#0a0a0a") : Color3.fromHex("#a1a1aa")}
+				TextColor3={labelColor}
 				Font={Fonts.Bold}
 				TextScaled={true}
 				ZIndex={56}
 			>
-				<uitextsizeconstraint MaxTextSize={9} MinTextSize={7} />
+				<uitextsizeconstraint MaxTextSize={12} MinTextSize={6} />
 			</textlabel>
 		</textbutton>
 	);
 }
+
+interface TrickSatelliteConfig {
+	name: string;
+	trick: SkateboardTrickName;
+	label: string;
+	icon: string;
+	position: UDim2;
+}
+
+const TRICK_CONFIGS: Array<TrickSatelliteConfig> = [
+	{
+		name: "KickflipBtn",
+		trick: "Kickflip",
+		label: "KICK",
+		icon: "refresh-cw",
+		position: new UDim2(0.72, 0, 0.17, 0),
+	},
+	{
+		name: "HeelflipBtn",
+		trick: "Heelflip",
+		label: "HEEL",
+		icon: "refresh-ccw",
+		position: new UDim2(0.52, 0, 0.03, 0),
+	},
+	{
+		name: "TreflipBtn",
+		trick: "Treflip",
+		label: "360",
+		icon: "sparkles",
+		position: new UDim2(0.33, 0, 0.12, 0),
+	},
+	{
+		name: "ShuvBtn",
+		trick: "Shuv",
+		label: "SHUV",
+		icon: "zap",
+		position: new UDim2(0.25, 0, 0.37, 0),
+	},
+];
 
 export function SkateboardMobileComponent({
 	visible,
@@ -165,6 +236,98 @@ export function SkateboardMobileComponent({
 }: SkateboardMobileProps) {
 	if (!visible) return <></>;
 
+	const [isHoldingOllie, setIsHoldingOllie] = useState(false);
+	const [hoveredTrick, setHoveredTrick] = useState<SkateboardTrickName | undefined>(undefined);
+
+	const isWheelActive = isHoldingOllie || isChargingOllie;
+
+	const activeInputRef = useRef<InputObject | undefined>(undefined);
+	const hoveredTrickRef = useRef<SkateboardTrickName | undefined>(undefined);
+	const clusterRef = useRef<Frame>();
+
+	// Tangani gesture hold-and-swipe secara responsif dengan orbit radial konsentris
+	useEffect(() => {
+		if (!isHoldingOllie) return;
+
+		const updateHovered = (screenX: number, screenY: number) => {
+			const cluster = clusterRef.current;
+			if (cluster && cluster.AbsoluteSize.X > 0 && cluster.AbsoluteSize.Y > 0) {
+				const cPos = cluster.AbsolutePosition;
+				const cSize = cluster.AbsoluteSize;
+
+				// Koordinat relatif di dalam cluster (0 sampai 1)
+				const u = (screenX - cPos.X) / cSize.X;
+				const v = (screenY - cPos.Y) / cSize.Y;
+
+				// Jarak dari pusat tombol Ollie di slot Crouch (0.51, 0.37) dengan koreksi AspectRatio 1.36
+				const dOllie = math.sqrt(math.pow((u - 0.51) * 1.36, 2) + math.pow(v - 0.37, 2));
+
+				// Jika jari masih berada di dalam radius Ollie, tidak ada trick yang dipilih (normal Ollie)
+				if (dOllie < 0.18) {
+					hoveredTrickRef.current = undefined;
+					setHoveredTrick(undefined);
+				} else {
+					// Cari trick satelit terdekat
+					let closest: SkateboardTrickName | undefined = undefined;
+					let minD = 0.22; // Radius deteksi kedekatan
+
+					for (const cfg of TRICK_CONFIGS) {
+						const d = math.sqrt(
+							math.pow((u - cfg.position.X.Scale) * 1.36, 2) + math.pow(v - cfg.position.Y.Scale, 2),
+						);
+						if (d < minD) {
+							minD = d;
+							closest = cfg.trick;
+						}
+					}
+
+					hoveredTrickRef.current = closest;
+					setHoveredTrick(closest);
+				}
+			}
+		};
+
+		const moveConn = UserInputService.InputChanged.Connect((input) => {
+			if (
+				input === activeInputRef.current ||
+				input.UserInputType === Enum.UserInputType.MouseMovement ||
+				input.UserInputType === Enum.UserInputType.Touch
+			) {
+				if (
+					!activeInputRef.current ||
+					input.UserInputType !== Enum.UserInputType.Touch ||
+					input === activeInputRef.current
+				) {
+					updateHovered(input.Position.X, input.Position.Y);
+				}
+			}
+		});
+
+		const endConn = UserInputService.InputEnded.Connect((input) => {
+			if (
+				input === activeInputRef.current ||
+				input.UserInputType === Enum.UserInputType.MouseButton1 ||
+				(input.UserInputType === Enum.UserInputType.Touch &&
+					(!activeInputRef.current || input === activeInputRef.current))
+			) {
+				activeInputRef.current = undefined;
+				const selectedTrick = hoveredTrickRef.current;
+				if (selectedTrick) {
+					onTrick?.(selectedTrick);
+				}
+				onOllieUp?.();
+				setIsHoldingOllie(false);
+				setHoveredTrick(undefined);
+				hoveredTrickRef.current = undefined;
+			}
+		});
+
+		return () => {
+			moveConn.Disconnect();
+			endConn.Disconnect();
+		};
+	}, [isHoldingOllie, onTrick, onOllieUp]);
+
 	return (
 		<frame
 			key="SkateboardMobileHudRoot"
@@ -179,19 +342,25 @@ export function SkateboardMobileComponent({
 			<frame
 				key="SteerCluster"
 				AnchorPoint={new Vector2(0, 1)}
-				Position={new UDim2(0, 20, 1, -25)}
-				Size={new UDim2(0, 140, 0, 80)}
+				Position={new UDim2(0.04, 0, 0.94, 0)}
+				Size={new UDim2(0.24, 0, 0.14, 0)}
 				BackgroundTransparency={1}
 				ZIndex={51}
 			>
+				<uilistlayout
+					FillDirection={Enum.FillDirection.Horizontal}
+					HorizontalAlignment={Enum.HorizontalAlignment.Left}
+					VerticalAlignment={Enum.VerticalAlignment.Center}
+					Padding={new UDim(0.08, 0)}
+				/>
+
 				{/* Tombol Turn Left */}
 				<SkateRoundButton
 					name="SteerLeftBtn"
-					label="LEFT"
+					label="L"
 					icon="chevron-left"
-					size={54}
-					iconSize={26}
-					position={new UDim2(0, 30, 0, 46)}
+					size={new UDim2(0.46, 0, 1, 0)}
+					layoutOrder={1}
 					accentColor={Color3.fromHex("#ffffff")}
 					isActive={steerDirection === -1}
 					onPressDown={onSteerLeftDown}
@@ -201,11 +370,10 @@ export function SkateboardMobileComponent({
 				{/* Tombol Turn Right */}
 				<SkateRoundButton
 					name="SteerRightBtn"
-					label="RIGHT"
+					label="R"
 					icon="chevron-right"
-					size={54}
-					iconSize={26}
-					position={new UDim2(0, 95, 0, 46)}
+					size={new UDim2(0.46, 0, 1, 0)}
+					layoutOrder={2}
 					accentColor={Color3.fromHex("#ffffff")}
 					isActive={steerDirection === 1}
 					onPressDown={onSteerRightDown}
@@ -219,8 +387,8 @@ export function SkateboardMobileComponent({
 			<textbutton
 				key="DismountBtn"
 				AnchorPoint={new Vector2(1, 0)}
-				Position={new UDim2(1, -20, 0, 65)}
-				Size={new UDim2(0, 100, 0, 36)}
+				Position={new UDim2(0.97, 0, 0.08, 0)}
+				Size={new UDim2(0.12, 0, 0.06, 0)}
 				BackgroundColor3={Color3.fromHex("#141416")}
 				BackgroundTransparency={0.35}
 				AutoButtonColor={false}
@@ -231,6 +399,11 @@ export function SkateboardMobileComponent({
 				}}
 			>
 				<uicorner CornerRadius={new UDim(1, 0)} />
+				<uiaspectratioconstraint
+					AspectRatio={3}
+					AspectType={Enum.AspectType.FitWithinMaxSize}
+					DominantAxis={Enum.DominantAxis.Width}
+				/>
 				<uistroke Color={Color3.fromHex("#38383a")} Thickness={1.2} Transparency={0.35} />
 
 				<frame key="DismountContent" Size={new UDim2(1, 0, 1, 0)} BackgroundTransparency={1} ZIndex={56}>
@@ -238,127 +411,116 @@ export function SkateboardMobileComponent({
 						FillDirection={Enum.FillDirection.Horizontal}
 						VerticalAlignment={Enum.VerticalAlignment.Center}
 						HorizontalAlignment={Enum.HorizontalAlignment.Center}
-						Padding={new UDim(0, 6)}
+						Padding={new UDim(0.06, 0)}
 					/>
 					<LucideIcon
 						name="log-out"
-						size={new UDim2(0, 16, 0, 16)}
+						size={new UDim2(0.35, 0, 0.55, 0)}
 						color={Color3.fromHex("#f4f4f5")}
 						zIndex={57}
 					/>
 					<textlabel
 						key="DismountText"
+						Size={new UDim2(0.55, 0, 0.55, 0)}
 						BackgroundTransparency={1}
-						AutomaticSize={Enum.AutomaticSize.XY}
 						Text="DISMOUNT"
 						TextColor3={Color3.fromHex("#f4f4f5")}
 						Font={Fonts.Bold}
-						TextSize={10}
+						TextScaled={true}
 						ZIndex={57}
-					/>
+					>
+						<uitextsizeconstraint MaxTextSize={12} MinTextSize={6} />
+					</textlabel>
 				</frame>
 			</textbutton>
 
 			{/* ============================================================ */}
 			{/* SISI KANAN BAWAH: ACTION & TRICK PAD */}
+			{/* Menggunakan Scale murni dan proporsi responsif */}
 			{/* ============================================================ */}
 			<frame
+				ref={clusterRef}
 				key="ActionPadCluster"
 				AnchorPoint={new Vector2(1, 1)}
-				Position={new UDim2(1, 0, 1, 0)}
-				Size={new UDim2(0, 260, 0, 260)}
+				Position={new UDim2(0.96, 0, 0.94, 0)}
+				Size={new UDim2(0.544, 0, 0.4, 0)}
 				BackgroundTransparency={1}
 				ZIndex={51}
 			>
-				{/* 1. PUSH / MAJU (TOMBOL UTAMA PALING BESAR) */}
+				<uiaspectratioconstraint
+					AspectRatio={1.36}
+					AspectType={Enum.AspectType.ScaleWithParentSize}
+					DominantAxis={Enum.DominantAxis.Height}
+				/>
+
+				{/* 1. PUSH / MAJU (TOMBOL UTAMA PALING BESAR - IDENTIK 1:1 DENGAN JUMP & PUNCH) */}
 				<SkateRoundButton
 					name="PushBtn"
 					label="PUSH"
 					icon="chevrons-up"
-					size={74}
-					iconSize={32}
-					position={new UDim2(1, -55, 1, -55)}
+					size={new UDim2(0.52, 0, 0.52, 0)}
+					position={new UDim2(0.81, 0, 0.74, 0)}
 					accentColor={Color3.fromHex("#ffffff")}
 					isActive={isPushing}
+					dimmed={isWheelActive}
 					onPressDown={onPushDown}
 					onPressUp={onPushUp}
 				/>
 
-				{/* 2. OLLIE / LOMPAT */}
+				{/* 2. OLLIE / LOMPAT (SLOT CROUCH DI TENGAH - PUSAT RADIAL WHEEL) */}
 				<SkateRoundButton
 					name="OllieBtn"
 					label="OLLIE"
 					icon="arrow-up"
-					size={58}
-					iconSize={26}
-					position={new UDim2(1, -55, 1, -140)}
+					size={new UDim2(0.35, 0, 0.35, 0)}
+					position={new UDim2(0.51, 0, 0.37, 0)}
 					accentColor={Color3.fromHex("#ffffff")}
-					isActive={isChargingOllie}
-					onPressDown={onOllieDown}
-					onPressUp={onOllieUp}
+					isActive={isHoldingOllie || isChargingOllie}
+					onPressDown={(input) => {
+						activeInputRef.current = input;
+						setIsHoldingOllie(true);
+						setHoveredTrick(undefined);
+						hoveredTrickRef.current = undefined;
+						onOllieDown?.();
+					}}
 				/>
 
-				{/* 3. BRAKE / MUNDUR */}
+				{/* 3. BRAKE / MUNDUR (SLOT CRAWL DI BAWAH KIRI) */}
 				<SkateRoundButton
 					name="BrakeBtn"
 					label="BRAKE"
 					icon="chevron-down"
-					size={54}
-					iconSize={24}
-					position={new UDim2(1, -135, 1, -55)}
+					size={new UDim2(0.38, 0, 0.38, 0)}
+					position={new UDim2(0.38, 0, 0.8, 0)}
 					accentColor={Color3.fromHex("#ffffff")}
 					isActive={isBraking}
+					dimmed={isWheelActive}
 					onPressDown={onBrakeDown}
 					onPressUp={onBrakeUp}
 				/>
 
-				{/* 4. TRICK 1: KICKFLIP */}
-				<SkateRoundButton
-					name="KickflipBtn"
-					label="KICK"
-					icon="refresh-cw"
-					size={46}
-					iconSize={20}
-					position={new UDim2(1, -135, 1, -135)}
-					accentColor={Color3.fromHex("#ffffff")}
-					onActivated={() => onTrick?.("Kickflip")}
-				/>
-
-				{/* 5. TRICK 2: HEELFLIP */}
-				<SkateRoundButton
-					name="HeelflipBtn"
-					label="HEEL"
-					icon="refresh-ccw"
-					size={46}
-					iconSize={20}
-					position={new UDim2(1, -195, 1, -115)}
-					accentColor={Color3.fromHex("#ffffff")}
-					onActivated={() => onTrick?.("Heelflip")}
-				/>
-
-				{/* 6. TRICK 3: 360 FLIP (TREFLIP) */}
-				<SkateRoundButton
-					name="TreflipBtn"
-					label="360"
-					icon="sparkles"
-					size={46}
-					iconSize={20}
-					position={new UDim2(1, -135, 1, -200)}
-					accentColor={Color3.fromHex("#ffffff")}
-					onActivated={() => onTrick?.("Treflip")}
-				/>
-
-				{/* 7. TRICK 4: POP SHUVIT */}
-				<SkateRoundButton
-					name="ShuvBtn"
-					label="SHUV"
-					icon="zap"
-					size={46}
-					iconSize={20}
-					position={new UDim2(1, -195, 1, -180)}
-					accentColor={Color3.fromHex("#ffffff")}
-					onActivated={() => onTrick?.("Shuv")}
-				/>
+				{/* ============================================================ */}
+				{/* 4. RADIAL SATELLITE TRICK BUTTONS (MUNCUL MENGITARI OLLIE) */}
+				{/* ============================================================ */}
+				{isWheelActive &&
+					TRICK_CONFIGS.map((trickCfg) => {
+						const isHovered = hoveredTrick === trickCfg.trick;
+						return (
+							<SkateRoundButton
+								key={trickCfg.name}
+								name={trickCfg.name}
+								label={trickCfg.label}
+								icon={trickCfg.icon}
+								size={new UDim2(0.2, 0, 0.2, 0)}
+								position={trickCfg.position}
+								accentColor={Color3.fromHex("#ffffff")}
+								isActive={isHovered}
+								onActivated={() => {
+									onTrick?.(trickCfg.trick);
+								}}
+							/>
+						);
+					})}
 			</frame>
 		</frame>
 	);
@@ -395,7 +557,7 @@ export class SkateboardMobileView {
 			this.screenGui = new Instance("ScreenGui");
 			this.screenGui.Name = "SkateboardMobileGui";
 			this.screenGui.ResetOnSpawn = false;
-			this.screenGui.DisplayOrder = 50;
+			this.screenGui.DisplayOrder = 45;
 			this.screenGui.ScreenInsets = Enum.ScreenInsets.None;
 			this.screenGui.IgnoreGuiInset = true;
 			this.screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling;
@@ -438,9 +600,10 @@ export class SkateboardMobileView {
 	}
 
 	public setVisible(visible: boolean): void {
-		if (this.state.visible === visible) return;
-		this.state = { ...this.state, visible };
-		this.render();
+		if (this.state.visible !== visible) {
+			this.state = { ...this.state, visible };
+			this.render();
+		}
 	}
 
 	public show(): void {
@@ -451,34 +614,36 @@ export class SkateboardMobileView {
 		this.setVisible(false);
 	}
 
-	public setChargingOllie(charging: boolean): void {
-		if (this.state.isChargingOllie === charging) return;
-		this.state = { ...this.state, isChargingOllie: charging };
-		this.render();
+	public isVisible(): boolean {
+		return this.state.visible;
 	}
 
-	public setPushing(pushing: boolean): void {
-		if (this.state.isPushing === pushing) return;
-		this.state = { ...this.state, isPushing: pushing };
-		this.render();
+	public setChargingOllie(isCharging: boolean): void {
+		if (this.state.isChargingOllie !== isCharging) {
+			this.state = { ...this.state, isChargingOllie: isCharging };
+			this.render();
+		}
 	}
 
-	public setBraking(braking: boolean): void {
-		if (this.state.isBraking === braking) return;
-		this.state = { ...this.state, isBraking: braking };
-		this.render();
+	public setPushing(isPushing: boolean): void {
+		if (this.state.isPushing !== isPushing) {
+			this.state = { ...this.state, isPushing };
+			this.render();
+		}
 	}
 
-	public setSteerDirection(dir: number): void {
-		if (this.state.steerDirection === dir) return;
-		this.state = { ...this.state, steerDirection: dir };
-		this.render();
+	public setBraking(isBraking: boolean): void {
+		if (this.state.isBraking !== isBraking) {
+			this.state = { ...this.state, isBraking };
+			this.render();
+		}
 	}
 
-	public setCurrentState(currentState: string): void {
-		if (this.state.currentState === currentState) return;
-		this.state = { ...this.state, currentState };
-		this.render();
+	public setSteerDirection(steerDirection: number): void {
+		if (this.state.steerDirection !== steerDirection) {
+			this.state = { ...this.state, steerDirection };
+			this.render();
+		}
 	}
 
 	public destroy(): void {

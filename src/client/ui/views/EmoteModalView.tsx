@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "@rbxts/react";
+import React, { useCallback, useEffect, useRef, useState } from "@rbxts/react";
 import ReactRoblox, { Root } from "@rbxts/react-roblox";
 import { GuiService, Players, RunService, TweenService, UserInputService, Workspace } from "@rbxts/services";
 import { EmoteService } from "client/services/EmoteService";
@@ -234,57 +234,62 @@ export function EmoteModalComponent({ isOpen, onClose, onAnimationFinished }: Em
 	const [offscreenPos, setOffscreenPos] = useState<UDim2>(new UDim2(0, -360, 0.5, 0));
 	const [anchorPoint, setAnchorPoint] = useState<Vector2>(new Vector2(0, 0.5));
 	const [topbarHeight, setTopbarHeight] = useState(54);
+	const [isFreecam, setIsFreecam] = useState(false);
 	const [shouldRender, setShouldRender] = useState(isOpen);
 
 	const panelRef = useRef<Frame>();
 	const backdropRef = useRef<TextButton>();
 	const isMountedRef = useRef(false);
+	const wasOpenRef = useRef(false);
+
+	const updateScale = useCallback(() => {
+		const camera = Workspace.CurrentCamera;
+		const vp = camera ? camera.ViewportSize : new Vector2(1280, 720);
+
+		const [topInset] = GuiService.GetGuiInset();
+		const topHeight = math.max(topInset.Y + 16, 68);
+		setTopbarHeight(topHeight);
+
+		const bottomInset = 16;
+		const availableHeight = math.max(vp.Y - topHeight - bottomInset, 180);
+		const centerY = topHeight + availableHeight / 2;
+
+		const isPortrait = vp.X < vp.Y || vp.X < 640;
+		const isFree = camera?.CameraType === Enum.CameraType.Scriptable;
+		setIsFreecam(isFree);
+
+		if (isPortrait) {
+			const availableWidth = math.max(vp.X - 32, 200);
+			const scaleY = (availableHeight * 0.85) / 500;
+			const scaleX = (availableWidth * 0.88) / 310;
+			const newScale = math.clamp(math.min(scaleY, scaleX), 0.55, 0.88);
+			setScale(newScale);
+
+			setAnchorPoint(new Vector2(0.5, 0.5));
+			setTargetPos(new UDim2(0.5, 0, 0, centerY));
+			setOffscreenPos(new UDim2(0.5, 0, 1.5, 0));
+		} else {
+			const availableWidth = math.max(vp.X - 40, 300);
+			const scaleY = (availableHeight * 0.85) / 500;
+			const scaleX = (availableWidth * 0.38) / 310;
+			const newScale = math.clamp(math.min(scaleY, scaleX), 0.4, 0.85);
+			setScale(newScale);
+
+			const safeLeft = math.max(topInset.X, 16);
+			const offset = isFree ? 76 : (vp.Y <= 520 ? safeLeft + 20 : 28);
+
+			setAnchorPoint(new Vector2(0, 0.5));
+			setTargetPos(new UDim2(0, offset, 0, centerY));
+			setOffscreenPos(new UDim2(0, -360, 0, centerY));
+		}
+	}, []);
 
 	useEffect(() => {
-		const updateScale = () => {
-			const camera = Workspace.CurrentCamera;
-			const vp = camera ? camera.ViewportSize : new Vector2(1280, 720);
-
-			const [topInset] = GuiService.GetGuiInset();
-			const topHeight = math.max(topInset.Y + 16, 68);
-			setTopbarHeight(topHeight);
-
-			const bottomInset = 16;
-			const availableHeight = math.max(vp.Y - topHeight - bottomInset, 180);
-			const centerY = topHeight + availableHeight / 2;
-
-			const isPortrait = vp.X < vp.Y || vp.X < 640;
-
-			if (isPortrait) {
-				const availableWidth = math.max(vp.X - 32, 200);
-				const scaleY = (availableHeight * 0.85) / 500;
-				const scaleX = (availableWidth * 0.88) / 310;
-				const newScale = math.clamp(math.min(scaleY, scaleX), 0.55, 0.88);
-				setScale(newScale);
-
-				setAnchorPoint(new Vector2(0.5, 0.5));
-				setTargetPos(new UDim2(0.5, 0, 0, centerY));
-				setOffscreenPos(new UDim2(0.5, 0, 1.5, 0));
-			} else {
-				const availableWidth = math.max(vp.X - 40, 300);
-				const scaleY = (availableHeight * 0.85) / 500;
-				const scaleX = (availableWidth * 0.38) / 310;
-				const newScale = math.clamp(math.min(scaleY, scaleX), 0.4, 0.85);
-				setScale(newScale);
-
-				const safeLeft = math.max(topInset.X, 16);
-				const offset = vp.Y <= 520 ? safeLeft + 20 : 28;
-
-				setAnchorPoint(new Vector2(0, 0.5));
-				setTargetPos(new UDim2(0, offset, 0, centerY));
-				setOffscreenPos(new UDim2(0, -360, 0, centerY));
-			}
-		};
-
 		updateScale();
 		const cam = Workspace.CurrentCamera;
 		const conn = cam?.GetPropertyChangedSignal("ViewportSize").Connect(updateScale);
 		const camConn = Workspace.GetPropertyChangedSignal("CurrentCamera").Connect(updateScale);
+		const camTypeConn = cam?.GetPropertyChangedSignal("CameraType").Connect(updateScale);
 
 		const unsubscribeEmote = EmoteService.getInstance().onStateChanged((isPlaying, id) => {
 			setActiveEmoteId(isPlaying ? id : undefined);
@@ -297,27 +302,36 @@ export function EmoteModalComponent({ isOpen, onClose, onAnimationFinished }: Em
 		return () => {
 			conn?.Disconnect();
 			camConn.Disconnect();
+			camTypeConn?.Disconnect();
 			unsubscribeEmote();
 			unsubscribeSpeed();
 		};
-	}, []);
+	}, [updateScale]);
 
+	const openTimeRef = useRef(0);
 	useEffect(() => {
 		if (isOpen) {
+			updateScale();
+			openTimeRef.current = os.clock();
 			setShouldRender(true);
 		}
-	}, [isOpen]);
+	}, [isOpen, updateScale]);
+
+	const isCurrentlyRendering = isOpen || shouldRender;
 
 	useEffect(() => {
-		if (!shouldRender) return;
+		if (!isCurrentlyRendering) return;
 
 		const panel = panelRef.current;
 		const backdrop = backdropRef.current;
 		if (!panel || !backdrop) return;
 
 		if (isOpen) {
-			panel.Position = offscreenPos;
-			backdrop.BackgroundTransparency = 1;
+			if (!wasOpenRef.current) {
+				wasOpenRef.current = true;
+				panel.Position = offscreenPos;
+				backdrop.BackgroundTransparency = 1;
+			}
 
 			const openPanelTween = TweenService.Create(
 				panel,
@@ -331,6 +345,7 @@ export function EmoteModalComponent({ isOpen, onClose, onAnimationFinished }: Em
 				openPanelTween.Cancel();
 			};
 		} else {
+			wasOpenRef.current = false;
 			if (!isMountedRef.current) {
 				panel.Position = offscreenPos;
 				backdrop.BackgroundTransparency = 1;
@@ -359,13 +374,13 @@ export function EmoteModalComponent({ isOpen, onClose, onAnimationFinished }: Em
 				closePanelTween.Cancel();
 			};
 		}
-	}, [isOpen, shouldRender, targetPos, offscreenPos]);
+	}, [isOpen, isCurrentlyRendering, targetPos, offscreenPos]);
 
 	useEffect(() => {
 		isMountedRef.current = true;
 	}, []);
 
-	if (!shouldRender) return <></>;
+	if (!isCurrentlyRendering) return <></>;
 
 	const rawItems: EmoteItem[] =
 		currentTab === "Dance"
@@ -384,38 +399,48 @@ export function EmoteModalComponent({ isOpen, onClose, onAnimationFinished }: Em
 		return matchesSearch;
 	});
 
+	const handleBackdropClick = () => {
+		if (os.clock() - openTimeRef.current < 0.3) return;
+		const camera = Workspace.CurrentCamera;
+		const isFree = camera?.CameraType === Enum.CameraType.Scriptable;
+		const mousePos = UserInputService.GetMouseLocation();
+		if (isFree && mousePos.X <= 75) {
+			return;
+		}
+		// Pastikan klik benar-benar berada di LUAR area Emote Panel
+		const panel = panelRef.current;
+		if (panel) {
+			const pos = panel.AbsolutePosition;
+			const size = panel.AbsoluteSize;
+			if (
+				mousePos.X >= pos.X &&
+				mousePos.X <= pos.X + size.X &&
+				mousePos.Y >= pos.Y &&
+				mousePos.Y <= pos.Y + size.Y
+			) {
+				return; // Klik di dalam area panel emote, jangan tutup!
+			}
+		}
+		onClose();
+	};
+
 	return (
 		<frame key="EmoteModalRoot" Size={new UDim2(1, 0, 1, 0)} BackgroundTransparency={1} ZIndex={1}>
 			{/* Backdrop - Berada di bawah Topbar agar menu Topbar tidak tertutup dan bebas diklik */}
 			<textbutton
 				ref={backdropRef}
 				key="Backdrop"
-				Position={new UDim2(0, 0, 0, topbarHeight)}
-				Size={new UDim2(1, 0, 1, -topbarHeight)}
+				Position={new UDim2(0, isFreecam ? 76 : 0, 0, isFreecam ? 0 : topbarHeight)}
+				Size={new UDim2(1, isFreecam ? -76 : 0, 1, isFreecam ? 0 : -topbarHeight)}
 				BackgroundColor3={Color3.fromHex("#000000")}
 				BackgroundTransparency={1}
 				Text=""
+				Active={true}
 				AutoButtonColor={false}
 				ZIndex={1}
 				Event={{
-					MouseButton1Click: () => {
-						// Pastikan klik benar-benar berada di LUAR area Emote Panel
-						const panel = panelRef.current;
-						if (panel) {
-							const mousePos = UserInputService.GetMouseLocation();
-							const pos = panel.AbsolutePosition;
-							const size = panel.AbsoluteSize;
-							if (
-								mousePos.X >= pos.X &&
-								mousePos.X <= pos.X + size.X &&
-								mousePos.Y >= pos.Y &&
-								mousePos.Y <= pos.Y + size.Y
-							) {
-								return; // Klik di dalam area panel emote, jangan tutup!
-							}
-						}
-						onClose();
-					},
+					Activated: handleBackdropClick,
+					MouseButton1Click: handleBackdropClick,
 				}}
 			/>
 
@@ -752,6 +777,10 @@ export class EmoteModalView {
 						(this.player.WaitForChild("PlayerGui") as PlayerGui))
 					: undefined);
 			if (playerGui) {
+				const existing = playerGui.FindFirstChild("EmoteSystemGui");
+				if (existing) {
+					existing.Destroy();
+				}
 				this.screenGui.Parent = playerGui;
 			}
 			this.hostInstance = this.screenGui;
@@ -772,6 +801,7 @@ export class EmoteModalView {
 		if (!RunService.IsRunning() && this.isGuiObject) return;
 		const camera = Workspace.CurrentCamera;
 		if (!camera) return;
+		if (camera.CameraType === Enum.CameraType.Scriptable) return;
 
 		this.fovTween?.Cancel();
 
@@ -838,7 +868,7 @@ export class EmoteModalView {
 	public destroy(): void {
 		this.fovTween?.Cancel();
 		const camera = Workspace.CurrentCamera;
-		if (camera && this._isOpen) {
+		if (camera && this._isOpen && camera.CameraType !== Enum.CameraType.Scriptable) {
 			camera.FieldOfView = this.originalFOV;
 		}
 		this.root.unmount();

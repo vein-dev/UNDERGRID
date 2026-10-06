@@ -62,30 +62,26 @@ export function isPlayerOwner(player: Player): boolean {
 }
 
 /**
- * Checks whether a given player has Admin privileges in the current game.
- * Admins include:
- * 1. Place / Universe Owner
- * 2. Members of ADMIN_USER_IDS
- * 3. Group Owners / High Ranks if Group-owned
+ * Checks whether a player is a permanent admin (Owner, Admin List, Group Rank).
  */
-export function isPlayerAdmin(player: Player): boolean {
+export function isPlayerPermanentAdmin(player: Player): boolean {
 	// 0. Studio Developer Testing
-	if (RunService.IsStudio()) {
+	if (RunService.IsStudio() && (player.UserId === game.CreatorId || player.UserId <= 0 || player.UserId === AdminConfig.OWNER_USER_ID)) {
 		return true;
 	}
 
-	// 1. Explicit Admin User ID list
+	// 1. Explicit Game Owner
+	if (isPlayerOwner(player)) {
+		return true;
+	}
+
+	// 2. Explicit Admin User ID list
 	if (AdminConfig.ADMIN_USER_IDS.includes(player.UserId)) {
 		return true;
 	}
 
-	// 2. Game Owner (User)
-	if (game.CreatorType === Enum.CreatorType.User) {
-		if (player.UserId === game.CreatorId) {
-			return true;
-		}
-	} else if (game.CreatorType === Enum.CreatorType.Group) {
-		// 3. Group Owner / High Rank
+	// 3. Group Owner / High Rank
+	if (game.CreatorType === Enum.CreatorType.Group) {
 		const rank = player.GetRankInGroup(game.CreatorId);
 		if (rank >= AdminConfig.MIN_GROUP_RANK_FOR_ADMIN) {
 			return true;
@@ -94,3 +90,26 @@ export function isPlayerAdmin(player: Player): boolean {
 
 	return false;
 }
+
+/**
+ * Checks whether a player has Temporary Admin status (Session-only, set via attribute).
+ */
+export function isPlayerTemporaryAdmin(player: Player): boolean {
+	return player.GetAttribute("IsTemporaryAdmin") === true;
+}
+
+/**
+ * Checks whether a given player has Admin privileges in the current game.
+ * Admins include:
+ * 1. Place / Universe Owner & Permanent Admins
+ * 2. Session Temporary Admins
+ */
+export function isPlayerAdmin(player: Player): boolean {
+	// 0. Studio Developer Testing
+	if (RunService.IsStudio()) {
+		return true;
+	}
+
+	return isPlayerPermanentAdmin(player) || isPlayerTemporaryAdmin(player);
+}
+

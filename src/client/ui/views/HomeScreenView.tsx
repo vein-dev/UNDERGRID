@@ -45,6 +45,12 @@ const GRID_APPS: AppIconConfig[] = [
 		iconColor: Color3.fromHex("#202020"),
 		iconName: "calendar",
 	},
+	{
+		appId: AppId.Camera,
+		label: "Camera",
+		iconColor: Color3.fromHex("#202020"),
+		iconName: "camera",
+	},
 ];
 
 export type AppIconClickCallback = (appId: AppId) => void;

@@ -228,12 +228,13 @@ export function StageCameraTab({ stageTarget }: StageCameraTabProps = {}) {
 						color={camState.broadcastEnabled ? Color3.fromHex("#34d399") : Color3.fromHex("#9ca3af")}
 					/>
 					<textlabel
-						Size={new UDim2(0, 220, 1, 0)}
+						Size={new UDim2(1, -26, 1, 0)}
 						BackgroundTransparency={1}
 						Text={camState.broadcastEnabled ? "SIARKAN KE SEMUA CLIENT (LIVE)" : "SIARAN DIMATIKAN (HANYA SAYA)"}
 						TextColor3={camState.broadcastEnabled ? Color3.fromHex("#ecfdf5") : Color3.fromHex("#f3f4f6")}
 						Font={Fonts.Bold}
 						TextSize={10}
+						TextTruncate={Enum.TextTruncate.AtEnd}
 					/>
 				</textbutton>
 			</frame>

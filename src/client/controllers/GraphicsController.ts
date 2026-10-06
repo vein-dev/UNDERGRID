@@ -56,6 +56,16 @@ export class GraphicsController {
 		pcall(() => {
 			Lighting.GlobalShadows = true;
 
+			// Pastikan mode Realistic aktif pada Roblox Unified Lighting System terbaru
+			const enumRecord = Enum as unknown as Record<string, Record<string, unknown>>;
+			const lightingRecord = Lighting as unknown as Record<string, unknown>;
+			if (enumRecord.LightingStyle?.Realistic) {
+				lightingRecord.LightingStyle = enumRecord.LightingStyle.Realistic;
+			}
+			if (lightingRecord.PrioritizeLightingQuality !== undefined) {
+				lightingRecord.PrioritizeLightingQuality = true;
+			}
+
 			// Nonaktifkan flat Blur 2D yang memburamkan seluruh layar, sisakan hanya blur khusus UI saat aktif
 			for (const child of Lighting.GetChildren()) {
 				if (
@@ -68,29 +78,29 @@ export class GraphicsController {
 				}
 			}
 
-			// 1. Realistic AAA Optical Bloom (Pendaran lensa lembut pada lampu/neon tanpa mencuci warna kulit/pakaian)
+			// 1. Realistic AAA Optical Bloom (Pendaran lensa lembut pada lampu/neon asli tanpa menyilaukan jalan)
 			let bloom = Lighting.FindFirstChildOfClass("BloomEffect");
 			if (!bloom) {
 				bloom = new Instance("BloomEffect");
 				bloom.Name = "Bloom";
 				bloom.Parent = Lighting;
 			}
-			bloom.Intensity = 0.32; // Glow lembut terukur, tidak silau membakar
-			bloom.Size = 24;
-			bloom.Threshold = 2.4; // Threshold tinggi: hanya lampu/neon sejati yang glow, kulit & pakaian tetap alami
+			bloom.Intensity = 0.22; // Glow lembut terukur pada lampu & lampu jalan
+			bloom.Size = 16;
+			bloom.Threshold = 3.0; // Threshold tinggi: hanya neon/bohlam sejati yang glow, jalan & pakaian tetap matte
 			bloom.Enabled = true;
 
-			// 2. Realistic AAA DepthOfField (Focal Blur Lensa Sinematik halus tanpa artefak piksel/banding)
+			// 2. Realistic AAA DepthOfField (Seluruh gedung kota & gameplay tetap tajam dan jernih layaknya GTA V)
 			let dof = Lighting.FindFirstChildOfClass("DepthOfFieldEffect");
 			if (!dof) {
 				dof = new Instance("DepthOfFieldEffect");
 				dof.Name = "DepthOfField";
 				dof.Parent = Lighting;
 			}
-			dof.NearIntensity = 0; // Karakter & gameplay 100% tajam dan jernih
-			dof.FocusDistance = 35;
-			dof.InFocusRadius = 25;
-			dof.FarIntensity = 0.22; // Blur latar belakang kejauhan lembut tanpa noise atau undakan kasar
+			dof.NearIntensity = 0; // Karakter & gameplay 100% tajam
+			dof.FocusDistance = 150;
+			dof.InFocusRadius = 350;
+			dof.FarIntensity = 0; // Menghilangkan blur berlebih pada gedung latar belakang agar seluruh kota jernih
 			dof.Enabled = true;
 
 			// 3. Cinematic Soft God Rays (SunRays halus merata tanpa artefak garis kasar)
@@ -100,25 +110,28 @@ export class GraphicsController {
 				sunRays.Name = "SunRays";
 				sunRays.Parent = Lighting;
 			}
-			sunRays.Intensity = 0.22; // Berkas sinar lembut, tidak menyilaukan atau bergerigi tajam
-			sunRays.Spread = 0.65; // Sebaran terpusat natural menghindari radial banding engine
+			sunRays.Intensity = 0.2;
+			sunRays.Spread = 0.65;
 			sunRays.Enabled = true;
 
-			// 4. Moody Urban Atmosphere (Haze kabut halus & pembiasan cahaya sinematik)
+			Lighting.EnvironmentDiffuseScale = 0.5;
+			Lighting.EnvironmentSpecularScale = 0.18; // Menghilangkan pantulan cermin/kaca berlebih pada aspal & marka jalan
+
+			// 4. Moody Urban Atmosphere (Haze kabut halus & pembiasan cahaya sinematik yang jernih)
 			let atmosphere = Lighting.FindFirstChildOfClass("Atmosphere");
 			if (!atmosphere) {
 				atmosphere = new Instance("Atmosphere");
 				atmosphere.Name = "Atmosphere";
 				atmosphere.Parent = Lighting;
 			}
-			atmosphere.Density = 0.34;
-			atmosphere.Offset = 0.15;
-			atmosphere.Haze = 0.85; // Kabut atmosferik halus merata tanpa bercak kasar
-			atmosphere.Glare = 0.18; // Pendaran lembut tanpa cincin silau berlebih
+			atmosphere.Density = 0.1;
+			atmosphere.Offset = 0.0;
+			atmosphere.Haze = 0.0; // Jernih dan bebas garis batas horizon
+			atmosphere.Glare = 0.05; // Pendaran lembut tanpa cincin silau berlebih
 			atmosphere.Color = new Color3(195 / 255, 170 / 255, 145 / 255);
 			atmosphere.Decay = new Color3(75 / 255, 50 / 255, 25 / 255);
 
-			// 5. Cinematic Moody Color Grading (Kontras lembut, dynamic range lebar, transisi halus)
+			// 5. Cinematic Moody Color Grading (Kontras lembut, dynamic range lebar, transisi filmic khas GTA V)
 			let cc = Lighting.FindFirstChildOfClass("ColorCorrectionEffect");
 			if (!cc) {
 				cc = new Instance("ColorCorrectionEffect");
@@ -126,9 +139,9 @@ export class GraphicsController {
 				cc.Parent = Lighting;
 			}
 			cc.Brightness = 0.0;
-			cc.Contrast = 0.08; // Kontras seimbang menjaga dynamic range agar highlight tidak klip putih
-			cc.Saturation = 0.05;
-			cc.TintColor = new Color3(250 / 255, 246 / 255, 252 / 255);
+			cc.Contrast = 0.05; // Kontras seimbang menjaga dynamic range agar highlight tidak klip putih
+			cc.Saturation = 0.04;
+			cc.TintColor = new Color3(254 / 255, 252 / 255, 248 / 255);
 			cc.Enabled = true;
 		});
 	}

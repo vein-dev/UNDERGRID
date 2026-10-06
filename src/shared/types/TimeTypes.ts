@@ -31,4 +31,24 @@ export interface LightingProfile {
 	colorShiftTop: Color3;
 	colorShiftBottom: Color3;
 	exposureCompensation: number;
+	atmosphereColor?: Color3;
+	atmosphereDecay?: Color3;
+	atmosphereHaze?: number;
+	atmosphereDensity?: number;
+	atmosphereOffset?: number;
+	atmosphereGlare?: number;
+	environmentDiffuseScale?: number;
+	environmentSpecularScale?: number;
 }
+
+/**
+ * Titik anchor waktu (0 - 24) beserta profil pencahayaan untuk timeline kontinu.
+ */
+export interface TimeAnchor {
+	hour: number;
+	name: string;
+	profile: LightingProfile;
+}
+
+
+

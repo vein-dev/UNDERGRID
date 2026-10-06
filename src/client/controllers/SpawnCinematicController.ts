@@ -153,7 +153,8 @@ export class SpawnCinematicController {
 					if (
 						child.Name.find("Topbar")[0] !== undefined ||
 						child.Name === "StandardHotbarGui" ||
-						child.Name === "TouchGui"
+						child.Name === "TouchGui" ||
+						child.Name === "MobileMovementGui"
 					) {
 						child.Enabled = visible;
 					}
@@ -170,7 +171,8 @@ export class SpawnCinematicController {
 						if (
 							child.Name.find("Topbar")[0] !== undefined ||
 							child.Name === "StandardHotbarGui" ||
-							child.Name === "TouchGui"
+							child.Name === "TouchGui" ||
+							child.Name === "MobileMovementGui"
 						) {
 							child.Enabled = false;
 						}

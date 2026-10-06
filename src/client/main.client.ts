@@ -21,12 +21,15 @@ import {
 	ClientBackdropController,
 	FlyController,
 	RollupDoorController,
+	RooftopDoorController,
 	SeatController,
 	StageCameraController,
 	AvatarContextMenuController,
 	StreetlightController,
 	AfkController,
 	ZoneAudioController,
+	MobileMovementController,
+	FreecamController,
 } from "./controllers";
 
 
@@ -37,16 +40,23 @@ import { GlobalNotificationService } from "./services/GlobalNotificationService"
 import { MusicPlayerService } from "./services/MusicPlayerService";
 import { TimeService } from "./services/TimeService";
 import { StageCameraOverlayView } from "./ui/views/StageCameraOverlayView";
+import { FreecamHudView } from "./ui/views/FreecamHudView";
 
 /**
  * Client Entry Point
  */
 function main() {
-	// Lock experience orientation to fixed LandscapeRight and disable sensor detection
-	StarterGui.ScreenOrientation = Enum.ScreenOrientation.LandscapeRight;
+	const localPlayer = Players.LocalPlayer;
+
+	// Izinkan orientasi otomatis antara Landscape Left dan Landscape Right via sensor device
+	StarterGui.ScreenOrientation = Enum.ScreenOrientation.LandscapeSensor;
+	const playerGui = (localPlayer.FindFirstChild("PlayerGui") as PlayerGui | undefined) ??
+		(localPlayer.WaitForChild("PlayerGui", 5) as PlayerGui | undefined);
+	if (playerGui) {
+		playerGui.ScreenOrientation = Enum.ScreenOrientation.LandscapeSensor;
+	}
 
 	// Batasi jarak zoom kamera agar pemain tidak dapat zoom out terlalu jauh melihat kekosongan luar map
-	const localPlayer = Players.LocalPlayer;
 	localPlayer.CameraMinZoomDistance = GameConfig.CAMERA.MIN_ZOOM_DISTANCE;
 	localPlayer.CameraMaxZoomDistance = GameConfig.CAMERA.MAX_ZOOM_DISTANCE;
 
@@ -101,13 +111,17 @@ function main() {
 	ClientBackdropController.getInstance().init();
 	FlyController.getInstance().init();
 	RollupDoorController.getInstance().init();
+	RooftopDoorController.getInstance().init();
 	SeatController.getInstance().init();
 	StageCameraController.getInstance().init();
 	StageCameraOverlayView.getInstance();
+	FreecamHudView.getInstance();
 	AvatarContextMenuController.getInstance().init();
 	StreetlightController.getInstance().init();
 	AfkController.getInstance().init();
 	ZoneAudioController.getInstance().init();
+	MobileMovementController.getInstance().init();
+	FreecamController.getInstance().init();
 
 	print("[Client] All controllers initialized successfully.");
 

@@ -22,11 +22,11 @@ export const SkateboardConfig = {
 	},
 
 	PHYSICS: {
-		maxSpeed: 38, // studs per second (kecepatan maksimal seimbang & terkendali)
-		pushAcceleration: 20, // studs/s^2 laju akselerasi halus & dinamis saat menahan W
-		pushInitialKick: 3, // dorongan awal lembut saat pertama kali mulai jalan
-		maxFakieSpeed: 28, // kecepatan maksimal saat meluncur mundur (Fakie)
-		fakieAcceleration: 16, // laju akselerasi saat Fakie Push
+		maxSpeed: 46, // studs per second (kecepatan maksimal lebih bertenaga & responsif)
+		pushAcceleration: 24, // studs/s^2 laju akselerasi halus & dinamis saat menahan W
+		pushInitialKick: 4, // dorongan awal lembut saat pertama kali mulai jalan
+		maxFakieSpeed: 34, // kecepatan maksimal saat meluncur mundur (Fakie)
+		fakieAcceleration: 19, // laju akselerasi saat Fakie Push
 		turnAngularVelocity: 3.0, // rad/s kecepatan belok dasar saat carving
 		steerResponsiveness: 7.0, // kelenturan respons kemudi (lerp smoothing)
 		maxBankingAngle: 0.22, // radians (~12.6 deg) sudut kemiringan badan & papan saat belok tajam

@@ -34,9 +34,8 @@ interface MobileActionButtonProps {
 	name: string;
 	label: string;
 	icon: string;
-	size: number;
+	size?: UDim2;
 	position: UDim2;
-	iconSize?: number;
 	accentColor?: Color3;
 	isActive?: boolean;
 	onActivated?: () => void;
@@ -48,9 +47,8 @@ function MobileActionButton({
 	name,
 	label,
 	icon,
-	size,
+	size = new UDim2(0.28, 0, 0.28, 0),
 	position,
-	iconSize = 22,
 	accentColor = Color3.fromHex("#ffffff"),
 	isActive = false,
 	onActivated,
@@ -65,7 +63,7 @@ function MobileActionButton({
 			key={name}
 			AnchorPoint={new Vector2(0.5, 0.5)}
 			Position={position}
-			Size={new UDim2(0, size, 0, size)}
+			Size={size}
 			BackgroundColor3={active ? Color3.fromHex("#ffffff") : Color3.fromHex("#141416")}
 			BackgroundTransparency={active ? 0.08 : 0.35}
 			AutoButtonColor={false}
@@ -100,6 +98,11 @@ function MobileActionButton({
 			}}
 		>
 			<uicorner CornerRadius={new UDim(1, 0)} />
+			<uiaspectratioconstraint
+				AspectRatio={1}
+				AspectType={Enum.AspectType.ScaleWithParentSize}
+				DominantAxis={Enum.DominantAxis.Height}
+			/>
 			<uistroke
 				Color={active ? Color3.fromHex("#ffffff") : Color3.fromHex("#38383a")}
 				Thickness={active ? 2 : 1.2}
@@ -110,7 +113,7 @@ function MobileActionButton({
 			{/* Icon */}
 			<LucideIcon
 				name={icon}
-				size={new UDim2(0, iconSize, 0, iconSize)}
+				size={new UDim2(0.46, 0, 0.46, 0)}
 				anchorPoint={new Vector2(0.5, 0.5)}
 				position={new UDim2(0.5, 0, 0.38, 0)}
 				color={active ? Color3.fromHex("#0a0a0a") : Color3.fromHex("#f4f4f5")}
@@ -121,8 +124,8 @@ function MobileActionButton({
 			<textlabel
 				key="ActionLabel"
 				AnchorPoint={new Vector2(0.5, 1)}
-				Position={new UDim2(0.5, 0, 1, -5)}
-				Size={new UDim2(1, -4, 0, 11)}
+				Position={new UDim2(0.5, 0, 0.92, 0)}
+				Size={new UDim2(0.88, 0, 0.26, 0)}
 				BackgroundTransparency={1}
 				Text={label}
 				TextColor3={active ? Color3.fromHex("#0a0a0a") : Color3.fromHex("#a1a1aa")}
@@ -130,8 +133,84 @@ function MobileActionButton({
 				TextScaled={true}
 				ZIndex={66}
 			>
-				<uitextsizeconstraint MaxTextSize={9} MinTextSize={7} />
+				<uitextsizeconstraint MaxTextSize={12} MinTextSize={6} />
 			</textlabel>
+		</textbutton>
+	);
+}
+
+function MobileClashMashButton({ onActivated }: { onActivated?: () => void }) {
+	const [isPressed, setIsPressed] = useState(false);
+
+	return (
+		<textbutton
+			key="MobileClashMashButton"
+			AnchorPoint={new Vector2(0.5, 1)}
+			Position={new UDim2(0.5, 0, 1, -10)}
+			Size={new UDim2(1, -24, 0, 36)}
+			BackgroundColor3={isPressed ? Color3.fromHex("#ffffff") : Color3.fromHex("#141416")}
+			BackgroundTransparency={isPressed ? 0.08 : 0.35}
+			AutoButtonColor={false}
+			Text=""
+			ZIndex={65}
+			Event={{
+				Activated: () => onActivated?.(),
+				InputBegan: (_, input) => {
+					if (
+						input.UserInputType === Enum.UserInputType.Touch ||
+						input.UserInputType === Enum.UserInputType.MouseButton1
+					) {
+						setIsPressed(true);
+					}
+				},
+				InputEnded: (_, input) => {
+					if (
+						input.UserInputType === Enum.UserInputType.Touch ||
+						input.UserInputType === Enum.UserInputType.MouseButton1
+					) {
+						setIsPressed(false);
+					}
+				},
+				MouseLeave: () => {
+					setIsPressed(false);
+				},
+			}}
+		>
+			<uicorner CornerRadius={new UDim(1, 0)} />
+			<uistroke
+				Color={isPressed ? Color3.fromHex("#ffffff") : Color3.fromHex("#38383a")}
+				Thickness={isPressed ? 2 : 1.2}
+				Transparency={isPressed ? 0.05 : 0.35}
+				ApplyStrokeMode={Enum.ApplyStrokeMode.Border}
+			/>
+			<frame
+				Size={new UDim2(1, 0, 1, 0)}
+				BackgroundTransparency={1}
+				ZIndex={66}
+			>
+				<uilistlayout
+					FillDirection={Enum.FillDirection.Horizontal}
+					VerticalAlignment={Enum.VerticalAlignment.Center}
+					HorizontalAlignment={Enum.HorizontalAlignment.Center}
+					Padding={new UDim(0, 8)}
+				/>
+				<LucideIcon
+					name="swords"
+					size={new UDim2(0, 15, 0, 15)}
+					color={isPressed ? Color3.fromHex("#0a0a0a") : Color3.fromHex("#ffffff")}
+					zIndex={67}
+				/>
+				<textlabel
+					key="MashBtnLabel"
+					BackgroundTransparency={1}
+					AutomaticSize={Enum.AutomaticSize.XY}
+					Text="MASH TAP!"
+					TextColor3={isPressed ? Color3.fromHex("#0a0a0a") : Color3.fromHex("#ffffff")}
+					Font={Fonts.Bold}
+					TextSize={12}
+					ZIndex={67}
+				/>
+			</frame>
 		</textbutton>
 	);
 }
@@ -180,10 +259,6 @@ export function CombatHudComponent({
 	let clashColor = Color3.fromHex("#ffffff");
 	if (clashResultColor) {
 		clashColor = clashResultColor;
-	} else if (yourPresses > enemyPresses) {
-		clashColor = Color3.fromHex("#38bdf8");
-	} else if (enemyPresses > yourPresses) {
-		clashColor = Color3.fromHex("#f43f5e");
 	}
 
 	return (
@@ -317,22 +392,22 @@ export function CombatHudComponent({
 				</frame>
 			)}
 
-			{/* Clash Duel Minigame Overlay (Clean & Fresh Glassmorphism) */}
+			{/* Clash Duel Minigame Overlay (Monochrome & iOS Glassmorphism) */}
 			{clashVisible && (
 				<frame
 					key="ClashDuelContainer"
 					AnchorPoint={new Vector2(0.5, 1)}
-					Position={new UDim2(0.5, 0, 1, -120)}
-					Size={new UDim2(0, 330, 0, 68)}
-					BackgroundColor3={Color3.fromHex("#14161c")}
+					Position={new UDim2(0.5, 0, 1, isMobile ? -140 : -100)}
+					Size={new UDim2(0, 340, 0, isMobile ? 116 : 68)}
+					BackgroundColor3={Color3.fromHex("#141416")}
 					BackgroundTransparency={0.25}
 					ZIndex={60}
 				>
-					<uicorner CornerRadius={new UDim(0, 8)} />
+					<uicorner CornerRadius={new UDim(0, 12)} />
 					<uistroke
-						Color={Color3.fromHex("#3a4055")}
-						Thickness={1}
-						Transparency={0.3}
+						Color={Color3.fromHex("#38383a")}
+						Thickness={1.2}
+						Transparency={0.35}
 						ApplyStrokeMode={Enum.ApplyStrokeMode.Border}
 					/>
 
@@ -352,8 +427,8 @@ export function CombatHudComponent({
 						/>
 						<LucideIcon
 							name="swords"
-							size={new UDim2(0, 13, 0, 13)}
-							color={clashColor}
+							size={new UDim2(0, 14, 0, 14)}
+							color={Color3.fromHex("#ffffff")}
 							zIndex={62}
 						/>
 						<textlabel
@@ -361,49 +436,49 @@ export function CombatHudComponent({
 							BackgroundTransparency={1}
 							AutomaticSize={Enum.AutomaticSize.XY}
 							Text={clashTitle}
-							TextColor3={clashColor}
+							TextColor3={Color3.fromHex("#ffffff")}
 							Font={Fonts.Bold}
 							TextSize={12}
 							ZIndex={62}
 						/>
 					</frame>
 
-					{/* Dual Clash Progress Bar Track */}
+					{/* Dual Clash Progress Bar Track (Monochrome) */}
 					<frame
 						key="DualClashTrack"
 						Position={new UDim2(0, 12, 0, 32)}
 						Size={new UDim2(1, -24, 0, 24)}
-						BackgroundColor3={Color3.fromHex("#0c0e14")}
-						BackgroundTransparency={0.3}
+						BackgroundColor3={Color3.fromHex("#0c0c0e")}
+						BackgroundTransparency={0.4}
 						ZIndex={61}
 						ClipsDescendants={true}
 					>
 						<uicorner CornerRadius={new UDim(0, 6)} />
 						<uistroke
-							Color={Color3.fromHex("#3a4055")}
+							Color={Color3.fromHex("#27272a")}
 							Thickness={1}
 							Transparency={0.4}
 							ApplyStrokeMode={Enum.ApplyStrokeMode.Border}
 						/>
 
-						{/* Your Bar (Fresh Cyan / Sky) */}
+						{/* Your Bar (Monochrome Solid White) */}
 						<frame
 							key="YourBar"
 							Size={new UDim2(yourRatio, 0, 1, 0)}
 							Position={new UDim2(0, 0, 0, 0)}
-							BackgroundColor3={Color3.fromHex("#38bdf8")}
-							BackgroundTransparency={0.2}
+							BackgroundColor3={Color3.fromHex("#ffffff")}
+							BackgroundTransparency={0.08}
 							ZIndex={62}
 						>
 							<uicorner CornerRadius={new UDim(0, 6)} />
 						</frame>
 
-						{/* Enemy Bar (Fresh Rose / Coral) */}
+						{/* Enemy Bar (Monochrome Charcoal / Dark Zinc) */}
 						<frame
 							key="EnemyBar"
 							Size={new UDim2(enemyRatio, 0, 1, 0)}
 							Position={new UDim2(yourRatio, 0, 0, 0)}
-							BackgroundColor3={Color3.fromHex("#f43f5e")}
+							BackgroundColor3={Color3.fromHex("#27272a")}
 							BackgroundTransparency={0.2}
 							ZIndex={62}
 						>
@@ -415,8 +490,8 @@ export function CombatHudComponent({
 							key="ClashDivider"
 							Position={new UDim2(yourRatio, -1, 0, 0)}
 							Size={new UDim2(0, 2, 1, 0)}
-							BackgroundColor3={Color3.fromHex("#ffffff")}
-							BackgroundTransparency={0.3}
+							BackgroundColor3={Color3.fromHex("#0c0c0c")}
+							BackgroundTransparency={0.1}
 							ZIndex={63}
 						/>
 
@@ -439,17 +514,11 @@ export function CombatHudComponent({
 								BackgroundTransparency={1}
 								AutomaticSize={Enum.AutomaticSize.XY}
 								Text={`YOU (${yourPresses})`}
-								TextColor3={Color3.fromHex("#ffffff")}
+								TextColor3={Color3.fromHex("#0c0c0c")}
 								Font={Fonts.Bold}
 								TextSize={11}
 								ZIndex={65}
-							>
-								<uistroke
-									Color={Color3.fromHex("#000000")}
-									Thickness={1}
-									Transparency={0.6}
-								/>
-							</textlabel>
+							/>
 						</frame>
 
 						<frame
@@ -471,44 +540,16 @@ export function CombatHudComponent({
 								BackgroundTransparency={1}
 								AutomaticSize={Enum.AutomaticSize.XY}
 								Text={`ENEMY (${enemyPresses})`}
-								TextColor3={Color3.fromHex("#ffffff")}
+								TextColor3={Color3.fromHex("#f4f4f5")}
 								Font={Fonts.Bold}
 								TextSize={11}
 								ZIndex={65}
-							>
-								<uistroke
-									Color={Color3.fromHex("#000000")}
-									Thickness={1}
-									Transparency={0.6}
-								/>
-							</textlabel>
+							/>
 						</frame>
 					</frame>
 
-					{/* Mobile Big Clash Mash Button */}
-					{isMobile && (
-						<textbutton
-							key="MobileClashMashButton"
-							AnchorPoint={new Vector2(0.5, 0)}
-							Position={new UDim2(0.5, 0, 1, 10)}
-							Size={new UDim2(0, 260, 0, 44)}
-							BackgroundColor3={Color3.fromHex("#ffffff")}
-							BackgroundTransparency={0.1}
-							Text="MASH TAP!"
-							TextColor3={Color3.fromHex("#000000")}
-							Font={Fonts.Bold}
-							TextSize={14}
-							AutoButtonColor={false}
-							ZIndex={65}
-							Event={{
-								Activated: () => onClashMash?.(),
-								MouseButton1Click: () => onClashMash?.(),
-							}}
-						>
-							<uicorner CornerRadius={new UDim(0, 10)} />
-							<uistroke Color={Color3.fromHex("#ffffff")} Thickness={1.5} />
-						</textbutton>
-					)}
+					{/* Mobile Mash Button - Uniform dengan Button Touch Lainnya */}
+					{isMobile && <MobileClashMashButton onActivated={onClashMash} />}
 				</frame>
 			)}
 
@@ -517,69 +558,70 @@ export function CombatHudComponent({
 				<frame
 					key="MobileCombatCluster"
 					AnchorPoint={new Vector2(1, 1)}
-					Position={new UDim2(1, -15, 1, -15)}
-					Size={new UDim2(0, 240, 0, 210)}
+					Position={new UDim2(0.96, 0, 0.94, 0)}
+					Size={new UDim2(0.544, 0, 0.40, 0)}
 					BackgroundTransparency={1}
 					ZIndex={64}
 				>
-					{/* PUNCH / M1 */}
+					<uiaspectratioconstraint
+						AspectRatio={1.36}
+						AspectType={Enum.AspectType.ScaleWithParentSize}
+						DominantAxis={Enum.DominantAxis.Height}
+					/>
+
+					{/* 1. PUNCH / M1 (Jangkar Utama Kanan Bawah - Diameter Terbesar 0.52) */}
 					<MobileActionButton
 						name="PunchBtn"
 						label="PUNCH"
 						icon="sword"
-						size={68}
-						iconSize={26}
-						position={new UDim2(0, 195, 0, 165)}
+						size={new UDim2(0.52, 0, 0.52, 0)}
+						position={new UDim2(0.81, 0, 0.74, 0)}
 						accentColor={Color3.fromHex("#ffffff")}
 						onActivated={onM1}
 					/>
 
-					{/* HEAVY / PUSH */}
+					{/* 2. DASH / EVADE (Di atas Punch) */}
 					<MobileActionButton
-						name="HeavyBtn"
-						label="HEAVY"
-						icon="zap"
-						size={52}
-						iconSize={22}
-						position={new UDim2(0, 125, 0, 175)}
+						name="DashBtn"
+						label="DASH"
+						icon="wind"
+						size={new UDim2(0.38, 0, 0.38, 0)}
+						position={new UDim2(0.85, 0, 0.19, 0)}
 						accentColor={Color3.fromHex("#ffffff")}
-						onActivated={onHeavy}
+						onActivated={onDash}
 					/>
 
-					{/* BLOCK (HOLD TO GUARD) */}
+					{/* 3. BLOCK (Tahan Guard - Di antara Heavy dan Dash) */}
 					<MobileActionButton
 						name="BlockBtn"
 						label="BLOCK"
 						icon="shield"
-						size={52}
-						iconSize={22}
-						position={new UDim2(0, 125, 0, 110)}
+						size={new UDim2(0.38, 0, 0.38, 0)}
+						position={new UDim2(0.51, 0, 0.33, 0)}
 						accentColor={Color3.fromHex("#ffffff")}
 						isActive={isBlocking}
 						onPressDown={onBlockStart}
 						onPressUp={onBlockEnd}
 					/>
 
-					{/* DASH / EVADE */}
+					{/* 4. HEAVY / PUSH (Di sebelah kiri Punch pada baris bawah) */}
 					<MobileActionButton
-						name="DashBtn"
-						label="DASH"
-						icon="wind"
-						size={52}
-						iconSize={22}
-						position={new UDim2(0, 195, 0, 95)}
+						name="HeavyBtn"
+						label="HEAVY"
+						icon="zap"
+						size={new UDim2(0.38, 0, 0.38, 0)}
+						position={new UDim2(0.41, 0, 0.79, 0)}
 						accentColor={Color3.fromHex("#ffffff")}
-						onActivated={onDash}
+						onActivated={onHeavy}
 					/>
 
-					{/* SPRINT TOGGLE */}
+					{/* 5. SPRINT TOGGLE (Paling kiri baris bawah) */}
 					<MobileActionButton
 						name="SprintBtn"
 						label="SPRINT"
 						icon="flame"
-						size={46}
-						iconSize={20}
-						position={new UDim2(0, 55, 0, 145)}
+						size={new UDim2(0.29, 0, 0.29, 0)}
+						position={new UDim2(0.11, 0, 0.82, 0)}
 						accentColor={Color3.fromHex("#ffffff")}
 						isActive={isSprinting}
 						onActivated={onSprintToggle}

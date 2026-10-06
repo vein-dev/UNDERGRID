@@ -18,6 +18,7 @@ export class ServerSkateboardService {
 	private templateModel?: Instance;
 	private activeBoards = new Map<Player, Instance>();
 	private originalHipHeights = new Map<Player, number>();
+	private seatedGuards = new Map<Player, RBXScriptConnection>();
 
 	private constructor() {
 		this.mountEvent = getRemoteEvent("SkateboardMountEvent");
@@ -431,10 +432,22 @@ export class ServerSkateboardService {
 		this.mountEvent.FireClient(player, { mount: true });
 
 		// Cleanup jika karakter mati
-		const conn = humanoid.Died.Connect(() => {
+		const diedConn = humanoid.Died.Connect(() => {
 			this.dismountPlayer(player);
-			conn.Disconnect();
+			diedConn.Disconnect();
 		});
+
+		// Cegah duduk otomatis di Seat saat bermain skateboard:
+		// Roblox Seat langsung membuat SeatWeld saat kontak fisik.
+		// Kita tangkap event Seated dan langsung lepas weld + unsit.
+		this.seatedGuards.get(player)?.Disconnect();
+		const seatedConn = humanoid.Seated.Connect((active, seat) => {
+			if (active && seat && this.activeBoards.has(player)) {
+				seat.FindFirstChild("SeatWeld")?.Destroy();
+				humanoid.Sit = false;
+			}
+		});
+		this.seatedGuards.set(player, seatedConn);
 
 		return true;
 	}
@@ -448,6 +461,10 @@ export class ServerSkateboardService {
 			board.Destroy();
 			this.activeBoards.delete(player);
 		}
+
+		// Bersihkan seated guard connection
+		this.seatedGuards.get(player)?.Disconnect();
+		this.seatedGuards.delete(player);
 
 		const originalHip = this.originalHipHeights.get(player) ?? SkateboardConfig.ATTACHMENT.hipHeightDismounted;
 		this.originalHipHeights.delete(player);
