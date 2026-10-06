@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "@rbxts/react";
 import ReactRoblox, { Root } from "@rbxts/react-roblox";
-import { Players, TweenService, Workspace } from "@rbxts/services";
+import { Players, UserInputService, Workspace } from "@rbxts/services";
 import { DialogueOption, NpcDialogueTree } from "shared/types";
 import { LucideIcon } from "../components/LucideIcon";
 import { MonochromeTheme } from "../Theme";
@@ -22,21 +22,33 @@ export function NpcDialogueComponent({
 	onClose,
 }: NpcDialogueProps) {
 	const [hoveredOptionId, setHoveredOptionId] = useState<string | undefined>();
-	const [scale, setScale] = useState(1);
+	const [viewport, setViewport] = useState(() => {
+		const cam = Workspace.CurrentCamera;
+		return cam ? cam.ViewportSize : new Vector2(1280, 720);
+	});
+	const [isTouch, setIsTouch] = useState(() => UserInputService.TouchEnabled);
 
-	// Responsivitas skala layar
+	// Sinkronisasi ukuran layar dan mode input (PC vs Mobile)
 	useEffect(() => {
-		const updateScale = () => {
+		const updateViewport = () => {
 			const cam = Workspace.CurrentCamera;
-			const vp = cam ? cam.ViewportSize : new Vector2(1280, 720);
-			const s = math.clamp(vp.Y / 800, 0.8, 1.05);
-			setScale(s);
+			if (cam) {
+				setViewport(cam.ViewportSize);
+			}
+			setIsTouch(UserInputService.TouchEnabled);
 		};
 
-		updateScale();
+		updateViewport();
 		const cam = Workspace.CurrentCamera;
-		const vpConn = cam?.GetPropertyChangedSignal("ViewportSize").Connect(updateScale);
-		return () => vpConn?.Disconnect();
+		const vpConn = cam?.GetPropertyChangedSignal("ViewportSize").Connect(updateViewport);
+		const inputConn = UserInputService.LastInputTypeChanged.Connect(() => {
+			setIsTouch(UserInputService.TouchEnabled);
+		});
+
+		return () => {
+			vpConn?.Disconnect();
+			inputConn.Disconnect();
+		};
 	}, []);
 
 	if (!visible || !dialogueTree || !currentNodeId) {
@@ -48,53 +60,77 @@ export function NpcDialogueComponent({
 		return <></>;
 	}
 
+	// Deteksi mobile berdasarkan touch device atau tinggi/lebar viewport
+	const isMobile = isTouch || viewport.Y < 520 || viewport.X < 850;
+
+	// Posisi Y berada di atas Hotbar:
+	// Hotbar di posisi UDim2(0.5, 0, 1, -16) dengan tinggi ~62px.
+	// Pada PC: bottom offset -94px memberikan gap 16px di atas hotbar.
+	// Pada Mobile: hotbar terskala lebih kecil, bottom offset -84px memberikan posisi pas di atas slot hotbar.
+	const bottomOffset = isMobile ? -84 : -94;
+
+	// Lebar responsif: Pada mobile pas di tengah antara joystick kiri dan tombol aksi kanan
+	const cardWidth = isMobile
+		? math.clamp(viewport.X - 160, 280, 440)
+		: 520;
+
 	return (
 		<frame
+			key="NpcDialogueOverlay"
 			Size={new UDim2(1, 0, 1, 0)}
 			BackgroundTransparency={1}
 			ZIndex={95}
 		>
-			<uiscale Scale={scale} />
-
 			{/* Main Dialogue Card */}
 			<frame
+				key="DialogueCard"
 				AnchorPoint={new Vector2(0.5, 1)}
-				Position={new UDim2(0.5, 0, 1, -28)}
-				Size={new UDim2(0, 560, 0, 190)}
+				Position={new UDim2(0.5, 0, 1, bottomOffset)}
+				Size={new UDim2(0, cardWidth, 0, 0)}
+				AutomaticSize={Enum.AutomaticSize.Y}
 				BackgroundColor3={MonochromeTheme.Background.DeepCharcoal}
 				BackgroundTransparency={0.08}
 				BorderSizePixel={0}
 			>
-				<uicorner CornerRadius={new UDim(0, 14)} />
+				<uicorner CornerRadius={new UDim(0, isMobile ? 12 : 14)} />
 				<uistroke
 					Color={MonochromeTheme.Border.Subtle}
 					Thickness={1.2}
 					Transparency={0.2}
 				/>
 				<uipadding
-					PaddingTop={new UDim(0, 16)}
-					PaddingBottom={new UDim(0, 16)}
-					PaddingLeft={new UDim(0, 20)}
-					PaddingRight={new UDim(0, 20)}
+					PaddingTop={new UDim(0, isMobile ? 10 : 14)}
+					PaddingBottom={new UDim(0, isMobile ? 10 : 14)}
+					PaddingLeft={new UDim(0, isMobile ? 14 : 18)}
+					PaddingRight={new UDim(0, isMobile ? 14 : 18)}
+				/>
+				<uilistlayout
+					FillDirection={Enum.FillDirection.Vertical}
+					HorizontalAlignment={Enum.HorizontalAlignment.Center}
+					SortOrder={Enum.SortOrder.LayoutOrder}
+					Padding={new UDim(0, isMobile ? 8 : 10)}
 				/>
 				<uisizeconstraint
-					MinSize={new Vector2(320, 160)}
-					MaxSize={new Vector2(640, 220)}
+					MinSize={new Vector2(isMobile ? 260 : 360, 80)}
+					MaxSize={new Vector2(isMobile ? 460 : 560, 240)}
 				/>
 
 				{/* Header: Speaker Badge + Close Button */}
 				<frame
-					Size={new UDim2(1, 0, 0, 26)}
+					key="HeaderRow"
+					LayoutOrder={1}
+					Size={new UDim2(1, 0, 0, isMobile ? 22 : 26)}
 					BackgroundTransparency={1}
 				>
 					{/* Speaker Pill Badge */}
 					<frame
-						Size={new UDim2(0, 130, 1, 0)}
+						Size={new UDim2(0, 0, 1, 0)}
+						AutomaticSize={Enum.AutomaticSize.X}
 						BackgroundColor3={MonochromeTheme.Background.Surface}
 						BackgroundTransparency={0.2}
 						BorderSizePixel={0}
 					>
-						<uicorner CornerRadius={new UDim(0, 8)} />
+						<uicorner CornerRadius={new UDim(0, 6)} />
 						<uistroke
 							Color={MonochromeTheme.Border.Medium}
 							Thickness={1}
@@ -104,25 +140,26 @@ export function NpcDialogueComponent({
 							FillDirection={Enum.FillDirection.Horizontal}
 							VerticalAlignment={Enum.VerticalAlignment.Center}
 							HorizontalAlignment={Enum.HorizontalAlignment.Left}
-							Padding={new UDim(0, 6)}
+							Padding={new UDim(0, 5)}
 						/>
 						<uipadding
-							PaddingLeft={new UDim(0, 8)}
+							PaddingLeft={new UDim(0, 7)}
 							PaddingRight={new UDim(0, 8)}
 						/>
 
 						<LucideIcon
 							name="message-square"
-							size={new UDim2(0, 14, 0, 14)}
+							size={new UDim2(0, isMobile ? 12 : 14, 0, isMobile ? 12 : 14)}
 							color={MonochromeTheme.Text.Primary}
 						/>
 						<textlabel
-							Size={new UDim2(1, -20, 1, 0)}
+							AutomaticSize={Enum.AutomaticSize.X}
+							Size={new UDim2(0, 0, 1, 0)}
 							BackgroundTransparency={1}
 							Font={Fonts.Bold}
 							Text={currentNode.speakerName}
 							TextColor3={MonochromeTheme.Text.Primary}
-							TextSize={13}
+							TextSize={isMobile ? 11 : 13}
 							TextXAlignment={Enum.TextXAlignment.Left}
 						/>
 					</frame>
@@ -131,7 +168,7 @@ export function NpcDialogueComponent({
 					<textbutton
 						AnchorPoint={new Vector2(1, 0.5)}
 						Position={new UDim2(1, 0, 0.5, 0)}
-						Size={new UDim2(0, 26, 0, 26)}
+						Size={new UDim2(0, isMobile ? 22 : 26, 0, isMobile ? 22 : 26)}
 						BackgroundColor3={MonochromeTheme.Background.Surface}
 						BackgroundTransparency={0.3}
 						Text=""
@@ -140,14 +177,14 @@ export function NpcDialogueComponent({
 							Activated: () => onClose?.(),
 						}}
 					>
-						<uicorner CornerRadius={new UDim(0, 13)} />
+						<uicorner CornerRadius={new UDim(0, isMobile ? 11 : 13)} />
 						<uistroke
 							Color={MonochromeTheme.Border.Subtle}
 							Thickness={1}
 						/>
 						<LucideIcon
 							name="x"
-							size={new UDim2(0, 14, 0, 14)}
+							size={new UDim2(0, isMobile ? 12 : 14, 0, isMobile ? 12 : 14)}
 							color={MonochromeTheme.Text.Secondary}
 							anchorPoint={new Vector2(0.5, 0.5)}
 							position={new UDim2(0.5, 0, 0.5, 0)}
@@ -155,33 +192,36 @@ export function NpcDialogueComponent({
 					</textbutton>
 				</frame>
 
-				{/* Dialogue Message */}
+				{/* Dialogue Message Text */}
 				<textlabel
-					Position={new UDim2(0, 0, 0, 36)}
-					Size={new UDim2(1, 0, 0, 56)}
+					key="MessageText"
+					LayoutOrder={2}
+					Size={new UDim2(1, 0, 0, 0)}
+					AutomaticSize={Enum.AutomaticSize.Y}
 					BackgroundTransparency={1}
 					Font={Fonts.Regular}
 					Text={currentNode.message}
 					TextColor3={MonochromeTheme.Text.Primary}
-					TextSize={14}
+					TextSize={isMobile ? 12 : 14}
 					TextWrapped={true}
 					TextXAlignment={Enum.TextXAlignment.Left}
 					TextYAlignment={Enum.TextYAlignment.Top}
-					LineHeight={1.25}
+					LineHeight={1.2}
 				/>
 
 				{/* Options List */}
 				<frame
-					AnchorPoint={new Vector2(0, 1)}
-					Position={new UDim2(0, 0, 1, 0)}
-					Size={new UDim2(1, 0, 0, 56)}
+					key="OptionsContainer"
+					LayoutOrder={3}
+					Size={new UDim2(1, 0, 0, 0)}
+					AutomaticSize={Enum.AutomaticSize.Y}
 					BackgroundTransparency={1}
 				>
 					<uilistlayout
 						FillDirection={Enum.FillDirection.Horizontal}
 						HorizontalAlignment={Enum.HorizontalAlignment.Right}
 						VerticalAlignment={Enum.VerticalAlignment.Center}
-						Padding={new UDim(0, 10)}
+						Padding={new UDim(0, isMobile ? 6 : 8)}
 						SortOrder={Enum.SortOrder.LayoutOrder}
 					/>
 
@@ -193,8 +233,8 @@ export function NpcDialogueComponent({
 							<textbutton
 								key={option.id}
 								LayoutOrder={index}
-								Size={new UDim2(0, 0, 0, 38)}
-								AutomaticSize={Enum.AutomaticSize.X}
+								Size={new UDim2(0, 0, 0, isMobile ? 30 : 34)}
+								AutomaticSize={Enum.AutomaticSize.XY}
 								BackgroundColor3={
 									isHovered
 										? MonochromeTheme.Background.CardHover
@@ -215,7 +255,7 @@ export function NpcDialogueComponent({
 									Activated: () => onSelectOption?.(option),
 								}}
 							>
-								<uicorner CornerRadius={new UDim(0, 8)} />
+								<uicorner CornerRadius={new UDim(0, isMobile ? 6 : 8)} />
 								<uistroke
 									Color={
 										isHovered
@@ -227,15 +267,15 @@ export function NpcDialogueComponent({
 									Thickness={1}
 								/>
 								<uipadding
-									PaddingLeft={new UDim(0, 14)}
-									PaddingRight={new UDim(0, 14)}
-									PaddingTop={new UDim(0, 8)}
-									PaddingBottom={new UDim(0, 8)}
+									PaddingLeft={new UDim(0, isMobile ? 10 : 12)}
+									PaddingRight={new UDim(0, isMobile ? 10 : 12)}
+									PaddingTop={new UDim(0, isMobile ? 5 : 7)}
+									PaddingBottom={new UDim(0, isMobile ? 5 : 7)}
 								/>
 								<uilistlayout
 									FillDirection={Enum.FillDirection.Horizontal}
 									VerticalAlignment={Enum.VerticalAlignment.Center}
-									Padding={new UDim(0, 8)}
+									Padding={new UDim(0, 6)}
 								/>
 
 								<textlabel
@@ -248,12 +288,12 @@ export function NpcDialogueComponent({
 											? MonochromeTheme.Text.Primary
 											: MonochromeTheme.Text.Secondary
 									}
-									TextSize={13}
+									TextSize={isMobile ? 11 : 12}
 								/>
 
 								<LucideIcon
 									name={option.action === "claim_skateboard" ? "check" : "arrow-right"}
-									size={new UDim2(0, 14, 0, 14)}
+									size={new UDim2(0, isMobile ? 12 : 14, 0, isMobile ? 12 : 14)}
 									color={
 										isHovered
 											? MonochromeTheme.Text.Primary
