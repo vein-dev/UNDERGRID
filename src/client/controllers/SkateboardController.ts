@@ -47,6 +47,7 @@ export class SkateboardController {
 	private touchGuiConnection?: RBXScriptConnection;
 
 	private isMounted = false;
+	private currentMountRequestId = 0;
 	private currentState: SkateboardState = "OffBoard";
 	private currentStance: SkateboardStance = "Regular";
 	private onMountStateChangedCallbacks: ((mounted: boolean) => void)[] = [];
@@ -179,10 +180,15 @@ export class SkateboardController {
 			const data = payload as SkateboardMountPayload | undefined;
 			if (!data) return;
 
+			if (data.requestId !== undefined && data.requestId < this.currentMountRequestId) {
+				print(`[SkateboardController] Ignoring outdated mount response: ${data.mount} (reqId: ${data.requestId} < current: ${this.currentMountRequestId})`);
+				return;
+			}
+
 			if (data.mount) {
-				this.onMountSuccess();
+				this.onMountSuccess(data.requestId);
 			} else {
-				this.onDismountSuccess();
+				this.onDismountSuccess(data.requestId);
 			}
 		});
 
@@ -597,8 +603,21 @@ export class SkateboardController {
 	}
 
 	public mount(): void {
+		const char = Players.LocalPlayer.Character;
+		if (!char) return;
+
+		// Validasi ketat: Tool Skateboard wajib ada di karakter (sedang di-equip)
+		const tool = char.FindFirstChild("Skateboard") as Tool | undefined;
+		if (!tool) {
+			warn("[Mount] Cannot mount: Skateboard tool not found in Character.");
+			return;
+		}
+
 		if (this.isMounted) return;
-		print("[Mount Started] Mount requested by client.");
+
+		this.currentMountRequestId++;
+		const reqId = this.currentMountRequestId;
+		print(`[Mount Started] Mount requested by client (reqId: ${reqId}).`);
 
 		try {
 			this.isMounted = true;
@@ -625,61 +644,58 @@ export class SkateboardController {
 				this.setTouchControlsEnabled(false);
 			}
 
-			const char = Players.LocalPlayer.Character;
-			if (char) {
-				const hrp = (char.FindFirstChild("HumanoidRootPart") ?? char.FindFirstChild("Torso")) as
-					BasePart | undefined;
-				if (!hrp) {
-					warn("[Mount] HumanoidRootPart/Torso not found on character!");
-					return;
+			const hrp = (char.FindFirstChild("HumanoidRootPart") ?? char.FindFirstChild("Torso")) as
+				BasePart | undefined;
+			if (!hrp) {
+				warn("[Mount] HumanoidRootPart/Torso not found on character!");
+				return;
+			}
+
+			// Hilangkan sisa kecepatan jatuh (negative Y velocity) agar tidak memicu landing berulang
+			hrp.AssemblyLinearVelocity = new Vector3(
+				hrp.AssemblyLinearVelocity.X,
+				math.max(0, hrp.AssemblyLinearVelocity.Y),
+				hrp.AssemblyLinearVelocity.Z,
+			);
+
+			hrp.SetAttribute("IsSkating", true);
+
+			// HANCURKAN RightGrip di Right Arm & RightHand seketika tanpa menunggu frame berikutnya
+			this.destroyRightGrips(char);
+
+			// Client-Side Prediction: pasang papan visual instan di frame ke-0 sebelum server membalas
+			this.createClientPredictedBoard(char, hrp);
+			print("[Predicted Board Created] Client predicted board ready.");
+
+			// Matikan locomotion controller agar animasi idle bawaan berhenti seketika
+			MovementController.getInstance().setPaused(true);
+			CombatController.getInstance().setPaused(true);
+			CrouchController.getInstance().setPaused(true);
+
+			const hum = char.FindFirstChildOfClass("Humanoid");
+			if (hum) {
+				hum.SetStateEnabled(Enum.HumanoidStateType.Jumping, false);
+				hum.UseJumpPower = true;
+				hum.JumpPower = 0;
+				hum.JumpHeight = 0;
+				hum.HipHeight = SkateboardConfig.ATTACHMENT.hipHeightMounted;
+				hum.AutoRotate = false;
+			}
+			const animator = this.getAnimator(char);
+			if (animator) {
+				// Hentikan seketika seluruh track animasi yang sedang berjalan
+				for (const track of animator.GetPlayingAnimationTracks()) {
+					track.Stop(0);
 				}
 
-				// Hilangkan sisa kecepatan jatuh (negative Y velocity) agar tidak memicu landing berulang
-				hrp.AssemblyLinearVelocity = new Vector3(
-					hrp.AssemblyLinearVelocity.X,
-					math.max(0, hrp.AssemblyLinearVelocity.Y),
-					hrp.AssemblyLinearVelocity.Z,
+				this.animService.setAnimator(animator);
+				// Langsung putar pose idle skateboard pada detik ke-0 (0ms delay)
+				this.animService.playAnimation(
+					SkateboardConfig.ANIMATIONS.idle,
+					Enum.AnimationPriority.Action2,
+					true,
+					0,
 				);
-
-				hrp.SetAttribute("IsSkating", true);
-
-				// HANCURKAN RightGrip di Right Arm & RightHand seketika tanpa menunggu frame berikutnya
-				this.destroyRightGrips(char);
-
-				// Client-Side Prediction: pasang papan visual instan di frame ke-0 sebelum server membalas
-				this.createClientPredictedBoard(char, hrp);
-				print("[Predicted Board Created] Client predicted board ready.");
-
-				// Matikan locomotion controller agar animasi idle bawaan berhenti seketika
-				MovementController.getInstance().setPaused(true);
-				CombatController.getInstance().setPaused(true);
-				CrouchController.getInstance().setPaused(true);
-
-				const hum = char.FindFirstChildOfClass("Humanoid");
-				if (hum) {
-					hum.SetStateEnabled(Enum.HumanoidStateType.Jumping, false);
-					hum.UseJumpPower = true;
-					hum.JumpPower = 0;
-					hum.JumpHeight = 0;
-					hum.HipHeight = SkateboardConfig.ATTACHMENT.hipHeightMounted;
-					hum.AutoRotate = false;
-				}
-				const animator = this.getAnimator(char);
-				if (animator) {
-					// Hentikan seketika seluruh track animasi yang sedang berjalan
-					for (const track of animator.GetPlayingAnimationTracks()) {
-						track.Stop(0);
-					}
-
-					this.animService.setAnimator(animator);
-					// Langsung putar pose idle skateboard pada detik ke-0 (0ms delay)
-					this.animService.playAnimation(
-						SkateboardConfig.ANIMATIONS.idle,
-						Enum.AnimationPriority.Action2,
-						true,
-						0,
-					);
-				}
 			}
 
 			// Sembunyikan papan di tangan seketika
@@ -687,8 +703,8 @@ export class SkateboardController {
 				cb(true);
 			}
 
-			this.mountEvent.FireServer({ mount: true });
-			print("[Mounted Success] Mount request sent and client-side setup completed.");
+			this.mountEvent.FireServer({ mount: true, requestId: reqId });
+			print(`[Mounted Success] Mount request sent (reqId: ${reqId}) and client-side setup completed.`);
 		} catch (err) {
 			warn(`[Mount] Error during mount: ${tostring(err)}`);
 		}
@@ -700,9 +716,17 @@ export class SkateboardController {
 	}
 
 	public dismount(): void {
-		print("[SkateboardController] Dismount requested: false");
-		this.mountEvent.FireServer({ mount: false });
+		print("[SkateboardController] Dismount requested by client.");
+		this.currentMountRequestId++;
+		const reqId = this.currentMountRequestId;
 
+		// 1. Eksekusi seketika pembersihan lokal di frame ke-0 (Instant Client-Side Prediction)
+		this.executeLocalDismount();
+
+		// 2. Beritahu server dengan requestId terbaru
+		this.mountEvent.FireServer({ mount: false, requestId: reqId });
+
+		// 3. Lepas tool dari tangan jika masih terpasang di karakter
 		const char = Players.LocalPlayer.Character;
 		const hum = char?.FindFirstChildOfClass("Humanoid");
 		if (hum) {
@@ -728,14 +752,29 @@ export class SkateboardController {
 		};
 	}
 
-	private onMountSuccess(): void {
+	private onMountSuccess(requestId?: number): void {
+		if (requestId !== undefined && requestId < this.currentMountRequestId) {
+			print(`[SkateboardController] onMountSuccess ignored: outdated requestId (${requestId} < ${this.currentMountRequestId})`);
+			return;
+		}
+
+		const char = Players.LocalPlayer.Character;
+		const tool = char?.FindFirstChild("Skateboard") as Tool | undefined;
+
+		// Jika pemain saat ini sudah tidak ingin mounted ATAU tool Skateboard sudah tidak di tangan, batalkan seketika!
+		if (!this.isMounted || !tool) {
+			print("[SkateboardController] onMountSuccess arrived but client already dismounted or tool is missing. Reverting.");
+			this.executeLocalDismount();
+			this.mountEvent.FireServer({ mount: false, requestId: this.currentMountRequestId });
+			return;
+		}
+
 		print("[SkateboardController] Mount berhasil dikonfirmasi dari Server!");
 
 		// 1. Hancurkan papan prediksi client seketika (0ms) agar papan tidak pernah dobel
 		this.cleanupPredictedBoard();
 		this.boardMotor = undefined;
 
-		const char = Players.LocalPlayer.Character;
 		if (char) {
 			// Pastikan jika ada duplikat PlayerSkateboard (artefak prediksi/server), sisakan tepat 1
 			const skateboards = char.GetChildren().filter((c) => c.Name === "PlayerSkateboard");
@@ -863,7 +902,21 @@ export class SkateboardController {
 		}
 	}
 
-	private onDismountSuccess(): void {
+	private onDismountSuccess(requestId?: number): void {
+		if (requestId !== undefined && requestId < this.currentMountRequestId) {
+			print(`[SkateboardController] onDismountSuccess ignored: outdated requestId (${requestId} < ${this.currentMountRequestId})`);
+			return;
+		}
+
+		this.executeLocalDismount();
+	}
+
+	/**
+	 * Eksekusi pembersihan dismount instan di sisi client (Client-Side Prediction 0ms).
+	 * Menghentikan seluruh animasi, mengembalikan HipHeight ke tanah, menghapus visual papan,
+	 * dan mengembalikan kontroler ke mode berjalan normal.
+	 */
+	public executeLocalDismount(): void {
 		this.cleanupPredictedBoard();
 		this.boardMotor = undefined;
 		this.activeBoardTrick = undefined;
@@ -900,19 +953,27 @@ export class SkateboardController {
 
 		const char = Players.LocalPlayer.Character;
 		if (char) {
+			// Hapus seluruh papan visual PlayerSkateboard dari karakter seketika
+			for (const child of char.GetChildren()) {
+				if (child.Name === "PlayerSkateboard") {
+					child.Destroy();
+				}
+			}
+
 			const hrp = char.FindFirstChild("HumanoidRootPart") as BasePart | undefined;
 			if (hrp) {
 				hrp.SetAttribute("IsSkating", false);
 				for (const child of hrp.GetChildren()) {
 					if (child.IsA("Sound") && child.Name !== "Running") {
 						child.Volume = 0.5;
+					} else if (child.IsA("Motor6D") && child.Name === SkateboardConfig.ATTACHMENT.jointName) {
+						child.Destroy();
 					}
 				}
 			}
 
 			const hum = char.FindFirstChildOfClass("Humanoid");
 			if (hum) {
-				hum.UnequipTools();
 				hum.SetStateEnabled(Enum.HumanoidStateType.Jumping, true);
 				hum.SetStateEnabled(Enum.HumanoidStateType.Climbing, true);
 				hum.AutoRotate = true;
@@ -945,6 +1006,8 @@ export class SkateboardController {
 		this.animService.stopAnimation(SkateboardConfig.ANIMATIONS.crouch, 0.1);
 		this.animService.stopAnimation(SkateboardConfig.ANIMATIONS.fakieCrouch, 0.1);
 		this.animService.stopAnimation(SkateboardConfig.ANIMATIONS.fakieStop, 0.1);
+		this.animService.stopAnimation(SkateboardConfig.ANIMATIONS.idle, 0.1);
+		this.animService.stopAnimation(SkateboardConfig.ANIMATIONS.fakieIdle, 0.1);
 
 		// Aktifkan kembali sistem movement, combat, crouch, audio footsteps, dan stamina
 		MovementController.getInstance().setPaused(false);
@@ -1763,6 +1826,15 @@ export class SkateboardController {
 			const char = Players.LocalPlayer.Character;
 			const humanoid = char?.FindFirstChildOfClass("Humanoid");
 			if (!rootPart || !humanoid || humanoid.Health <= 0) return;
+
+			// Self-Healing Guard: Periksa apakah tool Skateboard masih ada di karakter
+			const tool = char?.FindFirstChild("Skateboard") as Tool | undefined;
+			if (!tool) {
+				warn("[SkateboardController] Failsafe: Skateboard tool missing from character while mounted! Triggering instant dismount.");
+				this.dismount();
+				return;
+			}
+
 			if (humanoid.AutoRotate) {
 				humanoid.AutoRotate = false;
 			}

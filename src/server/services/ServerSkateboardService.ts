@@ -42,11 +42,11 @@ export class ServerSkateboardService {
 			const data = payload as SkateboardMountPayload | undefined;
 			if (!data) return;
 
-			print(`[ServerSkateboardService] Player ${player.Name} request mount: ${data.mount}`);
+			print(`[ServerSkateboardService] Player ${player.Name} request mount: ${data.mount} (reqId: ${data.requestId})`);
 			if (data.mount) {
-				this.mountPlayer(player);
+				this.mountPlayer(player, data.requestId);
 			} else {
-				this.dismountPlayer(player);
+				this.dismountPlayer(player, data.requestId);
 			}
 		});
 
@@ -278,9 +278,17 @@ export class ServerSkateboardService {
 	/**
 	 * Memasang skateboard ke karakter R6
 	 */
-	public mountPlayer(player: Player): boolean {
+	public mountPlayer(player: Player, requestId?: number): boolean {
 		const char = player.Character;
 		if (!char) return false;
+
+		// Validasi ketat: Tool Skateboard wajib ada di karakter (sedang di-equip)
+		const tool = char.FindFirstChild("Skateboard") as Tool | undefined;
+		if (!tool) {
+			print(`[ServerSkateboardService] Player ${player.Name} requested mount but Skateboard tool is not equipped in Character. Rejecting.`);
+			this.mountEvent.FireClient(player, { mount: false, requestId });
+			return false;
+		}
 
 		const rootPart = char.FindFirstChild("HumanoidRootPart") as BasePart | undefined;
 		const humanoid = char.FindFirstChildOfClass("Humanoid");
@@ -314,7 +322,7 @@ export class ServerSkateboardService {
 			this.findOrCreateTemplate(player);
 			if (!this.templateModel) {
 				warn("[ServerSkateboardService] Skateboard template not found!");
-				this.mountEvent.FireClient(player, { mount: false });
+				this.mountEvent.FireClient(player, { mount: false, requestId });
 				return false;
 			}
 		}
@@ -429,7 +437,7 @@ export class ServerSkateboardService {
 		rootPart.SetAttribute("IsSkating", true);
 
 		// Konfirmasi ke client
-		this.mountEvent.FireClient(player, { mount: true });
+		this.mountEvent.FireClient(player, { mount: true, requestId });
 
 		// Cleanup jika karakter mati
 		const diedConn = humanoid.Died.Connect(() => {
@@ -455,7 +463,7 @@ export class ServerSkateboardService {
 	/**
 	 * Mencopot skateboard dari karakter
 	 */
-	public dismountPlayer(player: Player): void {
+	public dismountPlayer(player: Player, requestId?: number): void {
 		const board = this.activeBoards.get(player);
 		if (board) {
 			board.Destroy();
@@ -496,7 +504,7 @@ export class ServerSkateboardService {
 				}
 			}
 
-			// Unequip tool skateboard dari tangan ke Backpack
+			// Unequip tool skateboard dari tangan ke Backpack jika masih ada
 			const humanoid = char.FindFirstChildOfClass("Humanoid");
 			if (humanoid && humanoid.Health > 0) {
 				humanoid.UnequipTools();
@@ -507,6 +515,6 @@ export class ServerSkateboardService {
 			}
 		}
 
-		this.mountEvent.FireClient(player, { mount: false });
+		this.mountEvent.FireClient(player, { mount: false, requestId });
 	}
 }

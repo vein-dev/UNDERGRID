@@ -182,10 +182,14 @@ export class SkateboardClientComponent implements IToolComponent {
 		if (this.isDismounting) return;
 		this.isDismounting = true;
 
+		const skateboardCtrl = SkateboardController.getInstance();
 		// Jika pemain menyimpan tool saat sedang skating, otomatis dismount
-		if (SkateboardController.getInstance().isPlayerMounted()) {
+		if (skateboardCtrl.isPlayerMounted()) {
 			print("[SkateboardClientComponent] Tool unequipped from hotbar -> Dismounting...");
-			SkateboardController.getInstance().dismount();
+			skateboardCtrl.dismount();
+		} else {
+			// Fail-safe: pastikan tidak ada sisa artefak visual / HipHeight / animasi yang tertinggal
+			skateboardCtrl.executeLocalDismount();
 		}
 
 		this.isDismounting = false;

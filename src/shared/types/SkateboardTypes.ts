@@ -48,6 +48,7 @@ export type SkateboardTrickName =
 
 export interface SkateboardMountPayload {
 	mount: boolean;
+	requestId?: number;
 }
 
 export interface SkateboardTrickPayload {
