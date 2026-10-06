@@ -210,7 +210,7 @@ export function NpcDialogueComponent({
 				/>
 				<uisizeconstraint
 					MinSize={new Vector2(isMobile ? 260 : 360, 80)}
-					MaxSize={new Vector2(isMobile ? 470 : 570, 260)}
+					MaxSize={new Vector2(isMobile ? 470 : 570, 600)}
 				/>
 
 				{/* 1. Header Row: Speaker Badge + Close Button */}
@@ -220,7 +220,7 @@ export function NpcDialogueComponent({
 					Size={new UDim2(1, 0, 0, isMobile ? 22 : 26)}
 					BackgroundTransparency={1}
 				>
-					{/* Speaker Pill Badge */}
+					{/* Speaker Pill Badge (Tanpa Icon Pesan) */}
 					<frame
 						Size={new UDim2(0, 0, 1, 0)}
 						AutomaticSize={Enum.AutomaticSize.X}
@@ -234,31 +234,21 @@ export function NpcDialogueComponent({
 							Thickness={1}
 							Transparency={0.3}
 						/>
-						<uilistlayout
-							FillDirection={Enum.FillDirection.Horizontal}
-							VerticalAlignment={Enum.VerticalAlignment.Center}
-							HorizontalAlignment={Enum.HorizontalAlignment.Left}
-							Padding={new UDim(0, 5)}
-						/>
 						<uipadding
-							PaddingLeft={new UDim(0, 7)}
-							PaddingRight={new UDim(0, 8)}
+							PaddingLeft={new UDim(0, 9)}
+							PaddingRight={new UDim(0, 9)}
 						/>
 
-						<LucideIcon
-							name="message-square"
-							size={new UDim2(0, isMobile ? 12 : 14, 0, isMobile ? 12 : 14)}
-							color={MonochromeTheme.Text.Primary}
-						/>
 						<textlabel
-							AutomaticSize={Enum.AutomaticSize.X}
+							AutomaticSize={Enum.AutomaticSize.XY}
 							Size={new UDim2(0, 0, 1, 0)}
 							BackgroundTransparency={1}
 							Font={Fonts.Bold}
 							Text={currentNode.speakerName}
 							TextColor3={MonochromeTheme.Text.Primary}
 							TextSize={isMobile ? 11 : 13}
-							TextXAlignment={Enum.TextXAlignment.Left}
+							TextXAlignment={Enum.TextXAlignment.Center}
+							TextYAlignment={Enum.TextYAlignment.Center}
 						/>
 					</frame>
 
@@ -331,7 +321,7 @@ export function NpcDialogueComponent({
 					/>
 				</frame>
 
-				{/* 3. Bottom Row: Pilihan Jawaban */}
+				{/* 3. Bottom Row: Pilihan Jawaban (Susunan Vertikal Rapi, Pas di Dalam Card, Tanpa Icon Arrow) */}
 				<frame
 					key="OptionsContainer"
 					LayoutOrder={3}
@@ -340,10 +330,10 @@ export function NpcDialogueComponent({
 					BackgroundTransparency={1}
 				>
 					<uilistlayout
-						FillDirection={Enum.FillDirection.Horizontal}
-						HorizontalAlignment={Enum.HorizontalAlignment.Right}
-						VerticalAlignment={Enum.VerticalAlignment.Center}
-						Padding={new UDim(0, isMobile ? 6 : 8)}
+						FillDirection={Enum.FillDirection.Vertical}
+						HorizontalAlignment={Enum.HorizontalAlignment.Center}
+						VerticalAlignment={Enum.VerticalAlignment.Top}
+						Padding={new UDim(0, isMobile ? 5 : 6)}
 						SortOrder={Enum.SortOrder.LayoutOrder}
 					/>
 
@@ -355,8 +345,8 @@ export function NpcDialogueComponent({
 							<textbutton
 								key={option.id}
 								LayoutOrder={index}
-								Size={new UDim2(0, 0, 0, isMobile ? 30 : 34)}
-								AutomaticSize={Enum.AutomaticSize.XY}
+								Size={new UDim2(1, 0, 0, 0)}
+								AutomaticSize={Enum.AutomaticSize.Y}
 								BackgroundColor3={
 									isHovered
 										? MonochromeTheme.Background.CardHover
@@ -364,7 +354,7 @@ export function NpcDialogueComponent({
 											? MonochromeTheme.Background.Surface
 											: MonochromeTheme.Background.Card
 								}
-								BackgroundTransparency={0.1}
+								BackgroundTransparency={0.15}
 								Text=""
 								BorderSizePixel={0}
 								Event={{
@@ -377,7 +367,7 @@ export function NpcDialogueComponent({
 									Activated: () => onSelectOption?.(option),
 								}}
 							>
-								<uicorner CornerRadius={new UDim(0, isMobile ? 6 : 8)} />
+								<uicorner CornerRadius={new UDim(0, isMobile ? 7 : 8)} />
 								<uistroke
 									Color={
 										isHovered
@@ -388,20 +378,17 @@ export function NpcDialogueComponent({
 									}
 									Thickness={1}
 								/>
+								<uisizeconstraint MinSize={new Vector2(0, isMobile ? 30 : 34)} />
 								<uipadding
-									PaddingLeft={new UDim(0, isMobile ? 10 : 12)}
-									PaddingRight={new UDim(0, isMobile ? 10 : 12)}
-									PaddingTop={new UDim(0, isMobile ? 5 : 7)}
-									PaddingBottom={new UDim(0, isMobile ? 5 : 7)}
-								/>
-								<uilistlayout
-									FillDirection={Enum.FillDirection.Horizontal}
-									VerticalAlignment={Enum.VerticalAlignment.Center}
-									Padding={new UDim(0, 6)}
+									PaddingLeft={new UDim(0, isMobile ? 12 : 14)}
+									PaddingRight={new UDim(0, isMobile ? 12 : 14)}
+									PaddingTop={new UDim(0, isMobile ? 6 : 8)}
+									PaddingBottom={new UDim(0, isMobile ? 6 : 8)}
 								/>
 
 								<textlabel
-									AutomaticSize={Enum.AutomaticSize.XY}
+									Size={new UDim2(1, 0, 0, 0)}
+									AutomaticSize={Enum.AutomaticSize.Y}
 									BackgroundTransparency={1}
 									Font={Fonts.Medium}
 									Text={option.label}
@@ -410,17 +397,10 @@ export function NpcDialogueComponent({
 											? MonochromeTheme.Text.Primary
 											: MonochromeTheme.Text.Secondary
 									}
-									TextSize={isMobile ? 11 : 12}
-								/>
-
-								<LucideIcon
-									name={option.action === "claim_skateboard" ? "check" : "arrow-right"}
-									size={new UDim2(0, isMobile ? 12 : 14, 0, isMobile ? 12 : 14)}
-									color={
-										isHovered
-											? MonochromeTheme.Text.Primary
-											: MonochromeTheme.Text.Muted
-									}
+									TextSize={isMobile ? 11 : 13}
+									TextWrapped={true}
+									TextXAlignment={Enum.TextXAlignment.Left}
+									TextYAlignment={Enum.TextYAlignment.Center}
 								/>
 							</textbutton>
 						);
