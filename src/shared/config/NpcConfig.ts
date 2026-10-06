@@ -8,6 +8,14 @@ import { NpcDialogueTree } from "shared/types/NpcDialogueTypes";
 export const NPC_CONFIG = {
 	PROMPT_MAX_INTERACTION_DISTANCE: 16,
 
+	HEAD_TRACKING: {
+		ENABLED: true,
+		MAX_DISTANCE: 25,
+		MAX_YAW_DEG: 70,
+		MAX_PITCH_DEG: 35,
+		LERP_SPEED: 8,
+	},
+
 	TWINS: {
 		NPC_NAME: "Twins",
 		NPC_PATH: ["NPC", "Twins"],

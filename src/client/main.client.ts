@@ -31,6 +31,7 @@ import {
 	MobileMovementController,
 	FreecamController,
 	NpcDialogueController,
+	NpcHeadFollowController,
 } from "./controllers";
 
 
@@ -124,6 +125,7 @@ function main() {
 	MobileMovementController.getInstance().init();
 	FreecamController.getInstance().init();
 	NpcDialogueController.getInstance().init();
+	NpcHeadFollowController.getInstance().init();
 
 	print("[Client] All controllers initialized successfully.");
 

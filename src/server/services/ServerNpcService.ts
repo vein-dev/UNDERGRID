@@ -29,7 +29,7 @@ export class ServerNpcService {
 
 	public init(): void {
 		task.spawn(() => {
-			this.setupTwinsNpc();
+			this.setupAllNpcs();
 		});
 
 		// Tangani aksi pilihan dialog dari client
@@ -58,6 +58,81 @@ export class ServerNpcService {
 		}
 
 		return false;
+	}
+
+	/**
+	 * Menyiapkan rig NPC agar bagian leher dan anggota tubuh tidak anchored
+	 * Hanya HumanoidRootPart yang di-anchor agar NPC berdiri kokoh di posisinya.
+	 */
+	public prepareNpcRig(model: Model): void {
+		const hrp = (model.FindFirstChild("HumanoidRootPart") ??
+			model.FindFirstChild("Torso")) as BasePart | undefined;
+		if (hrp) {
+			hrp.Anchored = true;
+		}
+
+		for (const desc of model.GetDescendants()) {
+			if (desc.IsA("BasePart") && desc !== hrp) {
+				desc.Anchored = false;
+			}
+
+			// Bersihkan weld salah/korup yang menarik kepala ke aksesoris pinggang/kaki
+			if (desc.IsA("Weld") && desc.Name === "HeadWeld") {
+				const p0 = desc.Part0;
+				const p1 = desc.Part1;
+				if (
+					(p0?.Name === "Head" && p1?.Name !== "Head") ||
+					(p1?.Name === "Head" && p0?.Name !== "Head")
+				) {
+					desc.Destroy();
+				}
+			}
+		}
+
+		// Jika NPC memiliki aksesoris iPod earphone (seperti pada Twins), sambungkan ke Head agar kabel earphone ikut menoleh
+		const ipod = model.FindFirstChild("Accessory (ipod)");
+		const head = model.FindFirstChild("Head") as BasePart | undefined;
+		if (ipod && head) {
+			const handle = ipod.FindFirstChild("Handle") as BasePart | undefined;
+			if (handle) {
+				const att = handle.FindFirstChild("BodyFrontAttachment");
+				if (att) {
+					att.Name = "iPodAttachment";
+				}
+				let weld = handle.FindFirstChildOfClass("Weld");
+				if (!weld) {
+					weld = new Instance("Weld");
+					weld.Name = "AccessoryWeld";
+					weld.Parent = handle;
+				}
+				weld.Part0 = handle;
+				weld.Part1 = head;
+				weld.C0 = new CFrame();
+				weld.C1 = head.CFrame.ToObjectSpace(handle.CFrame);
+			}
+		}
+	}
+
+	/**
+	 * Menyiapkan semua NPC di folder Workspace.NPC
+	 */
+	private setupAllNpcs(): void {
+		const npcFolder = Workspace.FindFirstChild("NPC");
+		if (npcFolder) {
+			for (const child of npcFolder.GetChildren()) {
+				if (child.IsA("Model")) {
+					this.prepareNpcRig(child);
+				}
+			}
+
+			npcFolder.ChildAdded.Connect((child) => {
+				if (child.IsA("Model")) {
+					task.delay(0.2, () => this.prepareNpcRig(child));
+				}
+			});
+		}
+
+		this.setupTwinsNpc();
 	}
 
 	/**

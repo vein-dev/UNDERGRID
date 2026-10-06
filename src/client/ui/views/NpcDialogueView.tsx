@@ -123,6 +123,9 @@ export function NpcDialogueComponent({
 		return cam ? cam.ViewportSize : new Vector2(1280, 720);
 	});
 	const [isTouch, setIsTouch] = useState(() => UserInputService.TouchEnabled);
+	const [displayedLength, setDisplayedLength] = useState(0);
+	const [isTyping, setIsTyping] = useState(false);
+	const cancelTypingRef = useRef<() => void>();
 
 	// Sinkronisasi ukuran layar dan mode input (PC vs Mobile)
 	useEffect(() => {
@@ -147,6 +150,56 @@ export function NpcDialogueComponent({
 		};
 	}, []);
 
+	const currentMessage =
+		visible && dialogueTree && currentNodeId ? dialogueTree.nodes[currentNodeId]?.message ?? "" : "";
+
+	// Efek Mesin Ketik (Typewriter): Memunculkan karakter per huruf secara halus
+	useEffect(() => {
+		if (!visible || currentMessage === "") {
+			setDisplayedLength(0);
+			setIsTyping(false);
+			return;
+		}
+
+		let isCancelled = false;
+		cancelTypingRef.current = () => {
+			isCancelled = true;
+		};
+
+		const totalLength = currentMessage.size();
+		const initialChars = math.min(1, totalLength);
+		setDisplayedLength(initialChars);
+		setIsTyping(totalLength > 1);
+
+		task.spawn(() => {
+			let current = initialChars;
+			// Kecepatan ketik: ~0.022 detik per huruf (natural dan responsif)
+			const charDelay = 0.022;
+
+			while (current < totalLength && !isCancelled) {
+				current++;
+				setDisplayedLength(current);
+				task.wait(charDelay);
+			}
+
+			if (!isCancelled) {
+				setIsTyping(false);
+			}
+		});
+
+		return () => {
+			isCancelled = true;
+		};
+	}, [visible, currentNodeId, currentMessage]);
+
+	const skipTypewriter = () => {
+		if (isTyping && currentMessage !== "") {
+			cancelTypingRef.current?.();
+			setDisplayedLength(currentMessage.size());
+			setIsTyping(false);
+		}
+	};
+
 	if (!visible || !dialogueTree || !currentNodeId) {
 		return <></>;
 	}
@@ -155,6 +208,12 @@ export function NpcDialogueComponent({
 	if (!currentNode) {
 		return <></>;
 	}
+
+	// Teks yang ditampilkan sesuai progres ketik saat ini
+	const displayedText =
+		displayedLength >= currentMessage.size()
+			? currentMessage
+			: currentMessage.sub(1, displayedLength);
 
 	// Deteksi mobile berdasarkan touch device atau tinggi/lebar viewport
 	const isMobile = isTouch || viewport.Y < 520 || viewport.X < 850;
@@ -179,7 +238,7 @@ export function NpcDialogueComponent({
 			BackgroundTransparency={1}
 			ZIndex={95}
 		>
-			{/* Main Dialogue Card */}
+			{/* Main Dialogue Card (Klik untuk skip typewriter) */}
 			<frame
 				key="DialogueCard"
 				AnchorPoint={new Vector2(0.5, 1)}
@@ -189,6 +248,18 @@ export function NpcDialogueComponent({
 				BackgroundColor3={MonochromeTheme.Background.DeepCharcoal}
 				BackgroundTransparency={0.08}
 				BorderSizePixel={0}
+				Event={{
+					InputBegan: (_, input) => {
+						if (
+							input.UserInputType === Enum.UserInputType.MouseButton1 ||
+							input.UserInputType === Enum.UserInputType.Touch ||
+							input.KeyCode === Enum.KeyCode.Space ||
+							input.KeyCode === Enum.KeyCode.E
+						) {
+							skipTypewriter();
+						}
+					},
+				}}
 			>
 				<uicorner CornerRadius={new UDim(0, isMobile ? 12 : 14)} />
 				<uistroke
@@ -303,7 +374,7 @@ export function NpcDialogueComponent({
 						size={avatarSize}
 					/>
 
-					{/* Dialogue Message Text */}
+					{/* Dialogue Message Text (Efek Mesin Ketik) */}
 					<textlabel
 						key="MessageText"
 						LayoutOrder={2}
@@ -311,7 +382,7 @@ export function NpcDialogueComponent({
 						AutomaticSize={Enum.AutomaticSize.Y}
 						BackgroundTransparency={1}
 						Font={Fonts.Regular}
-						Text={currentNode.message}
+						Text={displayedText}
 						TextColor3={MonochromeTheme.Text.Primary}
 						TextSize={isMobile ? 12 : 14}
 						TextWrapped={true}
@@ -321,13 +392,14 @@ export function NpcDialogueComponent({
 					/>
 				</frame>
 
-				{/* 3. Bottom Row: Pilihan Jawaban (Susunan Vertikal Rapi, Pas di Dalam Card, Tanpa Icon Arrow) */}
+				{/* 3. Bottom Row: Pilihan Jawaban (Hanya muncul saat ketikan selesai) */}
 				<frame
 					key="OptionsContainer"
 					LayoutOrder={3}
 					Size={new UDim2(1, 0, 0, 0)}
 					AutomaticSize={Enum.AutomaticSize.Y}
 					BackgroundTransparency={1}
+					Visible={!isTyping}
 				>
 					<uilistlayout
 						FillDirection={Enum.FillDirection.Vertical}
