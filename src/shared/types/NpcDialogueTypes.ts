@@ -20,6 +20,7 @@ export interface DialogueNode {
 export interface NpcDialogueTree {
 	npcId: string;
 	speakerName: string;
+	avatarImage?: string;
 	defaultNodeId: string;
 	alreadyHasItemNodeId?: string;
 	nodes: Record<string, DialogueNode>;

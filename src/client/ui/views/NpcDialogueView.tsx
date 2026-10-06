@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "@rbxts/react";
+import React, { useEffect, useRef, useState } from "@rbxts/react";
 import ReactRoblox, { Root } from "@rbxts/react-roblox";
 import { Players, UserInputService, Workspace } from "@rbxts/services";
 import { DialogueOption, NpcDialogueTree } from "shared/types";
@@ -12,6 +12,110 @@ export interface NpcDialogueProps {
 	currentNodeId?: string;
 	onSelectOption?: (option: DialogueOption) => void;
 	onClose?: () => void;
+}
+
+interface NpcAvatarPortraitProps {
+	npcName: string;
+	avatarImage?: string;
+	size: number;
+}
+
+/**
+ * Komponen potret avatar NPC:
+ * Menampilkan gambar 2D jika avatarImage tersedia, atau secara dinamis
+ * me-render tampilan 3D real-time kepala/aksesori NPC menggunakan ViewportFrame.
+ */
+function NpcAvatarPortrait({ npcName, avatarImage, size }: NpcAvatarPortraitProps) {
+	const viewportRef = useRef<ViewportFrame>();
+
+	useEffect(() => {
+		const vp = viewportRef.current;
+		if (!vp || avatarImage) return;
+
+		vp.ClearAllChildren();
+
+		const npcFolder = Workspace.FindFirstChild("NPC");
+		const npcModel = npcFolder?.FindFirstChild(npcName) as Model | undefined;
+		if (!npcModel) return;
+
+		const camera = new Instance("Camera");
+		camera.FieldOfView = 48;
+		camera.Parent = vp;
+		vp.CurrentCamera = camera;
+
+		const worldModel = new Instance("WorldModel");
+		worldModel.Parent = vp;
+
+		const clone = new Instance("Model");
+		clone.Name = "AvatarClone";
+		clone.Parent = worldModel;
+
+		for (const child of npcModel.GetChildren()) {
+			if (
+				child.Name === "Head" ||
+				child.Name === "Torso" ||
+				child.Name === "Hat" ||
+				child.Name === "Ears" ||
+				child.IsA("Accessory") ||
+				child.IsA("Shirt") ||
+				child.IsA("BodyColors")
+			) {
+				const c = child.Clone();
+				c.Parent = clone;
+			}
+		}
+
+		const head = clone.FindFirstChild("Head") as BasePart | undefined;
+		if (head) {
+			const headPos = head.Position;
+			const lookVec = head.CFrame.LookVector;
+			const camPos = headPos.add(lookVec.mul(2.2)).add(new Vector3(0, 0.1, 0));
+			camera.CFrame = CFrame.lookAt(camPos, headPos.add(new Vector3(0, -0.05, 0)));
+		}
+
+		return () => {
+			vp.ClearAllChildren();
+		};
+	}, [npcName, avatarImage]);
+
+	return (
+		<frame
+			LayoutOrder={1}
+			Size={new UDim2(0, size, 0, size)}
+			BackgroundColor3={MonochromeTheme.Background.Surface}
+			BackgroundTransparency={0.2}
+			BorderSizePixel={0}
+		>
+			<uicorner CornerRadius={new UDim(0, 8)} />
+			<uistroke
+				Color={MonochromeTheme.Border.Medium}
+				Thickness={1}
+				Transparency={0.3}
+			/>
+
+			{avatarImage ? (
+				<imagelabel
+					Size={new UDim2(1, 0, 1, 0)}
+					BackgroundTransparency={1}
+					Image={avatarImage}
+					ScaleType={Enum.ScaleType.Fit}
+				>
+					<uicorner CornerRadius={new UDim(0, 8)} />
+				</imagelabel>
+			) : (
+				<viewportframe
+					ref={viewportRef}
+					Size={new UDim2(1, 0, 1, 0)}
+					BackgroundTransparency={1}
+					Ambient={Color3.fromRGB(180, 180, 180)}
+					LightColor={Color3.fromRGB(255, 255, 255)}
+					LightDirection={new Vector3(-1, -1, -2)}
+				>
+					<uicorner CornerRadius={new UDim(0, 8)} />
+				</viewportframe>
+			)}
+		</frame>
+	);
 }
 
 export function NpcDialogueComponent({
@@ -65,14 +169,16 @@ export function NpcDialogueComponent({
 
 	// Posisi Y berada di atas Hotbar:
 	// Hotbar di posisi UDim2(0.5, 0, 1, -16) dengan tinggi ~62px.
-	// Pada PC: bottom offset -94px memberikan gap 16px di atas hotbar.
-	// Pada Mobile: hotbar terskala lebih kecil, bottom offset -84px memberikan posisi pas di atas slot hotbar.
 	const bottomOffset = isMobile ? -84 : -94;
 
 	// Lebar responsif: Pada mobile pas di tengah antara joystick kiri dan tombol aksi kanan
 	const cardWidth = isMobile
-		? math.clamp(viewport.X - 160, 280, 440)
+		? math.clamp(viewport.X - 160, 290, 450)
 		: 520;
+
+	// Ukuran avatar foto
+	const avatarSize = isMobile ? 52 : 62;
+	const contentGap = isMobile ? 10 : 14;
 
 	return (
 		<frame
@@ -112,10 +218,10 @@ export function NpcDialogueComponent({
 				/>
 				<uisizeconstraint
 					MinSize={new Vector2(isMobile ? 260 : 360, 80)}
-					MaxSize={new Vector2(isMobile ? 460 : 560, 240)}
+					MaxSize={new Vector2(isMobile ? 470 : 570, 260)}
 				/>
 
-				{/* Header: Speaker Badge + Close Button */}
+				{/* 1. Header Row: Speaker Badge + Close Button */}
 				<frame
 					key="HeaderRow"
 					LayoutOrder={1}
@@ -192,24 +298,48 @@ export function NpcDialogueComponent({
 					</textbutton>
 				</frame>
 
-				{/* Dialogue Message Text */}
-				<textlabel
-					key="MessageText"
+				{/* 2. Middle Row: Foto Avatar | Dialog Message Text */}
+				<frame
+					key="ContentRow"
 					LayoutOrder={2}
 					Size={new UDim2(1, 0, 0, 0)}
 					AutomaticSize={Enum.AutomaticSize.Y}
 					BackgroundTransparency={1}
-					Font={Fonts.Regular}
-					Text={currentNode.message}
-					TextColor3={MonochromeTheme.Text.Primary}
-					TextSize={isMobile ? 12 : 14}
-					TextWrapped={true}
-					TextXAlignment={Enum.TextXAlignment.Left}
-					TextYAlignment={Enum.TextYAlignment.Top}
-					LineHeight={1.2}
-				/>
+				>
+					<uilistlayout
+						FillDirection={Enum.FillDirection.Horizontal}
+						VerticalAlignment={Enum.VerticalAlignment.Center}
+						HorizontalAlignment={Enum.HorizontalAlignment.Left}
+						Padding={new UDim(0, contentGap)}
+						SortOrder={Enum.SortOrder.LayoutOrder}
+					/>
 
-				{/* Options List */}
+					{/* Foto Avatar NPC */}
+					<NpcAvatarPortrait
+						npcName={dialogueTree.npcId}
+						avatarImage={dialogueTree.avatarImage}
+						size={avatarSize}
+					/>
+
+					{/* Dialogue Message Text */}
+					<textlabel
+						key="MessageText"
+						LayoutOrder={2}
+						Size={new UDim2(1, -(avatarSize + contentGap), 0, 0)}
+						AutomaticSize={Enum.AutomaticSize.Y}
+						BackgroundTransparency={1}
+						Font={Fonts.Regular}
+						Text={currentNode.message}
+						TextColor3={MonochromeTheme.Text.Primary}
+						TextSize={isMobile ? 12 : 14}
+						TextWrapped={true}
+						TextXAlignment={Enum.TextXAlignment.Left}
+						TextYAlignment={Enum.TextYAlignment.Center}
+						LineHeight={1.22}
+					/>
+				</frame>
+
+				{/* 3. Bottom Row: Pilihan Jawaban */}
 				<frame
 					key="OptionsContainer"
 					LayoutOrder={3}
