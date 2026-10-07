@@ -2,6 +2,7 @@ import { GuiService, Players, StarterGui, UserInputService, Workspace } from "@r
 import { EMOTE_CONFIG } from "shared/config";
 import { AvatarContextMenuAction, AvatarTargetPlayer, EmoteItem } from "shared/types";
 import { EmoteService } from "../services/EmoteService";
+import { DuelService } from "../services/DuelService";
 import { AvatarContextMenuView } from "../ui/views/AvatarContextMenuView";
 import { CombatController } from "./CombatController";
 
@@ -349,7 +350,17 @@ export class AvatarContextMenuController {
 			case "inspect":
 				this.inspectAvatar(target);
 				break;
+
+			case "fight":
+				this.challengePlayer(target);
+				break;
 		}
+	}
+
+	private challengePlayer(target: AvatarTargetPlayer): void {
+		this.view.hide();
+		this.currentTarget = undefined;
+		DuelService.getInstance().requestDuel(target.player);
 	}
 
 	/**

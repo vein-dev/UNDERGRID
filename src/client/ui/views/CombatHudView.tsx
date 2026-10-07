@@ -12,6 +12,7 @@ export interface CombatCallbacks {
 	onDash?: () => void;
 	onSprintToggle?: () => void;
 	onClashMash?: () => void;
+	onTargetLockToggle?: () => void;
 }
 
 export interface CombatHudProps extends CombatCallbacks {
@@ -28,6 +29,7 @@ export interface CombatHudProps extends CombatCallbacks {
 	isMobile?: boolean;
 	isSprinting?: boolean;
 	isBlocking?: boolean;
+	isTargetLocked?: boolean;
 }
 
 interface MobileActionButtonProps {
@@ -238,6 +240,7 @@ export function CombatHudComponent({
 	isMobile = false,
 	isSprinting = false,
 	isBlocking = false,
+	isTargetLocked = false,
 	onM1,
 	onHeavy,
 	onBlockStart,
@@ -245,6 +248,7 @@ export function CombatHudComponent({
 	onDash,
 	onSprintToggle,
 	onClashMash,
+	onTargetLockToggle,
 }: CombatHudProps) {
 	const healthRatio = maxHealth > 0 ? math.clamp(health / maxHealth, 0, 1) : 0;
 	const staminaRatio = maxStamina > 0 ? math.clamp(stamina / maxStamina, 0, 1) : 0;
@@ -626,6 +630,18 @@ export function CombatHudComponent({
 						isActive={isSprinting}
 						onActivated={onSprintToggle}
 					/>
+
+					{/* 6. TARGET LOCK TOGGLE (Dueling Grounds Style - Di atas Sprint) */}
+					<MobileActionButton
+						name="LockBtn"
+						label="LOCK"
+						icon="crosshair"
+						size={new UDim2(0.29, 0, 0.29, 0)}
+						position={new UDim2(0.11, 0, 0.44, 0)}
+						accentColor={Color3.fromHex("#ef4444")}
+						isActive={isTargetLocked}
+						onActivated={onTargetLockToggle}
+					/>
 				</frame>
 			)}
 		</>
@@ -659,6 +675,7 @@ export class CombatHudView {
 		isMobile: false,
 		isSprinting: false,
 		isBlocking: false,
+		isTargetLocked: false,
 	};
 
 	constructor(parentContainer?: Instance) {
@@ -722,6 +739,14 @@ export class CombatHudView {
 			...this.state,
 			isBlocking,
 			isSprinting,
+		};
+		this.render();
+	}
+
+	public setTargetLocked(isTargetLocked: boolean): void {
+		this.state = {
+			...this.state,
+			isTargetLocked,
 		};
 		this.render();
 	}

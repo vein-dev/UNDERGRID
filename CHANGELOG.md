@@ -5,29 +5,73 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased] - 2026-10-07
 
 ### Added
-- **Spatial Voice Chat Zone System (`ServerVoiceZoneService` & `VoiceZoneController`)**:
-  - Implementasi kontrol mikrofon spasial otoritatif memanfaatkan fitur `VoiceChatService.UseAudioApi` (`AudioDeviceInput`).
-  - Pembatasan berbicara: mikrofon pemain otomatis dikunci (`Muted = true`) di luar zona, dan hanya dibuka (`Muted = false`) ketika menginjak `RooftopVoiceZone` atau `GarageVoiceZone`.
-  - Integrasi otomatis dengan `ZoneAudioController`: volume musik (Main Stage & DJ Rooftop) otomatis ducking halus (lerp) menjadi 50% saat berada di dalam Voice Zone agar suara obrolan terdengar jernih, dan kembali ke 100% saat keluar.
-  - Toleransi vertikal $\approx 30$ studs agar pemain yang melompat atau berdiri di atas part tetap dapat berbicara tanpa jeda.
-  - Notifikasi visual real-time pada Dynamic Island saat pemain masuk ke zona (`"VOICE ZONE ACTIVE"`, icon `mic`) dan keluar dari zona (`"VOICE MUTED"`, icon `mic-off`).
-  - Utilitas pendeteksi zona suara modular di `src/shared/utils/VoiceZoneUtils.ts`.
-- **NPC Realistic Head Follow Controller (`NpcHeadFollowController`)**:
-  - Implementasi kontroler pelacak kepala NPC berbasis client menggunakan interpolasi halus (`RenderStepped` & `Lerp`).
-  - Dukungan otomatis untuk seluruh NPC di dalam folder `Workspace.NPC` (Twins, Paul, Mang Kosim, Legion Riq) serta entitas dengan tag CollectionService `"NPC"`.
-  - Dukungan rig universal untuk model R6 dan R15.
-  - Batasan sudut dinamis (Yaw horizontal $\pm 70^\circ$, Pitch vertikal $\pm 35^\circ$) agar kepala NPC tidak terputar berlebihan ke belakang.
-  - Dukungan penuh `StreamingEnabled` dengan pemindai berkala latar belakang.
+- **Directional Dash Movement (Front, Back, Left, Right)**:
+  - 4 dynamic directional dodge animations:
+    - **Front Dash**: Lunge forward when moving forward or while idle.
+    - **Back Dash**: Quick retreat leap when moving backward.
+    - **Left Dash**: Agile side-step dodge when strafing left.
+    - **Right Dash**: Agile side-step dodge when strafing right.
+  - High-precision direction calculation based on character movement relative to facing orientation.
+  - Directional impulse synchronization to ensure instantaneous motion with zero perceived network lag.
+  - Clean animation layering with smooth procedural joint tilt fallback.
+
+- **Combat Stamina & Cooldown Balancing**:
+  - Balanced stamina economy for more fluid and engaging fights:
+    - Dash stamina cost reduced from 18 to 12.
+    - Heavy punch stamina cost reduced from 35 to 22.
+    - Light punch (M1) combo cost reduced from 12 to 8.
+    - Block stamina drain significantly reduced for both light and heavy attacks.
+  - Accelerated recovery:
+    - Stamina regeneration speed increased from 15/s to 28/s (almost 2x faster).
+    - Recovery delay shortened from 1.2s to 0.75s after combat actions.
+    - Minimum stamina threshold lowered from 15 to 8, keeping fighters responsive in critical moments.
+  - Faster action flow:
+    - Dash cooldown shortened from 1.5s to 0.65s for agile combat maneuvers.
+    - Light attack recovery window refined to 0.60s for full swing follow-through.
+    - Heavy attack cooldown and recovery optimized for better pacing.
+
+- **Attack & Dash Motion Flow Polish**:
+  - Eliminated premature attack animation cutting: punch swings and pushes now play their full natural arcs and smoothly transition into combat idle without snapping.
+  - Fixed dash-cancel exploit: players must now completely finish their dash animation before executing a punch or guard, preventing overlapping animations and glitchy movement.
+  - Instant attack cancels remain available when chaining consecutive combo hits, taking hits, or suffering a guard break.
+
+- **Target Lock-On Camera System**:
+  - Hybrid combat camera with full player toggle control:
+    - **T Key (PC)** & **Touch LOCK Button (Mobile)**: Freely toggle target locking on or off at any moment.
+    - **When Lock is Active**: Camera automatically centers on your opponent, body smoothly faces the target, horizontal movements become circular strafes, and a neon red crosshair indicator appears above the locked target.
+    - **When Lock is Inactive**: Free camera rotation with natural directional character orientation.
+  - Intelligent auto-unlock when an opponent is defeated or moves outside combat range.
+  - Dedicated virtual lock button on mobile devices with real-time active status highlighting.
+
+- **1v1 PvP Duel System via Avatar Context Menu**:
+  - Interactive 1v1 duel challenges initiated by clicking player avatars in the 3D world with the "Fight" option.
+  - Full anti-griefing protection and combat isolation: non-participating players cannot be damaged or interrupted.
+  - Modern modal invitation card with challenger avatar preview, accept/decline buttons, and automatic countdown timer.
+  - Dramatic 3... 2... 1... FIGHT! countdown overlay with dynamic scaling effects.
+  - Real-time duel status bar on the HUD displaying VS indicator, opponent avatar thumbnail, and live health sync.
+  - Safe knockout resolution: upon reaching fatal health threshold, the duel cleanly concludes, full health is restored, and the winner is declared without waiting for respawn.
+
+- **Spatial Voice Chat Zone System**:
+  - Authoritative spatial microphone control in designated social areas.
+  - Automatic microphone management: players are muted outside zones and unmuted within designated rooftop and garage lounges.
+  - Dynamic music ducking: background music volume smoothly reduces to 50% within voice zones for clear conversations and restores to 100% on exit.
+  - Vertical height tolerance so jumping or standing on elevated props does not disrupt voice chat.
+  - Real-time visual status alerts on the notification island when entering and leaving active voice zones.
+
+- **NPC Realistic Head Follow System**:
+  - Client-side head tracking controller utilizing smooth interpolation.
+  - Universal support for all map NPCs with automatic detection.
+  - Compatible with both R6 and R15 character rigs.
+  - Natural horizontal and vertical angle clamping to prevent unnatural neck rotation.
 
 ### Changed
-- **Pembersihan Fisika Rig & Aksesoris NPC (`ServerNpcService`)**:
-  - Otomatisasi unanchor seluruh anggota badan dan aksesoris NPC saat startup server, menyisakan hanya `HumanoidRootPart` yang di-anchor agar NPC tidak jatuh atau terdorong.
-  - Pembersihan otomatis (*sanitizer*) untuk sambungan weld yang salah atau korup (`HeadWeld` yang mengelas kepala ke aksesoris pinggang/kaki).
-  - Penyelarasan aksesoris `Accessory (ipod)` pada NPC Twins ke `Head` agar kabel earphone ikut berputar selaras bersama kepala.
-- **Transisi Kembali Posisi Awal Leher**:
-  - Mengganti kalkulasi deteksi kembali dari selisih posisi translasi menjadi selisih orientasi rotasi visual (`LookVector` & `UpVector`).
-  - Menghilangkan efek patah/teleportasi leher instan saat pemain berjalan menjauh, digantikan dengan transisi santai dan halus ($\sim 0.6$ detik).
-- **Efek Typewriter pada Dialog NPC (`NpcDialogueView`)**:
-  - Animasi teks mesin ketik bertahap per huruf yang responsif dengan fitur skip saat layar diklik atau tombol aksi ditekan.
+- **NPC Physics & Accessory Sanitation**:
+  - Automated unanchoring of NPC limbs and accessories during server startup, securing only the root part to prevent falling or unwanted displacement.
+  - Cleared corrupt weld connections to ensure accessories follow head motion accurately.
+- **Natural Neck Reset Transitions**:
+  - Replaced translation-based reset detection with visual orientation vector checks.
+  - Eliminated abrupt neck snapping when players walk away, replaced with a relaxed, smooth transition.
+- **Dialogue Text Animation**:
+  - Progressive typewriter text effect for NPC dialogue with instant skip support on click or key press.
 
 ---

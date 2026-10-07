@@ -18,6 +18,10 @@ export interface CombatAnimationsConfig {
 	GuardBreak: string;
 	ClashLoop?: string;
 	ClashWin?: string;
+	DashFront?: string;
+	DashBack?: string;
+	DashLeft?: string;
+	DashRight?: string;
 }
 
 export interface CombatSoundsConfig {
@@ -120,26 +124,26 @@ export const ARCZIS_COMBAT_CONFIG: ArczisCombatConfig = {
 	DebugHitboxDuration: 0.3,
 
 	MaxStamina: 100,
-	StaminaRegenRate: 15,
-	StaminaRegenDelay: 1.2,
-	MinStaminaToAct: 15,
+	StaminaRegenRate: 28,
+	StaminaRegenDelay: 0.75,
+	MinStaminaToAct: 8,
 
-	M1StaminaCost: 12,
-	HeavyStaminaCost: 35,
-	DashStaminaCost: 18,
-	BlockStaminaDrainPerHit: 25,
-	BlockStaminaDrainPerHeavy: 40,
+	M1StaminaCost: 8,
+	HeavyStaminaCost: 22,
+	DashStaminaCost: 12,
+	BlockStaminaDrainPerHit: 16,
+	BlockStaminaDrainPerHeavy: 26,
 
 	M1Damage: 8,
 	HeavyDamage: 20,
 	BlockedDamageReduction: 0.8,
 	ClashWinDamage: 12,
 
-	M1Cooldown: 0.2,
-	M1AnimationLock: 0.7,
-	HeavyCooldown: 1.2,
-	HeavyAnimationLock: 1.0,
-	DashCooldown: 1.5,
+	M1Cooldown: 0.18,
+	M1AnimationLock: 0.6,
+	HeavyCooldown: 0.85,
+	HeavyAnimationLock: 0.9,
+	DashCooldown: 0.65,
 
 	ClashDetectionWindow: 0.15,
 	ClashButtonPressWindow: 3.0,
@@ -198,6 +202,10 @@ export const ARCZIS_COMBAT_CONFIG: ArczisCombatConfig = {
 		GuardBreak: "rbxassetid://99670245070100",
 		ClashLoop: "rbxassetid://92972932799742",
 		ClashWin: "rbxassetid://139230394073909",
+		DashFront: "rbxassetid://75878651929521",
+		DashBack: "rbxassetid://87173706445392",
+		DashLeft: "rbxassetid://121904811255542",
+		DashRight: "rbxassetid://78495267989803",
 	},
 
 	Sounds: {

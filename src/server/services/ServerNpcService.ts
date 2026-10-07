@@ -89,6 +89,16 @@ export class ServerNpcService {
 			}
 		}
 
+		// Bersihkan weld manual duplikat pada aksesoris jam tangan yang menarik lengan kiri ke Torso
+		const watch = model.FindFirstChild("Accessory (Meshes/jjwatchplainAccessory)");
+		if (watch) {
+			const watchHandle = watch.FindFirstChild("Handle");
+			const extraWeld = watchHandle?.FindFirstChild("Weld");
+			if (extraWeld && extraWeld.IsA("Weld")) {
+				extraWeld.Destroy();
+			}
+		}
+
 		// Jika NPC memiliki aksesoris iPod earphone (seperti pada Twins), sambungkan ke Head agar kabel earphone ikut menoleh
 		const ipod = model.FindFirstChild("Accessory (ipod)");
 		const head = model.FindFirstChild("Head") as BasePart | undefined;
@@ -109,6 +119,34 @@ export class ServerNpcService {
 				weld.Part1 = head;
 				weld.C0 = new CFrame();
 				weld.C1 = head.CFrame.ToObjectSpace(handle.CFrame);
+			}
+		}
+
+		// Jika NPC memiliki Brass Knuckles (seperti pada Mang Kosim), kunci posisi weld ke Torso agar tidak jatuh atau tertarik ke dada
+		const knuckles = model.FindFirstChild("Brass Knuckles");
+		const torso = model.FindFirstChild("Torso") as BasePart | undefined;
+		if (knuckles && torso) {
+			const handle = knuckles.FindFirstChild("Handle") as BasePart | undefined;
+			if (handle) {
+				const wrap = handle.FindFirstChildOfClass("WrapLayer");
+				if (wrap) {
+					wrap.Destroy();
+				}
+				const att = handle.FindFirstChildWhichIsA("Attachment");
+				if (att && att.Name === "BodyFrontAttachment") {
+					att.Name = "KnucklesAttachment";
+				}
+				let weld = handle.FindFirstChildOfClass("Weld");
+				if (!weld) {
+					weld = new Instance("Weld");
+					weld.Name = "AccessoryWeld";
+					weld.Parent = handle;
+				}
+				weld.Part0 = handle;
+				weld.Part1 = torso;
+				weld.C0 = new CFrame();
+				weld.C1 = new CFrame(0, -0.95, -0.196635246);
+				weld.Enabled = true;
 			}
 		}
 	}

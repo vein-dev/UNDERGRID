@@ -12,4 +12,4 @@ export interface AvatarTargetPlayer {
 	distance?: number;
 }
 
-export type AvatarContextMenuAction = "sync" | "friend" | "inspect";
+export type AvatarContextMenuAction = "sync" | "friend" | "inspect" | "fight";

@@ -21,6 +21,7 @@ import {
 	ServerElevatorService,
 	ServerNpcService,
 	ServerVoiceZoneService,
+	ServerDuelService,
 } from "./services";
 
 /**
@@ -77,6 +78,9 @@ function main() {
 
 	const voiceZoneService = ServerVoiceZoneService.getInstance();
 	voiceZoneService.init();
+
+	const duelService = ServerDuelService.getInstance();
+	duelService.init();
 
 	ServerMusicService.getInstance();
 	ServerDjMusicService.getInstance();

@@ -547,6 +547,75 @@ export function AvatarContextMenuComponent({
 					/>
 				</frame>
 			</textbutton>
+
+			{/* ─── Separator ─── */}
+			<frame
+				LayoutOrder={10}
+				Size={new UDim2(1, 0, 0, 1)}
+				BackgroundColor3={MonochromeTheme.Border.Subtle}
+				BorderSizePixel={0}
+				ZIndex={92}
+			/>
+
+			{/* ─── Action Button 4: Fight / Duel ─── */}
+			<textbutton
+				key="Action_Fight"
+				LayoutOrder={11}
+				Size={new UDim2(1, 0, 0, 44)}
+				BackgroundColor3={
+					hoveredAction === "fight"
+						? Color3.fromHex("#ef4444")
+						: MonochromeTheme.Background.DeepCharcoal
+				}
+				BackgroundTransparency={hoveredAction === "fight" ? 0.35 : 1}
+				AutoButtonColor={false}
+				Text=""
+				ZIndex={92}
+				Event={{
+					MouseEnter: () => setHoveredAction("fight"),
+					MouseLeave: () => setHoveredAction(undefined),
+					MouseButton1Click: () => onAction?.("fight", target),
+				}}
+			>
+				<frame
+					AnchorPoint={new Vector2(0.5, 0.5)}
+					Position={new UDim2(0.5, 0, 0.5, 0)}
+					Size={new UDim2(0, 0, 1, 0)}
+					AutomaticSize={Enum.AutomaticSize.X}
+					BackgroundTransparency={1}
+					ZIndex={93}
+				>
+					<uilistlayout
+						FillDirection={Enum.FillDirection.Horizontal}
+						VerticalAlignment={Enum.VerticalAlignment.Center}
+						HorizontalAlignment={Enum.HorizontalAlignment.Center}
+						Padding={new UDim(0, 8)}
+					/>
+					<LucideIcon
+						name="swords"
+						size={new UDim2(0, 16, 0, 16)}
+						color={
+							hoveredAction === "fight"
+								? Color3.fromHex("#ffffff")
+								: Color3.fromHex("#f87171")
+						}
+						zIndex={94}
+					/>
+					<textlabel
+						Text="Fight"
+						Font={Fonts.Bold}
+						TextSize={14}
+						TextColor3={
+							hoveredAction === "fight"
+								? Color3.fromHex("#ffffff")
+								: Color3.fromHex("#f87171")
+						}
+						BackgroundTransparency={1}
+						AutomaticSize={Enum.AutomaticSize.XY}
+						ZIndex={94}
+					/>
+				</frame>
+			</textbutton>
 		</canvasgroup>
 	);
 }

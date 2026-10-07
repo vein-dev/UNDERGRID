@@ -33,6 +33,7 @@ import {
 	NpcDialogueController,
 	NpcHeadFollowController,
 	VoiceZoneController,
+	DuelController,
 } from "./controllers";
 
 
@@ -128,6 +129,7 @@ function main() {
 	NpcDialogueController.getInstance().init();
 	NpcHeadFollowController.getInstance().init();
 	VoiceZoneController.getInstance().init();
+	DuelController.getInstance().init();
 
 	print("[Client] All controllers initialized successfully.");
 

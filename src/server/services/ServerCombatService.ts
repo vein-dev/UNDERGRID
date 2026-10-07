@@ -9,6 +9,7 @@ import {
 	WOODEN_SWORD_CONFIG,
 } from "shared/types";
 import { MovementConfig } from "shared/config/MovementConfig";
+import { ServerDuelService } from "./ServerDuelService";
 
 /**
  * ServerCombatService - Complete authoritative combat system
@@ -1058,7 +1059,12 @@ export class ServerCombatService {
 
 			const loserHum = loserChar.FindFirstChildOfClass("Humanoid");
 			if (loserHum && loserHum.Health > 0) {
-				loserHum.TakeDamage(ARCZIS_COMBAT_CONFIG.ClashWinDamage);
+				ServerDuelService.getInstance().applyDuelDamage(
+					winner,
+					loser,
+					loserHum,
+					ARCZIS_COMBAT_CONFIG.ClashWinDamage,
+				);
 				this.playSoundOnCharacter(loserChar, ARCZIS_COMBAT_CONFIG.Sounds.Hit, 1.0);
 
 				const loserKnockback = new Instance("BodyVelocity");
@@ -1187,7 +1193,13 @@ export class ServerCombatService {
 			// Quick impulse forward/directional
 			const hrp = character.FindFirstChild("HumanoidRootPart") as BasePart | undefined;
 			if (hrp) {
-				const moveDir = humanoid.MoveDirection.Magnitude > 0.1 ? humanoid.MoveDirection : hrp.CFrame.LookVector;
+				const clientDir = args[0] as Vector3 | undefined;
+				const moveDir =
+					clientDir && typeIs(clientDir, "Vector3") && clientDir.Magnitude > 0.1
+						? clientDir.Unit
+						: humanoid.MoveDirection.Magnitude > 0.1
+							? humanoid.MoveDirection
+							: hrp.CFrame.LookVector;
 				const dashVel = new Instance("BodyVelocity");
 				dashVel.MaxForce = new Vector3(math.huge, 0, math.huge);
 				dashVel.Velocity = moveDir.mul(25);
@@ -1200,12 +1212,18 @@ export class ServerCombatService {
 
 		if (action !== "M1" && action !== "Heavy") return;
 		const attackType = action;
+		const now = os.clock();
 
-		if (data.IsInClash || data.IsGuardBroken || data.IsStunned || data.IsAttacking || data.IsBlocking) {
+		if (
+			data.IsInClash ||
+			data.IsGuardBroken ||
+			data.IsStunned ||
+			data.IsAttacking ||
+			data.IsBlocking ||
+			now - data.LastDashTime < 0.45
+		) {
 			return;
 		}
-
-		const now = os.clock();
 		if (attackType === "Heavy") {
 			if (now - data.LastHeavyTime < ARCZIS_COMBAT_CONFIG.HeavyCooldown) return;
 		} else {
@@ -1297,6 +1315,11 @@ export class ServerCombatService {
 					continue;
 				}
 
+				const duelService = ServerDuelService.getInstance();
+				if (!duelService.canPlayersFight(player, targetPlayer)) {
+					continue;
+				}
+
 				const targetData = this.playerData.get(targetPlayer);
 				if (!targetData || targetData.IsInClash || this.isPlayerDamageImmune(targetPlayer)) {
 					continue;
@@ -1315,7 +1338,7 @@ export class ServerCombatService {
 					if (targetData.Stamina <= 0) {
 						this.applyGuardBreak(targetChar, ARCZIS_COMBAT_CONFIG.GuardBreakStunDuration);
 						const hum = targetChar.FindFirstChildOfClass("Humanoid");
-						if (hum) hum.TakeDamage(damage);
+						if (hum) duelService.applyDuelDamage(player, targetPlayer, hum, damage);
 						this.applyKnockback(targetChar, character, ARCZIS_COMBAT_CONFIG.GuardBreakKnockback);
 					} else {
 						const actualDmg = damage * (1 - ARCZIS_COMBAT_CONFIG.BlockedDamageReduction);
@@ -1327,7 +1350,7 @@ export class ServerCombatService {
 							true,
 						);
 						const hum = targetChar.FindFirstChildOfClass("Humanoid");
-						if (hum) hum.TakeDamage(actualDmg);
+						if (hum) duelService.applyDuelDamage(player, targetPlayer, hum, actualDmg);
 						this.applyKnockback(targetChar, character, knockback * 0.2);
 					}
 				} else {
@@ -1337,7 +1360,7 @@ export class ServerCombatService {
 						this.playSoundOnCharacter(targetChar, ARCZIS_COMBAT_CONFIG.Sounds.Hit, 0.9);
 					}
 					const hum = targetChar.FindFirstChildOfClass("Humanoid");
-					if (hum) hum.TakeDamage(damage);
+					if (hum) duelService.applyDuelDamage(player, targetPlayer, hum, damage);
 					this.applyHitStun(targetChar, stunDur, attackType as "M1" | "Heavy");
 					this.applyKnockback(targetChar, character, knockback);
 				}

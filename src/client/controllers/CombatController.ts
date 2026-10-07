@@ -11,9 +11,11 @@ import {
 } from "@rbxts/services";
 import { AvatarContextMenuView } from "client/ui/views/AvatarContextMenuView";
 import { CombatHudView } from "client/ui/views/CombatHudView";
+import { DuelService } from "../services/DuelService";
 import { getRemoteEvent } from "shared/network";
 import { ARCZIS_COMBAT_CONFIG } from "shared/types";
 import { MovementConfig } from "shared/config/MovementConfig";
+import { GetIconUri } from "shared/utils";
 
 /**
  * CombatController - Client combat controller implementing the Arczis combat system.
@@ -28,6 +30,11 @@ import { MovementConfig } from "shared/config/MovementConfig";
 export class CombatController {
 	private static instance?: CombatController;
 	private player = Players.LocalPlayer;
+
+	// Enemy / Avatar Lock references
+	private currentLockTarget?: Model;
+	private lockReticleGui?: BillboardGui;
+	private lockReticleImage?: ImageLabel;
 
 	// Character references
 	private character?: Model;
@@ -60,6 +67,8 @@ export class CombatController {
 	private isInClash = false;
 	private isInClashWinAnimation = false;
 	private isSprinting = false;
+	private isDashing = false;
+	private isTargetLocked = false;
 	private isPaused = false;
 
 	private lastM1Time = 0;
@@ -167,6 +176,11 @@ export class CombatController {
 					this.clashEvent.FireServer("ButtonPress", this.currentClashId);
 				}
 			},
+			onTargetLockToggle: () => {
+				if (this.isEquipped && !this.isInClash && !this.isInClashWinAnimation) {
+					this.toggleTargetLock();
+				}
+			},
 		});
 
 		// Dynamic mobile touch detection
@@ -180,23 +194,95 @@ export class CombatController {
 		UserInputService.InputEnded.Connect((input, processed) => this.onInputEnded(input, processed));
 		RunService.RenderStepped.Connect(() => {
 			if (this.isEquipped && !this.isPaused) {
-				// Pastikan mouse selalu terkunci di tengah layar dan kursor disembunyikan (ShiftLock)
-				if (UserInputService.MouseBehavior !== Enum.MouseBehavior.LockCenter) {
-					UserInputService.MouseBehavior = Enum.MouseBehavior.LockCenter;
-				}
-				if (UserInputService.MouseIconEnabled) {
-					UserInputService.MouseIconEnabled = false;
+				const isTouchDevice = UserInputService.TouchEnabled && !UserInputService.KeyboardEnabled;
+
+				// Di mobile: Jangan pernah paksa mouse terkunci ke tengah agar sentuhan layar leluasa
+				if (isTouchDevice) {
+					if (UserInputService.MouseBehavior !== Enum.MouseBehavior.Default) {
+						UserInputService.MouseBehavior = Enum.MouseBehavior.Default;
+					}
+					UserInputService.MouseIconEnabled = true;
 				}
 
-				// Rotasikan orientasi karakter menghadap sudut pandang horizontal kamera
-				if (this.humanoidRootPart && this.humanoid && this.humanoid.Health > 0) {
-					const camera = Workspace.CurrentCamera;
-					if (camera) {
-						const [, yaw] = camera.CFrame.ToOrientation();
-						const currentPos = this.humanoidRootPart.Position;
-						this.humanoidRootPart.CFrame = new CFrame(currentPos).mul(CFrame.Angles(0, yaw, 0));
+				let target = this.isTargetLocked ? this.currentLockTarget : undefined;
+
+				// Validasi target aktif saat sistem lock sedang dinyalakan
+				if (this.isTargetLocked) {
+					if (!target || !target.Parent) {
+						target = this.getLockTarget();
+						this.currentLockTarget = target;
+						if (!target) {
+							this.isTargetLocked = false;
+							this.combatHud.setTargetLocked(false);
+						}
+					} else {
+						const targetHum = target.FindFirstChildOfClass("Humanoid");
+						const targetHrp = target.FindFirstChild("HumanoidRootPart") as BasePart | undefined;
+						const myPos = this.humanoidRootPart?.Position;
+						if (
+							!targetHum ||
+							targetHum.Health <= 0 ||
+							!targetHrp ||
+							(myPos && targetHrp.Position.sub(myPos).Magnitude > 55)
+						) {
+							// Target mati atau terlalu jauh (> 55 studs), auto-unlock atau cari target terdekat lain
+							const nextTarget = this.getLockTarget();
+							if (nextTarget && nextTarget !== target) {
+								target = nextTarget;
+								this.currentLockTarget = nextTarget;
+							} else {
+								target = undefined;
+								this.isTargetLocked = false;
+								this.currentLockTarget = undefined;
+								this.combatHud.setTargetLocked(false);
+							}
+						}
 					}
 				}
+
+				this.updateLockReticle(target);
+
+				if (this.humanoidRootPart && this.humanoid && this.humanoid.Health > 0) {
+					if (target && this.isTargetLocked) {
+						// ─── TARGET LOCK-ON (DUELING GROUNDS STYLE) ───
+						const targetHrp = target.FindFirstChild("HumanoidRootPart") as BasePart | undefined;
+						if (targetHrp) {
+							const myPos = this.humanoidRootPart.Position;
+							const toTarget = new Vector3(
+								targetHrp.Position.X - myPos.X,
+								0,
+								targetHrp.Position.Z - myPos.Z,
+							);
+
+							// 1. Karakter selalu menghadap lurus ke musuh (Orientasi presisi untuk strafe & dodge)
+							if (toTarget.Magnitude > 0.4) {
+								const targetRot = CFrame.lookAt(myPos, myPos.add(toTarget));
+								this.humanoidRootPart.CFrame = this.humanoidRootPart.CFrame.Lerp(targetRot, 0.22);
+							}
+
+							// 2. Kamera mengunci musuh di tengah layar (Dueling Grounds Lock Camera)
+							const camera = Workspace.CurrentCamera;
+							if (camera) {
+								const camPos = camera.CFrame.Position;
+								const focusPoint = targetHrp.Position.add(new Vector3(0, 1.3, 0));
+								const desiredCamRot = CFrame.lookAt(camPos, focusPoint);
+								camera.CFrame = camera.CFrame.Lerp(desiredCamRot, isTouchDevice ? 0.10 : 0.15);
+							}
+						}
+					} else {
+						// ─── FREE CAMERA MODE (NON-LOCK) ───
+						// Karakter berputar menghadap arah horizontal kamera hanya jika sedang berjalan
+						const camera = Workspace.CurrentCamera;
+						if (camera && this.humanoid.MoveDirection.Magnitude > 0.05) {
+							const [, yaw] = camera.CFrame.ToOrientation();
+							const currentPos = this.humanoidRootPart.Position;
+							const camRot = new CFrame(currentPos).mul(CFrame.Angles(0, yaw, 0));
+							this.humanoidRootPart.CFrame = this.humanoidRootPart.CFrame.Lerp(camRot, 0.18);
+						}
+					}
+				}
+			} else {
+				this.updateLockReticle(undefined);
 			}
 			this.updateMovement();
 		});
@@ -591,17 +677,17 @@ export class CombatController {
 			this.humanoidRootPart.SetAttribute("IsFighting", true);
 		}
 
-		// Auto ShiftLock & Sembunyikan Kursor saat bertarung
+		// Pengaturan Kamera & Humanoid saat bertarung
 		if (this.humanoid) {
 			this.humanoid.AutoRotate = false;
-			this.humanoid.CameraOffset = new Vector3(1.75, 0.25, 0);
+			this.humanoid.CameraOffset = new Vector3(0, 0.5, 0);
 			// Disable Jump while in fight mode
 			this.humanoid.SetStateEnabled(Enum.HumanoidStateType.Jumping, false);
 			this.humanoid.JumpPower = 0;
 			this.humanoid.JumpHeight = 0;
 		}
-		UserInputService.MouseBehavior = Enum.MouseBehavior.LockCenter;
-		UserInputService.MouseIconEnabled = false;
+		UserInputService.MouseBehavior = Enum.MouseBehavior.Default;
+		UserInputService.MouseIconEnabled = true;
 		this.setCombatCamera(false);
 
 		// Tutup Avatar Context Menu jika sedang terbuka saat masuk fight mode
@@ -677,6 +763,7 @@ export class CombatController {
 		this.isBlocking = false;
 		this.isAttacking = false;
 		this.isSprinting = false;
+		this.isDashing = false;
 		this.isInClash = false;
 		this.unbindClashSpace();
 		this.combatHud.setCombatStates(false, false);
@@ -685,6 +772,9 @@ export class CombatController {
 		this.updateDebugHUD();
 		this.stopAllCombatAnims();
 		this.setProceduralBlock(false);
+		this.isTargetLocked = false;
+		this.combatHud.setTargetLocked(false);
+		this.cleanLockReticle();
 	}
 
 	public setPaused(paused: boolean): void {
@@ -693,10 +783,14 @@ export class CombatController {
 			this.isBlocking = false;
 			this.isAttacking = false;
 			this.isSprinting = false;
+			this.isDashing = false;
+			this.isTargetLocked = false;
+			this.combatHud.setTargetLocked(false);
 			this.combatHud.setVisible(false);
 			this.stopAllCombatAnims();
 			this.setProceduralBlock(false);
 			this.cleanToolNoneListeners();
+			this.cleanLockReticle();
 
 			// Pulihkan camera, cursor, dan mouse saat paused
 			if (this.humanoid) {
@@ -712,13 +806,13 @@ export class CombatController {
 		} else if (this.isEquipped) {
 			if (this.humanoid) {
 				this.humanoid.AutoRotate = false;
-				this.humanoid.CameraOffset = new Vector3(1.75, 0.25, 0);
+				this.humanoid.CameraOffset = new Vector3(0, 0.5, 0);
 				this.humanoid.SetStateEnabled(Enum.HumanoidStateType.Jumping, false);
 				this.humanoid.JumpPower = 0;
 				this.humanoid.JumpHeight = 0;
 			}
-			UserInputService.MouseBehavior = Enum.MouseBehavior.LockCenter;
-			UserInputService.MouseIconEnabled = false;
+			UserInputService.MouseBehavior = Enum.MouseBehavior.Default;
+			UserInputService.MouseIconEnabled = true;
 			this.setCombatCamera(false);
 			this.suppressToolNoneAnimations();
 			this.combatHud.setVisible(true);
@@ -736,10 +830,203 @@ export class CombatController {
 	}
 
 	/**
-	 * Menghadapkan karakter ke arah horizontal pandangan kamera secara instan saat melancarkan serangan.
+	 * Mencari target lawan terbaik untuk Enemy Lock (Lawan duel aktif atau musuh/dummy terdekat).
 	 */
-	private faceCamera(): void {
+	private getLockTarget(): Model | undefined {
+		if (!this.humanoidRootPart || !this.humanoid || this.humanoid.Health <= 0) {
+			return undefined;
+		}
+
+		const myPos = this.humanoidRootPart.Position;
+
+		// 1. Prioritas Utama: Lawan Duel Aktif (dari DuelService / atribut InDuelWith)
+		const activeDuel = DuelService.getInstance().getActiveDuel();
+		let duelTargetPlayer: Player | undefined;
+
+		if (activeDuel) {
+			duelTargetPlayer = Players.GetPlayerByUserId(activeDuel.opponentUserId);
+		} else if (this.character) {
+			const inDuelWithUserId = this.character.GetAttribute("InDuelWith") as number | undefined;
+			if (inDuelWithUserId) {
+				duelTargetPlayer = Players.GetPlayerByUserId(inDuelWithUserId);
+			}
+		}
+
+		if (duelTargetPlayer && duelTargetPlayer.Character) {
+			const targetChar = duelTargetPlayer.Character;
+			const targetHum = targetChar.FindFirstChildOfClass("Humanoid");
+			const targetHrp = targetChar.FindFirstChild("HumanoidRootPart") as BasePart | undefined;
+			if (targetHum && targetHum.Health > 0 && targetHrp) {
+				return targetChar;
+			}
+		}
+
+		// 2. Di Luar Duel: Cari Musuh / Dummy Terdekat (Radius <= 40 studs)
+		const MAX_LOCK_RADIUS = 40;
+		let closestModel: Model | undefined;
+		let closestDist = MAX_LOCK_RADIUS;
+
+		// Cari pemain terdekat
+		for (const otherPlayer of Players.GetPlayers()) {
+			if (otherPlayer === this.player) continue;
+			const char = otherPlayer.Character;
+			if (!char) continue;
+			const hum = char.FindFirstChildOfClass("Humanoid");
+			const hrp = char.FindFirstChild("HumanoidRootPart") as BasePart | undefined;
+			if (hum && hum.Health > 0 && hrp) {
+				const dist = hrp.Position.sub(myPos).Magnitude;
+				if (dist < closestDist) {
+					closestDist = dist;
+					closestModel = char;
+				}
+			}
+		}
+
+		// Cari Training Dummy terdekat
+		const dummyFolder = Workspace.FindFirstChild("Dummies") ?? Workspace.FindFirstChild("NPC");
+		const searchContainers: Instance[] = [Workspace];
+		if (dummyFolder) searchContainers.push(dummyFolder);
+
+		for (const container of searchContainers) {
+			for (const child of container.GetChildren()) {
+				if (child.IsA("Model") && child !== this.character) {
+					const isDummy =
+						child.Name.lower().find("dummy")[0] !== undefined ||
+						child.GetAttribute("DummyType") !== undefined;
+					if (isDummy) {
+						const hum = child.FindFirstChildOfClass("Humanoid");
+						const hrp = child.FindFirstChild("HumanoidRootPart") as BasePart | undefined;
+						if (hum && hum.Health > 0 && hrp) {
+							const dist = hrp.Position.sub(myPos).Magnitude;
+							if (dist < closestDist) {
+								closestDist = dist;
+								closestModel = child;
+							}
+						}
+					}
+				}
+			}
+		}
+
+		return closestModel;
+	}
+
+	/**
+	 * Memperbarui posisi indikator visual reticle di atas kepala musuh yang di-lock.
+	 */
+	private updateLockReticle(target?: Model): void {
+		if (!target) {
+			if (this.lockReticleGui) {
+				this.lockReticleGui.Enabled = false;
+			}
+			return;
+		}
+
+		const head =
+			(target.FindFirstChild("Head") as BasePart | undefined) ??
+			(target.FindFirstChild("HumanoidRootPart") as BasePart | undefined);
+		if (!head) {
+			if (this.lockReticleGui) this.lockReticleGui.Enabled = false;
+			return;
+		}
+
+		if (!this.lockReticleGui) {
+			const playerGui = this.player.FindFirstChildOfClass("PlayerGui");
+			if (!playerGui) return;
+
+			const bbg = new Instance("BillboardGui");
+			bbg.Name = "CombatLockReticle";
+			bbg.Size = new UDim2(0, 32, 0, 32);
+			bbg.StudsOffset = new Vector3(0, 2.4, 0);
+			bbg.AlwaysOnTop = true;
+			bbg.ResetOnSpawn = false;
+			bbg.Parent = playerGui;
+
+			const img = new Instance("ImageLabel");
+			img.Name = "Icon";
+			img.Size = new UDim2(1, 0, 1, 0);
+			img.BackgroundTransparency = 1;
+			img.Image = GetIconUri("crosshair") ?? "";
+			img.ImageColor3 = Color3.fromHex("#ef4444");
+			img.ZIndex = 100;
+			img.Parent = bbg;
+
+			this.lockReticleGui = bbg;
+			this.lockReticleImage = img;
+		}
+
+		this.lockReticleGui.Adornee = head;
+		this.lockReticleGui.Enabled = true;
+	}
+
+	/**
+	 * Menghapus indikator visual reticle saat pertempuran berakhir.
+	 */
+	private cleanLockReticle(): void {
+		if (this.lockReticleGui) {
+			this.lockReticleGui.Destroy();
+			this.lockReticleGui = undefined;
+			this.lockReticleImage = undefined;
+		}
+	}
+
+	/**
+	 * Toggle Target Lock-On (Dueling Grounds Style via tombol T atau Mobile Button).
+	 */
+	public toggleTargetLock(): void {
+		if (!this.isEquipped) return;
+
+		if (this.isTargetLocked) {
+			this.isTargetLocked = false;
+			this.currentLockTarget = undefined;
+			this.updateLockReticle(undefined);
+			this.combatHud.setTargetLocked(false);
+			this.lastActionDebug = "Target Lock: OFF (Free Camera)";
+			this.updateDebugHUD();
+		} else {
+			const target = this.getLockTarget();
+			if (target) {
+				this.isTargetLocked = true;
+				this.currentLockTarget = target;
+				this.updateLockReticle(target);
+				this.combatHud.setTargetLocked(true);
+				this.lastActionDebug = `Target Lock: ON (${target.Name})`;
+				this.updateDebugHUD();
+			} else {
+				this.lastActionDebug = "Target Lock: Tidak ada target di sekitar";
+				this.updateDebugHUD();
+			}
+		}
+	}
+
+	public isLockActive(): boolean {
+		return this.isTargetLocked;
+	}
+
+	/**
+	 * Menghadapkan karakter seketika ke musuh yang di-lock saat melancarkan serangan M1 / Heavy.
+	 */
+	private faceTarget(): void {
 		if (!this.humanoidRootPart) return;
+
+		const target = this.getLockTarget();
+		if (target) {
+			const targetHrp = target.FindFirstChild("HumanoidRootPart") as BasePart | undefined;
+			if (targetHrp) {
+				const myPos = this.humanoidRootPart.Position;
+				const dir = new Vector3(
+					targetHrp.Position.X - myPos.X,
+					0,
+					targetHrp.Position.Z - myPos.Z,
+				);
+				if (dir.Magnitude > 0.4) {
+					this.humanoidRootPart.CFrame = CFrame.lookAt(myPos, myPos.add(dir));
+					return;
+				}
+			}
+		}
+
+		// Fallback arah horizontal kamera jika tidak ada target
 		const camera = Workspace.CurrentCamera;
 		if (!camera) return;
 		const [, yaw] = camera.CFrame.ToOrientation();
@@ -862,6 +1149,10 @@ export class CombatController {
 		resolved.set("HitReactionHeavy", anims.HitReactionHeavy);
 		if (anims.ClashLoop) resolved.set("ClashLoop", anims.ClashLoop);
 		if (anims.ClashWin) resolved.set("ClashWin", anims.ClashWin);
+		if (anims.DashFront) resolved.set("DashFront", anims.DashFront);
+		if (anims.DashBack) resolved.set("DashBack", anims.DashBack);
+		if (anims.DashLeft) resolved.set("DashLeft", anims.DashLeft);
+		if (anims.DashRight) resolved.set("DashRight", anims.DashRight);
 
 		// Fallback to Server-registered KeyframeSequences only if an entry is missing or empty
 		const animFolder = ReplicatedStorage.FindFirstChild("CombatAnimationIds") as Folder | undefined;
@@ -943,6 +1234,18 @@ export class CombatController {
 		if (animIds.has("ClashWin")) {
 			this.loadAnim("ClashWin", animIds.get("ClashWin") ?? "", Enum.AnimationPriority.Action4, false);
 		}
+		if (animIds.has("DashFront")) {
+			this.loadAnim("DashFront", animIds.get("DashFront") ?? "", Enum.AnimationPriority.Action2, false);
+		}
+		if (animIds.has("DashBack")) {
+			this.loadAnim("DashBack", animIds.get("DashBack") ?? "", Enum.AnimationPriority.Action2, false);
+		}
+		if (animIds.has("DashLeft")) {
+			this.loadAnim("DashLeft", animIds.get("DashLeft") ?? "", Enum.AnimationPriority.Action2, false);
+		}
+		if (animIds.has("DashRight")) {
+			this.loadAnim("DashRight", animIds.get("DashRight") ?? "", Enum.AnimationPriority.Action2, false);
+		}
 	}
 
 	private playAnim(name: string, fadeTime = 0.1): AnimationTrack | undefined {
@@ -977,6 +1280,14 @@ export class CombatController {
 		this.stopAnim("ClashWin", 0.1);
 	}
 
+	private stopDashAnims(): void {
+		this.stopAnim("DashFront", 0.1);
+		this.stopAnim("DashBack", 0.1);
+		this.stopAnim("DashLeft", 0.1);
+		this.stopAnim("DashRight", 0.1);
+		this.isDashing = false;
+	}
+
 	private stopAllCombatAnims(): void {
 		this.stopAnim("CombatIdle", 0.1);
 		this.stopAnim("CombatWalk", 0.1);
@@ -984,6 +1295,7 @@ export class CombatController {
 		this.stopAnim("Block", 0.1);
 		this.stopAttackAnims();
 		this.stopClashAnims();
+		this.stopDashAnims();
 	}
 
 	// ═══════════════════════════════════════════════════════
@@ -1130,6 +1442,14 @@ export class CombatController {
 			return;
 		}
 
+		// T: Toggle Target Lock (Dueling Grounds Style)
+		if (input.KeyCode === Enum.KeyCode.T) {
+			if (!this.isInClash && !this.isInClashWinAnimation) {
+				this.toggleTargetLock();
+			}
+			return;
+		}
+
 	}
 
 	private onInputEnded(input: InputObject, _processed: boolean): void {
@@ -1162,7 +1482,8 @@ export class CombatController {
 			!this.isGuardBroken &&
 			!this.isStunned &&
 			!this.isAttacking &&
-			!this.isBlocking
+			!this.isBlocking &&
+			!this.isDashing
 		);
 	}
 
@@ -1172,7 +1493,8 @@ export class CombatController {
 			!this.isInClashWinAnimation &&
 			!this.isGuardBroken &&
 			(!this.isStunned || this.canBlockWhileStunned) &&
-			!this.isAttacking
+			!this.isAttacking &&
+			!this.isDashing
 		);
 	}
 
@@ -1196,7 +1518,7 @@ export class CombatController {
 		this.updateDebugHUD();
 
 		this.stopAttackAnims();
-		this.faceCamera();
+		this.faceTarget();
 
 		this.isAttacking = true;
 		this.updateWalkSpeed();
@@ -1211,9 +1533,6 @@ export class CombatController {
 		task.delay(ARCZIS_COMBAT_CONFIG.M1AnimationLock, () => {
 			this.isAttacking = false;
 			this.updateWalkSpeed();
-			if (track && track.IsPlaying) {
-				track.Stop(0.1);
-			}
 			if (
 				this.isEquipped &&
 				!this.isGuardBroken &&
@@ -1240,7 +1559,7 @@ export class CombatController {
 		this.updateDebugHUD();
 
 		this.stopAttackAnims();
-		this.faceCamera();
+		this.faceTarget();
 
 		this.isAttacking = true;
 		this.updateWalkSpeed();
@@ -1254,9 +1573,6 @@ export class CombatController {
 		task.delay(ARCZIS_COMBAT_CONFIG.HeavyAnimationLock, () => {
 			this.isAttacking = false;
 			this.updateWalkSpeed();
-			if (track && track.IsPlaying) {
-				track.Stop(0.1);
-			}
 			if (
 				this.isEquipped &&
 				!this.isGuardBroken &&
@@ -1279,14 +1595,76 @@ export class CombatController {
 		if (now - this.lastDashTime < ARCZIS_COMBAT_CONFIG.DashCooldown) return;
 		this.lastDashTime = now;
 
-		this.lastActionDebug = "Q: Dash / Menghindar";
+		// Tentukan arah dash berdasarkan pergerakan karakter saat ini
+		let dashAnimName = "DashFront";
+		let worldDashDir = this.humanoidRootPart ? this.humanoidRootPart.CFrame.LookVector : new Vector3(0, 0, -1);
+
+		if (this.humanoid && this.humanoidRootPart) {
+			const moveDir = this.humanoid.MoveDirection;
+			if (moveDir.Magnitude > 0.1) {
+				worldDashDir = moveDir.Unit;
+				// Ubah ke arah lokal relatif terhadap rotasi HumanoidRootPart
+				const localDir = this.humanoidRootPart.CFrame.VectorToObjectSpace(moveDir);
+
+				// localDir.Z < 0 adalah depan, > 0 adalah belakang
+				// localDir.X > 0 adalah kanan, < 0 adalah kiri
+				if (math.abs(localDir.Z) >= math.abs(localDir.X)) {
+					dashAnimName = localDir.Z < 0 ? "DashFront" : "DashBack";
+				} else {
+					dashAnimName = localDir.X > 0 ? "DashRight" : "DashLeft";
+				}
+			} else {
+				dashAnimName = "DashFront";
+				worldDashDir = this.humanoidRootPart.CFrame.LookVector;
+			}
+		}
+
+		this.lastActionDebug = `Q: Dash (${dashAnimName})`;
 		this.updateDebugHUD();
 
-		if (this.rootJoint && this.defaultRootJointC0) {
+		// Hentikan animasi dash yang sedang berjalan sebelumnya
+		this.stopDashAnims();
+
+		this.isDashing = true;
+		let playedAnim = false;
+		if (this.isTrackUsable(dashAnimName)) {
+			const track = this.playAnim(dashAnimName, 0.05);
+			if (track) {
+				playedAnim = true;
+				// Tunggu sampai animasi dash benar-benar selesai secara tuntas
+				const fullDuration = track.Length > 0 ? track.Length : 0.6;
+				let hasCompleted = false;
+
+				const onDashEnd = () => {
+					if (hasCompleted) return;
+					hasCompleted = true;
+					this.isDashing = false;
+					if (this.isEquipped && !this.isStunned && !this.isInClash && !this.isGuardBroken) {
+						this.updateMovement();
+					}
+				};
+
+				track.Stopped.Once(onDashEnd);
+				task.delay(fullDuration, onDashEnd);
+			}
+		}
+
+		if (!playedAnim) {
+			task.delay(0.45, () => {
+				this.isDashing = false;
+				if (this.isEquipped && !this.isStunned && !this.isInClash && !this.isGuardBroken) {
+					this.updateMovement();
+				}
+			});
+		}
+
+		// Fallback prosedural jika animasi belum siap / tidak dimainkan
+		if (!playedAnim && this.rootJoint && this.defaultRootJointC0) {
+			const tiltAngle = dashAnimName === "DashBack" ? math.rad(-12) : math.rad(12);
 			TweenService.Create(
 				this.rootJoint,
 				new TweenInfo(0.08, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
-				{ C0: this.defaultRootJointC0.mul(CFrame.Angles(math.rad(12), 0, 0)) },
+				{ C0: this.defaultRootJointC0.mul(CFrame.Angles(tiltAngle, 0, 0)) },
 			).Play();
 			task.delay(0.18, () => {
 				if (this.rootJoint && this.defaultRootJointC0) {
@@ -1299,7 +1677,8 @@ export class CombatController {
 			});
 		}
 
-		this.combatEvent.FireServer("Dash");
+		this.playLocalSound(ARCZIS_COMBAT_CONFIG.Sounds.SwingHeavy, 0.6);
+		this.combatEvent.FireServer("Dash", worldDashDir);
 	}
 
 	private startBlock(): void {
@@ -1358,7 +1737,7 @@ export class CombatController {
 				}
 
 				this.isAttacking = true;
-				this.faceCamera();
+				this.faceTarget();
 				this.stopAttackAnims();
 
 				let track: AnimationTrack | undefined;
@@ -1378,9 +1757,6 @@ export class CombatController {
 				task.delay(lockTime, () => {
 					this.isAttacking = false;
 					this.updateWalkSpeed();
-					if (track && track.IsPlaying) {
-						track.Stop(0.1);
-					}
 					if (
 						this.isEquipped &&
 						!this.isGuardBroken &&
@@ -1564,6 +1940,7 @@ export class CombatController {
 		this.isStunned = false;
 		this.isGuardBroken = false;
 		this.isAttacking = false;
+		this.isDashing = false;
 		this.isInClash = false;
 		this.isInClashWinAnimation = false;
 		this.unbindClashSpace();
