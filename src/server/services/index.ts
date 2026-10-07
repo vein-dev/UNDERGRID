@@ -21,3 +21,4 @@ export * from "./ServerElevatorService";
 export * from "./ServerNpcService";
 export * from "./ServerVoiceZoneService";
 export * from "./ServerDuelService";
+export * from "./ServerRagdollService";

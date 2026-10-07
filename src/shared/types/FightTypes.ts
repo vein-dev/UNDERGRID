@@ -22,6 +22,7 @@ export interface CombatAnimationsConfig {
 	DashBack?: string;
 	DashLeft?: string;
 	DashRight?: string;
+	GetUp?: string;
 }
 
 export interface CombatSoundsConfig {
@@ -71,6 +72,8 @@ export interface ArczisCombatConfig {
 	DashCooldown: number;
 
 	// Clash
+	ClashCooldown: number;
+	ClashMaxDistance: number;
 	ClashDetectionWindow: number;
 	ClashButtonPressWindow: number;
 	ClashWinPunchDelay: number;
@@ -145,7 +148,9 @@ export const ARCZIS_COMBAT_CONFIG: ArczisCombatConfig = {
 	HeavyAnimationLock: 0.9,
 	DashCooldown: 0.65,
 
-	ClashDetectionWindow: 0.15,
+	ClashCooldown: 18.0,
+	ClashMaxDistance: 5.0,
+	ClashDetectionWindow: 0.08,
 	ClashButtonPressWindow: 3.0,
 	ClashWinPunchDelay: 0.83,
 	ClashWinStunDuration: 1.2,
@@ -206,6 +211,7 @@ export const ARCZIS_COMBAT_CONFIG: ArczisCombatConfig = {
 		DashBack: "rbxassetid://87173706445392",
 		DashLeft: "rbxassetid://121904811255542",
 		DashRight: "rbxassetid://78495267989803",
+		GetUp: "rbxassetid://88304366062605",
 	},
 
 	Sounds: {
@@ -233,6 +239,7 @@ export interface CombatPlayerData {
 	LastM1Time: number;
 	LastHeavyTime: number;
 	LastDashTime: number;
+	LastClashTime: number;
 	NextCombo: number;
 	LastStaminaUse: number;
 	HitReactionCount: number;

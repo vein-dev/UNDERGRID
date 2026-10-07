@@ -5,6 +5,27 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased] - 2026-10-07
 
 ### Added
+- **Smooth Get-Up Recovery Transition from Ragdoll**:
+  - Eliminated stiff and instant standing snaps after ragdoll knockdown:
+    - Replaced hard vertical teleportation with a smooth, physics-guided ground elevation tween from prone to upright position.
+    - Added a 0.65-second recovery window with motion locking so characters naturally play their getting-up sequence before resuming sprint or attacks.
+    - Included temporary wake-up invulnerability frames (iframes) preventing players from being endlessly combo-locked while rising from the floor.
+    - Blended smooth getting-up animation track from the ground into combat idle with natural fade transitions.
+
+- **Dynamic Physics Ragdoll for Clash Defeat & Knockouts**:
+  - Implemented physical ragdoll reactions for decisive combat climax moments:
+    - **Clash Duel Defeat**: The defeated fighter is propelled through the air in a dramatic 1.4-second ragdoll flight.
+    - **Duel Knockout (K.O.)**: Reaching fatal health threshold cleanly sends the defeated fighter into a 2.5-second limp knockdown before recovery.
+  - Standard combat moves (M1 combo punches, Heavy Push, and Guard Break) maintain upright posture and dedicated animation hit-reactions to keep pacing competitive.
+  - Automated getting-up recovery transition with raycast clearance preventing characters from clipping into floor geometry.
+
+- **Clash Duel (Mash Space) Pacing & Precision Rebalance**:
+  - Transformed clash duels into rare, cinematic climaxes rather than frequent disruptions during standard exchanges.
+  - Added an 18-second cooldown per fighter after a clash to guarantee smooth combo flows, blocking, and dodging without immediate QTE interruptions.
+  - Tightened physical contact distance from 10.5 studs to 5.0 studs, ensuring clashes only occur at realistic fist-strike distance.
+  - Enforced mutual facing direction checks so attacks from behind or flank angles never unintentionally trigger a clash.
+  - Sharpened the collision detection timing from 0.15s to 0.08s for authentic punch-against-punch collision precision.
+
 - **Clean Combat & Duel Interface**:
   - The hotbar now automatically hides during active combat (equipping fists) and throughout 1v1 duel matches (including the pre-fight countdown), ensuring an immersive and unobstructed view.
   - Number hotkey item switching is temporarily suppressed while the hotbar is hidden to prevent accidental weapon swapping during fast-paced exchanges.

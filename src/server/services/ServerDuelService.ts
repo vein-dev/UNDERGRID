@@ -1,6 +1,7 @@
 import { Players, ServerStorage } from "@rbxts/services";
 import { getRemoteEvent } from "shared/network";
 import { DUEL_CONFIG, DuelActiveData, DuelEndData, DuelInviteData, DuelState } from "shared/types";
+import { ServerRagdollService } from "./ServerRagdollService";
 
 interface ActiveDuelSession {
 	duelId: string;
@@ -111,6 +112,10 @@ export class ServerDuelService {
 		// If current health minus damage is near death (<= 5)
 		if (targetHumanoid.Health - damage <= 5) {
 			targetHumanoid.Health = 5;
+			const targetChar = target.Character;
+			if (targetChar) {
+				ServerRagdollService.getInstance().applyRagdoll(targetChar, 2.5);
+			}
 			this.endDuel(session, attacker, target, "Knockout");
 			return true;
 		}

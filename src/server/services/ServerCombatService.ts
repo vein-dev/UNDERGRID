@@ -10,6 +10,7 @@ import {
 } from "shared/types";
 import { MovementConfig } from "shared/config/MovementConfig";
 import { ServerDuelService } from "./ServerDuelService";
+import { ServerRagdollService } from "./ServerRagdollService";
 
 /**
  * ServerCombatService - Complete authoritative combat system
@@ -221,6 +222,7 @@ export class ServerCombatService {
 			LastM1Time: 0,
 			LastHeavyTime: 0,
 			LastDashTime: 0,
+			LastClashTime: 0,
 			NextCombo: 1,
 			LastStaminaUse: 0,
 			HitReactionCount: 1,
@@ -550,6 +552,11 @@ export class ServerCombatService {
 	}
 
 	private isPlayerDamageImmune(player: Player): boolean {
+		const char = player.Character;
+		if (char && char.GetAttribute("IsGettingUp") === true) {
+			return true;
+		}
+
 		const data = this.playerData.get(player);
 		if (!data) return false;
 
@@ -790,8 +797,23 @@ export class ServerCombatService {
 	// ═══════════════════════════════════════════════════════
 
 	private checkForClash(player: Player, timestamp: number): Player | undefined {
+		const now = timestamp;
+		const data1 = this.playerData.get(player);
+		if (!data1) return undefined;
+		if (data1.IsInClash || data1.IsClashWinner || data1.IsGuardBroken || data1.IsStunned) return undefined;
+		if (now - data1.LastClashTime < ARCZIS_COMBAT_CONFIG.ClashCooldown) {
+			return undefined;
+		}
+
 		for (const [otherPlayer, pendingData] of this.pendingM1s) {
 			if (otherPlayer !== player && pendingData) {
+				const data2 = this.playerData.get(otherPlayer);
+				if (!data2) continue;
+				if (data2.IsInClash || data2.IsClashWinner || data2.IsGuardBroken || data2.IsStunned) continue;
+				if (now - data2.LastClashTime < ARCZIS_COMBAT_CONFIG.ClashCooldown) {
+					continue;
+				}
+
 				const timeDiff = math.abs(timestamp - pendingData.timestamp);
 				if (timeDiff <= ARCZIS_COMBAT_CONFIG.ClashDetectionWindow) {
 					const char1 = player.Character;
@@ -801,8 +823,33 @@ export class ServerCombatService {
 						const hrp2 = char2.FindFirstChild("HumanoidRootPart") as BasePart | undefined;
 						if (hrp1 && hrp2) {
 							const distance = hrp1.Position.sub(hrp2.Position).Magnitude;
-							if (distance <= ARCZIS_COMBAT_CONFIG.HitboxSize.Z + ARCZIS_COMBAT_CONFIG.HitboxOffset + 2) {
-								return otherPlayer;
+							if (distance <= ARCZIS_COMBAT_CONFIG.ClashMaxDistance) {
+								// Validasi sudut hadap (Facing Check): kedua pemain harus saling berhadapan
+								const toOther = new Vector3(
+									hrp2.Position.X - hrp1.Position.X,
+									0,
+									hrp2.Position.Z - hrp1.Position.Z,
+								);
+								const toPlayer = new Vector3(
+									hrp1.Position.X - hrp2.Position.X,
+									0,
+									hrp1.Position.Z - hrp2.Position.Z,
+								);
+
+								if (toOther.Magnitude > 0.2 && toPlayer.Magnitude > 0.2) {
+									const dirToOther = toOther.Unit;
+									const dirToPlayer = toPlayer.Unit;
+
+									const look1 = hrp1.CFrame.LookVector;
+									const look2 = hrp2.CFrame.LookVector;
+									const flatLook1 = new Vector3(look1.X, 0, look1.Z).Unit;
+									const flatLook2 = new Vector3(look2.X, 0, look2.Z).Unit;
+
+									// Dot product >= 0.45 (keduanya saling menatap satu sama lain)
+									if (flatLook1.Dot(dirToOther) >= 0.45 && flatLook2.Dot(dirToPlayer) >= 0.45) {
+										return otherPlayer;
+									}
+								}
 							}
 						}
 					}
@@ -894,8 +941,11 @@ export class ServerCombatService {
 		data2.IsBlocking = false;
 		data1.IsClashImmune = true;
 		data2.IsClashImmune = true;
-		data1.ClashImmuneUntil = os.clock() + 999;
-		data2.ClashImmuneUntil = os.clock() + 999;
+		const now = os.clock();
+		data1.LastClashTime = now;
+		data2.LastClashTime = now;
+		data1.ClashImmuneUntil = now + ARCZIS_COMBAT_CONFIG.ClashCooldown;
+		data2.ClashImmuneUntil = now + ARCZIS_COMBAT_CONFIG.ClashCooldown;
 
 		this.syncCharacterValues(char1, data1);
 		this.syncCharacterValues(char2, data2);
@@ -1015,8 +1065,8 @@ export class ServerCombatService {
 		loserData.IsStunned = true;
 		loserData.IsAttacking = false;
 		loserData.CanBlockWhileStunned = false;
-		loserData.IsClashImmune = false;
-		loserData.ClashImmuneUntil = 0;
+		loserData.IsClashImmune = true;
+		loserData.ClashImmuneUntil = os.clock() + ARCZIS_COMBAT_CONFIG.ClashCooldown;
 		loserData.IsClashWinner = false;
 
 		this.syncCharacterValues(winnerChar, winnerData);
@@ -1077,6 +1127,12 @@ export class ServerCombatService {
 				loserKnockback.Parent = loserHRP;
 				Debris.AddItem(loserKnockback, 0.25);
 
+				ServerRagdollService.getInstance().applyRagdoll(
+					loserChar,
+					1.4,
+					unitKnockback.mul(ARCZIS_COMBAT_CONFIG.ClashWinKnockback).add(new Vector3(0, 8, 0)),
+				);
+
 				loserData.IsStunned = true;
 				loserData.CanBlockWhileStunned = true;
 				this.syncCharacterValues(loserChar, loserData);
@@ -1115,8 +1171,8 @@ export class ServerCombatService {
 					winnerData.IsStunned = false;
 					winnerData.IsGuardBroken = false;
 					winnerData.IsClashWinner = false;
-					winnerData.IsClashImmune = false;
-					winnerData.ClashImmuneUntil = 0;
+					winnerData.IsClashImmune = true;
+					winnerData.ClashImmuneUntil = os.clock() + ARCZIS_COMBAT_CONFIG.ClashCooldown;
 					this.syncCharacterValues(winnerChar, winnerData);
 					this.applySpeed(winnerChar, winnerData);
 					this.lockPlayerMovement(winnerChar, false);

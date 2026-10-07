@@ -22,6 +22,7 @@ import {
 	ServerNpcService,
 	ServerVoiceZoneService,
 	ServerDuelService,
+	ServerRagdollService,
 } from "./services";
 
 /**
@@ -81,6 +82,9 @@ function main() {
 
 	const duelService = ServerDuelService.getInstance();
 	duelService.init();
+
+	const ragdollService = ServerRagdollService.getInstance();
+	ragdollService.init();
 
 	ServerMusicService.getInstance();
 	ServerDjMusicService.getInstance();
