@@ -2,9 +2,32 @@
 
 All notable changes to this project will be documented in this file.
 
-## [Unreleased] - 2026-10-07
+## [Unreleased] - 2026-10-08
 
 ### Added
+- **Mobile Map & Graphics Performance Optimization**:
+  - **Massive Workspace Cleanup (-70% Descendants)**:
+    - Archived 51,225 raw editor animation/pose instances from `Workspace` into `ServerStorage/WorkspaceBackupAnimations`, freeing significant mobile RAM and replication overhead.
+  - **Dynamic Lighting & Shadow Pass Relief**:
+    - Disabled shadows across 66 dynamic stage/room lights to eliminate crippling multi-pass shadow render bottlenecks on mobile GPUs.
+    - Disabled `CastShadow` on 9,131 small decorative parts and props (<= 4 studs), drastically cutting shadow geometry draw calls.
+  - **Automatic LOD Mesh Scaling**:
+    - Upgraded 1,310 `MeshPart`s from fixed `Precise` rendering to `RenderFidelity.Automatic`, enabling engine Level-of-Detail geometry culling at distance.
+  - **Physics & Raycast Query Optimization**:
+    - Disabled `CanTouch` and `CanQuery` on 4,600+ static decorative props and set `CollisionFidelity` to `Box`/`Hull`, streamlining mobile physics step times.
+  - **Transparency Overdraw & Decal Deduplication**:
+    - Eliminated 820 duplicate and 100% invisible decals across fence props, removing severe alpha overdraw layers on mobile GPUs.
+  - **Adaptive Mobile Client Shaders ([GraphicsController.ts](file:///c:/Users/jordi/OneDrive/Desktop/Roblox/UNDERGRID/src/client/controllers/GraphicsController.ts))**:
+    - Automatically detects touch/mobile platforms to disable GPU-heavy `DepthOfFieldEffect`, providing razor-sharp, crystal-clear mobile visuals with lower temps.
+    - Sets `PrioritizeLightingQuality = false` on mobile devices to prevent forced high-end desktop compute passes, while maintaining full Ultra visuals on PC.
+
+- **Pre-Round 1v1 Duel Cinematic Intro**:
+  - Implemented an immersive cinematic camera sequence highlighting both combatants before the match begins:
+    - **Authentic Cinema Letterbox**: Features seamless edge-to-edge widescreen cinema bars identical to the spawn intro sequence, which glide away smoothly as the round begins.
+    - **Three-Quarter Side Profile Showcase**: Dramatic low-angle camera angles framing each fighter from a 3/4 side profile, extending sequence duration for a measured, high-tension pre-fight presentation.
+    - **Synchronized Stride & Fists Equip Animation**: Fighters stride forward with measured confidence before setting their hands into a ready combat fist stance.
+    - **Buttery-Smooth Combat Transition**: Instead of abrupt camera cuts, the perspective glides seamlessly from the intro showcase directly into the over-the-shoulder view, perfectly oriented toward the opponent as the round countdown begins.
+
 - **Smooth Get-Up Recovery Transition from Ragdoll**:
   - Eliminated stiff and instant standing snaps after ragdoll knockdown:
     - Replaced hard vertical teleportation with a smooth, physics-guided ground elevation tween from prone to upright position.

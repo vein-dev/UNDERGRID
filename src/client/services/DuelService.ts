@@ -1,11 +1,12 @@
 import { Players } from "@rbxts/services";
 import { getRemoteEvent } from "shared/network";
-import { DuelActiveData, DuelEndData, DuelInviteData } from "shared/types";
+import { DuelActiveData, DuelEndData, DuelIntroData, DuelInviteData } from "shared/types";
 import { GlobalNotificationService } from "./GlobalNotificationService";
 
 export interface DuelServiceCallbacks {
 	onInviteReceived?: (data: DuelInviteData) => void;
 	onInviteCancelled?: () => void;
+	onIntro?: (data: DuelIntroData) => void;
 	onCountdown?: (data: DuelActiveData, duration: number) => void;
 	onActive?: (data: DuelActiveData) => void;
 	onEnded?: (result: DuelEndData) => void;
@@ -74,7 +75,10 @@ export class DuelService {
 		});
 
 		this.duelStateEvent.OnClientEvent.Connect((state: unknown, ...args: unknown[]) => {
-			if (state === "Countdown") {
+			if (state === "Intro") {
+				const data = args[0] as DuelIntroData;
+				this.callbacks.onIntro?.(data);
+			} else if (state === "Countdown") {
 				const data = args[0] as DuelActiveData;
 				const duration = (args[1] as number) ?? 3;
 				this.activeDuel = data;

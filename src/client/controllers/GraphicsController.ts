@@ -4,6 +4,7 @@ import {
 	Players,
 	ReplicatedStorage,
 	SoundService,
+	UserInputService,
 	Workspace,
 } from "@rbxts/services";
 
@@ -54,6 +55,7 @@ export class GraphicsController {
 	 */
 	public optimizeLighting(): void {
 		pcall(() => {
+			const isMobile = UserInputService.TouchEnabled && !UserInputService.KeyboardEnabled;
 			Lighting.GlobalShadows = true;
 
 			// Pastikan mode Realistic aktif pada Roblox Unified Lighting System terbaru
@@ -63,7 +65,7 @@ export class GraphicsController {
 				lightingRecord.LightingStyle = enumRecord.LightingStyle.Realistic;
 			}
 			if (lightingRecord.PrioritizeLightingQuality !== undefined) {
-				lightingRecord.PrioritizeLightingQuality = true;
+				lightingRecord.PrioritizeLightingQuality = !isMobile;
 			}
 
 			// Nonaktifkan flat Blur 2D yang memburamkan seluruh layar, sisakan hanya blur khusus UI saat aktif
@@ -85,12 +87,14 @@ export class GraphicsController {
 				bloom.Name = "Bloom";
 				bloom.Parent = Lighting;
 			}
-			bloom.Intensity = 0.22; // Glow lembut terukur pada lampu & lampu jalan
-			bloom.Size = 16;
+			bloom.Intensity = isMobile ? 0.16 : 0.22; // Glow lembut terukur
+			bloom.Size = isMobile ? 12 : 16;
 			bloom.Threshold = 3.0; // Threshold tinggi: hanya neon/bohlam sejati yang glow, jalan & pakaian tetap matte
 			bloom.Enabled = true;
 
-			// 2. Realistic AAA DepthOfField (Seluruh gedung kota & gameplay tetap tajam dan jernih layaknya GTA V)
+			// 2. Realistic AAA DepthOfField
+			// Pada Mobile: Dinonaktifkan agar GPU mobile tidak drop FPS dan tampilan layar HP menjadi sangat tajam & jernih
+			// Pada PC: Tetap aktif untuk pengalaman sinematik
 			let dof = Lighting.FindFirstChildOfClass("DepthOfFieldEffect");
 			if (!dof) {
 				dof = new Instance("DepthOfFieldEffect");
@@ -101,7 +105,7 @@ export class GraphicsController {
 			dof.FocusDistance = 150;
 			dof.InFocusRadius = 350;
 			dof.FarIntensity = 0; // Menghilangkan blur berlebih pada gedung latar belakang agar seluruh kota jernih
-			dof.Enabled = true;
+			dof.Enabled = !isMobile;
 
 			// 3. Cinematic Soft God Rays (SunRays halus merata tanpa artefak garis kasar)
 			let sunRays = Lighting.FindFirstChildOfClass("SunRaysEffect");
@@ -110,7 +114,7 @@ export class GraphicsController {
 				sunRays.Name = "SunRays";
 				sunRays.Parent = Lighting;
 			}
-			sunRays.Intensity = 0.2;
+			sunRays.Intensity = isMobile ? 0.1 : 0.2;
 			sunRays.Spread = 0.65;
 			sunRays.Enabled = true;
 

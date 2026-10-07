@@ -1,14 +1,15 @@
-import React, { useEffect, useRef, useState } from "@rbxts/react";
+import React, { useEffect, useState } from "@rbxts/react";
 import ReactRoblox, { Root } from "@rbxts/react-roblox";
-import { Players, RunService, TweenService, Workspace } from "@rbxts/services";
-import { DuelActiveData, DuelEndData } from "shared/types";
+import { Players } from "@rbxts/services";
+import { DuelActiveData, DuelEndData, DuelIntroData } from "shared/types";
 import { MonochromeTheme } from "../Theme";
 import { Fonts } from "../Typography";
 import { LucideIcon } from "../components/LucideIcon";
 
 export interface DuelHudComponentProps {
-	mode: "None" | "Countdown" | "Active" | "Ended";
+	mode: "None" | "Intro" | "Countdown" | "Active" | "Ended";
 	countdownNumber?: number | string;
+	introData?: DuelIntroData;
 	activeData?: DuelActiveData;
 	endData?: DuelEndData;
 	onFinished?: () => void;
@@ -48,6 +49,11 @@ export function DuelHudComponent({
 			task.cancel(thread);
 		};
 	}, [mode, activeData]);
+
+	// ─── 0. Intro Mode (Cinematic overlay handled by CinematicOverlayView like spawn animation) ───
+	if (mode === "Intro") {
+		return <></>;
+	}
 
 	// ─── 1. Countdown Mode (3... 2... 1... FIGHT!) ───
 	if (mode === "Countdown") {
@@ -251,8 +257,9 @@ export class DuelHudView {
 	private root: Root;
 	private screenGui?: ScreenGui;
 
-	private currentMode: "None" | "Countdown" | "Active" | "Ended" = "None";
+	private currentMode: "None" | "Intro" | "Countdown" | "Active" | "Ended" = "None";
 	private countdownNumber?: number | string;
+	private introData?: DuelIntroData;
 	private activeData?: DuelActiveData;
 	private endData?: DuelEndData;
 
@@ -283,6 +290,12 @@ export class DuelHudView {
 			DuelHudView.instance = new DuelHudView(targetContainer);
 		}
 		return DuelHudView.instance;
+	}
+
+	public showIntro(data: DuelIntroData): void {
+		this.currentMode = "Intro";
+		this.introData = data;
+		this.render();
 	}
 
 	public startCountdown(duration = 3, onFinished?: () => void): void {
@@ -330,6 +343,7 @@ export class DuelHudView {
 	public hide(): void {
 		this.currentMode = "None";
 		this.countdownNumber = undefined;
+		this.introData = undefined;
 		this.activeData = undefined;
 		this.endData = undefined;
 		this.render();
@@ -352,6 +366,7 @@ export class DuelHudView {
 			<DuelHudComponent
 				mode={this.currentMode}
 				countdownNumber={this.countdownNumber}
+				introData={this.introData}
 				activeData={this.activeData}
 				endData={this.endData}
 			/>,

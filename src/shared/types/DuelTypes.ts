@@ -2,12 +2,21 @@
  * DuelTypes - Type definitions for 1v1 PvP Duel System.
  */
 
-export type DuelState = "Idle" | "Pending" | "Countdown" | "Active" | "Ended";
+export type DuelState = "Idle" | "Pending" | "Intro" | "Countdown" | "Active" | "Ended";
 
 export interface DuelInviteData {
 	challengerUserId: number;
 	challengerName: string;
 	challengerDisplayName: string;
+	durationSeconds: number;
+}
+
+export interface DuelIntroData {
+	opponentUserId: number;
+	opponentName: string;
+	opponentDisplayName: string;
+	player1UserId: number;
+	player2UserId: number;
 	durationSeconds: number;
 }
 
@@ -28,6 +37,7 @@ export interface DuelEndData {
 
 export interface DuelConfig {
 	InviteTimeoutSeconds: number;
+	IntroSeconds: number;
 	CountdownSeconds: number;
 	MaxDuelDurationSeconds: number;
 	MaxChallengeDistance: number;
@@ -36,6 +46,7 @@ export interface DuelConfig {
 
 export const DUEL_CONFIG: DuelConfig = {
 	InviteTimeoutSeconds: 15,
+	IntroSeconds: 8.0,
 	CountdownSeconds: 3,
 	MaxDuelDurationSeconds: 180,
 	MaxChallengeDistance: 50,

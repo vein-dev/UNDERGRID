@@ -1,6 +1,6 @@
 import { Players, ServerStorage } from "@rbxts/services";
 import { getRemoteEvent } from "shared/network";
-import { DUEL_CONFIG, DuelActiveData, DuelEndData, DuelInviteData, DuelState } from "shared/types";
+import { DUEL_CONFIG, DuelActiveData, DuelEndData, DuelIntroData, DuelInviteData, DuelState } from "shared/types";
 import { ServerRagdollService } from "./ServerRagdollService";
 
 interface ActiveDuelSession {
@@ -226,9 +226,13 @@ export class ServerDuelService {
 			duelId,
 			player1,
 			player2,
-			state: "Countdown",
+			state: "Intro",
 			startTime: os.clock(),
-			expiresAt: os.clock() + DUEL_CONFIG.CountdownSeconds + DUEL_CONFIG.MaxDuelDurationSeconds,
+			expiresAt:
+				os.clock() +
+				DUEL_CONFIG.IntroSeconds +
+				DUEL_CONFIG.CountdownSeconds +
+				DUEL_CONFIG.MaxDuelDurationSeconds,
 		};
 
 		this.activeDuels.set(duelId, session);
@@ -239,17 +243,47 @@ export class ServerDuelService {
 		player1.Character?.SetAttribute("InDuelWith", player2.UserId);
 		player2.Character?.SetAttribute("InDuelWith", player1.UserId);
 
-		// Heal both players to full health
+		// Heal both players to full health and lock movement during intro
 		const hum1 = player1.Character?.FindFirstChildOfClass("Humanoid");
 		const hum2 = player2.Character?.FindFirstChildOfClass("Humanoid");
-		if (hum1) hum1.Health = hum1.MaxHealth;
-		if (hum2) hum2.Health = hum2.MaxHealth;
+		if (hum1) {
+			hum1.Health = hum1.MaxHealth;
+			hum1.WalkSpeed = 0;
+			hum1.JumpPower = 0;
+		}
+		if (hum2) {
+			hum2.Health = hum2.MaxHealth;
+			hum2.WalkSpeed = 0;
+			hum2.JumpPower = 0;
+		}
 
-		// Berikan dan equip tool Fists ke kedua pemain secara otoritatif
-		this.ensureFistsEquipped(player1);
-		this.ensureFistsEquipped(player2);
+		// Face characters toward each other
+		const hrp1 = player1.Character?.FindFirstChild("HumanoidRootPart") as BasePart | undefined;
+		const hrp2 = player2.Character?.FindFirstChild("HumanoidRootPart") as BasePart | undefined;
+		if (hrp1 && hrp2) {
+			const pos1 = hrp1.Position;
+			const pos2 = hrp2.Position;
+			hrp1.CFrame = CFrame.lookAt(pos1, new Vector3(pos2.X, pos1.Y, pos2.Z));
+			hrp2.CFrame = CFrame.lookAt(pos2, new Vector3(pos1.X, pos2.Y, pos1.Z));
+		}
 
-		// Fire Countdown to both players
+		const introData1: DuelIntroData = {
+			opponentUserId: player2.UserId,
+			opponentName: player2.Name,
+			opponentDisplayName: player2.DisplayName,
+			player1UserId: player1.UserId,
+			player2UserId: player2.UserId,
+			durationSeconds: DUEL_CONFIG.IntroSeconds,
+		};
+		const introData2: DuelIntroData = {
+			opponentUserId: player1.UserId,
+			opponentName: player1.Name,
+			opponentDisplayName: player1.DisplayName,
+			player1UserId: player1.UserId,
+			player2UserId: player2.UserId,
+			durationSeconds: DUEL_CONFIG.IntroSeconds,
+		};
+
 		const activeData1: DuelActiveData = {
 			opponentUserId: player2.UserId,
 			opponentName: player2.Name,
@@ -263,22 +297,45 @@ export class ServerDuelService {
 			startTime: os.clock(),
 		};
 
-		this.duelStateEvent.FireClient(player1, "Countdown", activeData1, DUEL_CONFIG.CountdownSeconds);
-		this.duelStateEvent.FireClient(player2, "Countdown", activeData2, DUEL_CONFIG.CountdownSeconds);
+		// 1. Fire Intro phase to both clients
+		this.duelStateEvent.FireClient(player1, "Intro", introData1);
+		this.duelStateEvent.FireClient(player2, "Intro", introData2);
 
-		// After countdown -> Enter Active State
-		task.delay(DUEL_CONFIG.CountdownSeconds, () => {
+		// 2. After Intro -> Enter Countdown Phase (3... 2... 1... FIGHT!)
+		task.delay(DUEL_CONFIG.IntroSeconds, () => {
 			if (this.activeDuels.get(duelId) !== session) return;
 
-			session.state = "Active";
-			session.startTime = os.clock();
-
-			// Pastikan Fists tetap terpasang saat aktif
+			session.state = "Countdown";
 			this.ensureFistsEquipped(player1);
 			this.ensureFistsEquipped(player2);
 
-			this.duelStateEvent.FireClient(player1, "Active", activeData1);
-			this.duelStateEvent.FireClient(player2, "Active", activeData2);
+			this.duelStateEvent.FireClient(player1, "Countdown", activeData1, DUEL_CONFIG.CountdownSeconds);
+			this.duelStateEvent.FireClient(player2, "Countdown", activeData2, DUEL_CONFIG.CountdownSeconds);
+
+			// 3. After countdown -> Enter Active State
+			task.delay(DUEL_CONFIG.CountdownSeconds, () => {
+				if (this.activeDuels.get(duelId) !== session) return;
+
+				session.state = "Active";
+				session.startTime = os.clock();
+
+				if (hum1 && hum1.Health > 0) {
+					hum1.WalkSpeed = 11;
+					hum1.UseJumpPower = true;
+					hum1.JumpPower = 50;
+				}
+				if (hum2 && hum2.Health > 0) {
+					hum2.WalkSpeed = 11;
+					hum2.UseJumpPower = true;
+					hum2.JumpPower = 50;
+				}
+
+				this.ensureFistsEquipped(player1);
+				this.ensureFistsEquipped(player2);
+
+				this.duelStateEvent.FireClient(player1, "Active", activeData1);
+				this.duelStateEvent.FireClient(player2, "Active", activeData2);
+			});
 		});
 	}
 
