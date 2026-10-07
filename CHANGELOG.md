@@ -18,8 +18,11 @@ All notable changes to this project will be documented in this file.
   - **Transparency Overdraw & Decal Deduplication**:
     - Eliminated 820 duplicate and 100% invisible decals across fence props, removing severe alpha overdraw layers on mobile GPUs.
   - **Adaptive Mobile Client Shaders ([GraphicsController.ts](file:///c:/Users/jordi/OneDrive/Desktop/Roblox/UNDERGRID/src/client/controllers/GraphicsController.ts))**:
-    - Automatically detects touch/mobile platforms to disable GPU-heavy `DepthOfFieldEffect`, providing razor-sharp, crystal-clear mobile visuals with lower temps.
-    - Sets `PrioritizeLightingQuality = false` on mobile devices to prevent forced high-end desktop compute passes, while maintaining full Ultra visuals on PC.
+    - Automatically detects touch/mobile platforms to manage GPU workload and prevent forced high-end desktop compute passes, while maintaining full Ultra visuals on PC.
+  - **Cinematic DSLR Bokeh Depth-of-Field ([GraphicsController.ts](file:///c:/Users/jordi/OneDrive/Desktop/Roblox/UNDERGRID/src/client/controllers/GraphicsController.ts))**:
+    - Added dynamic real-time focal tracking syncing `DepthOfFieldEffect.FocusDistance` directly with camera-to-character distance every frame.
+    - Guaranteed zero foreground blur on the player character, weapons, and accessories (`NearIntensity = 0`, `InFocusRadius = 20 studs`).
+    - Produced creamy, cinematic DSLR-grade bokeh background blur across distant architecture, streetlights, and skyline (`FarIntensity = 0.75`), matching professional photographic reference aesthetics.
 
 - **Pre-Round 1v1 Duel Cinematic Intro**:
   - Implemented an immersive cinematic camera sequence highlighting both combatants before the match begins:

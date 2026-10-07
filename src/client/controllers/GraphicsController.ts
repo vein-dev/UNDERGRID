@@ -3,6 +3,7 @@ import {
 	Lighting,
 	Players,
 	ReplicatedStorage,
+	RunService,
 	SoundService,
 	UserInputService,
 	Workspace,
@@ -46,12 +47,15 @@ export class GraphicsController {
 			});
 		});
 
+		// 3. Pasang Dynamic Focus Tracking agar kamera selalu fokus tajam ke karakter pemain
+		this.startDynamicDepthOfFieldTracking();
+
 		print("[GraphicsController] Initialized: Global HD Assets & Lighting pipeline active.");
 	}
 
 	/**
-	 * Mengoptimalkan pencahayaan dan menonaktifkan efek blur jarak dekat pada DepthOfField.
-	 * Memastikan karakter pemain dan objek di sekitarnya selalu tampil tajam (sharp).
+	 * Mengoptimalkan pencahayaan dan mengkalibrasi efek DepthOfField bergaya DSLR Bokeh.
+	 * Memastikan karakter pemain selalu 100% tajam dan detail, sementara latar belakang blur sinematik.
 	 */
 	public optimizeLighting(): void {
 		pcall(() => {
@@ -92,20 +96,18 @@ export class GraphicsController {
 			bloom.Threshold = 3.0; // Threshold tinggi: hanya neon/bohlam sejati yang glow, jalan & pakaian tetap matte
 			bloom.Enabled = true;
 
-			// 2. Realistic AAA DepthOfField
-			// Pada Mobile: Dinonaktifkan agar GPU mobile tidak drop FPS dan tampilan layar HP menjadi sangat tajam & jernih
-			// Pada PC: Tetap aktif untuk pengalaman sinematik
+			// 2. Realistic DSLR Bokeh DepthOfField (Karakter utama tajam & fokus, latar belakang blur sinematik)
 			let dof = Lighting.FindFirstChildOfClass("DepthOfFieldEffect");
 			if (!dof) {
 				dof = new Instance("DepthOfFieldEffect");
 				dof.Name = "DepthOfField";
 				dof.Parent = Lighting;
 			}
-			dof.NearIntensity = 0; // Karakter & gameplay 100% tajam
-			dof.FocusDistance = 150;
-			dof.InFocusRadius = 350;
-			dof.FarIntensity = 0; // Menghilangkan blur berlebih pada gedung latar belakang agar seluruh kota jernih
-			dof.Enabled = !isMobile;
+			dof.NearIntensity = 0; // Karakter, tangan, dan pakaian 100% selalu tajam (tanpa blur depan)
+			dof.FocusDistance = 15; // Jarak fokus dasar ke karakter (diperbarui dinamis per frame)
+			dof.InFocusRadius = 20; // Zona tajam di sekitar karakter (pijakan kaki & lawan dekat tetap tajam)
+			dof.FarIntensity = 0.75; // Efek bokeh/blur creamy pada latar belakang gedung/pohon persis foto referensi
+			dof.Enabled = true;
 
 			// 3. Cinematic Soft God Rays (SunRays halus merata tanpa artefak garis kasar)
 			let sunRays = Lighting.FindFirstChildOfClass("SunRaysEffect");
@@ -370,5 +372,29 @@ export class GraphicsController {
 			onQueueUpdate?.(remaining);
 			task.wait(0.15);
 		}
+	}
+
+	/**
+	 * Melacak jarak kamera ke karakter pemain secara dinamis setiap frame.
+	 * Menjamin karakter pemain selalu berada di titik fokus tertajam (FocusDistance),
+	 * sementara latar belakang di kejauhan otomatis mendapatkan efek blur bokeh DSLR yang halus seperti foto referensi.
+	 */
+	private startDynamicDepthOfFieldTracking(): void {
+		const localPlayer = Players.LocalPlayer;
+		const dof = Lighting.FindFirstChildOfClass("DepthOfFieldEffect");
+		if (!dof) return;
+
+		RunService.RenderStepped.Connect(() => {
+			const camera = Workspace.CurrentCamera;
+			const character = localPlayer.Character;
+			if (!camera || !character) return;
+
+			const rootPart = (character.FindFirstChild("HumanoidRootPart") ??
+				character.FindFirstChild("Head")) as BasePart | undefined;
+			if (!rootPart) return;
+
+			const distance = camera.CFrame.Position.sub(rootPart.Position).Magnitude;
+			dof.FocusDistance = math.clamp(distance, 4, 100);
+		});
 	}
 }
