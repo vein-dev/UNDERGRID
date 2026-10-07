@@ -1,5 +1,7 @@
 import { Players } from "@rbxts/services";
 import { DuelActiveData, DuelEndData, DuelInviteData } from "shared/types";
+import { BackpackController } from "./BackpackController";
+import { HotbarController } from "./HotbarController";
 import { DuelService } from "../services/DuelService";
 import { DuelHudView } from "../ui/views/DuelHudView";
 import { DuelInviteView } from "../ui/views/DuelInviteView";
@@ -54,6 +56,8 @@ export class DuelController {
 
 	private handleCountdown(data: DuelActiveData, duration: number): void {
 		this.inviteView.hide();
+		BackpackController.getInstance().toggle(false);
+		HotbarController.getInstance().setVisible(false);
 
 		// Play countdown (3... 2... 1... FIGHT!)
 		this.hudView.startCountdown(duration, () => {
@@ -62,6 +66,8 @@ export class DuelController {
 	}
 
 	private handleActive(data: DuelActiveData): void {
+		BackpackController.getInstance().toggle(false);
+		HotbarController.getInstance().setVisible(false);
 		this.equipCombatTool();
 		this.hudView.showActive(data);
 	}
@@ -69,11 +75,13 @@ export class DuelController {
 	private handleEnded(result: DuelEndData): void {
 		this.hudView.showEnded(result, () => {
 			this.unequipCombatTool();
+			HotbarController.getInstance().setVisible(true);
 		});
 
 		// Ensure tools unequipped after a grace period
 		task.delay(3.5, () => {
 			this.unequipCombatTool();
+			HotbarController.getInstance().setVisible(true);
 		});
 	}
 

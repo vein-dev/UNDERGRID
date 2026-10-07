@@ -99,6 +99,7 @@ export class HotbarController {
 	private setupInputListener(): void {
 		UserInputService.InputBegan.Connect((input, gameProcessed) => {
 			if (gameProcessed) return;
+			if (!this.isVisible) return;
 
 			const slotNumber = HotbarController.KEY_MAP.get(input.KeyCode);
 			if (slotNumber !== undefined) {

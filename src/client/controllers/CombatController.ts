@@ -11,6 +11,7 @@ import {
 } from "@rbxts/services";
 import { AvatarContextMenuView } from "client/ui/views/AvatarContextMenuView";
 import { CombatHudView } from "client/ui/views/CombatHudView";
+import { HotbarController } from "./HotbarController";
 import { DuelService } from "../services/DuelService";
 import { getRemoteEvent } from "shared/network";
 import { ARCZIS_COMBAT_CONFIG } from "shared/types";
@@ -244,7 +245,7 @@ export class CombatController {
 
 				if (this.humanoidRootPart && this.humanoid && this.humanoid.Health > 0) {
 					if (target && this.isTargetLocked) {
-						// ─── TARGET LOCK-ON (DUELING GROUNDS STYLE) ───
+						// ─── TARGET Lock ON ───
 						const targetHrp = target.FindFirstChild("HumanoidRootPart") as BasePart | undefined;
 						if (targetHrp) {
 							const myPos = this.humanoidRootPart.Position;
@@ -254,23 +255,33 @@ export class CombatController {
 								targetHrp.Position.Z - myPos.Z,
 							);
 
-							// 1. Karakter selalu menghadap lurus ke musuh (Orientasi presisi untuk strafe & dodge)
+							// 1. Idle Stright Camera
 							if (toTarget.Magnitude > 0.4) {
 								const targetRot = CFrame.lookAt(myPos, myPos.add(toTarget));
 								this.humanoidRootPart.CFrame = this.humanoidRootPart.CFrame.Lerp(targetRot, 0.22);
 							}
 
-							// 2. Kamera mengunci musuh di tengah layar (Dueling Grounds Lock Camera)
+							// 2. Overshoulder Camera
+							const targetOffset = new Vector3(2.2, 0.85, 0);
+							this.humanoid.CameraOffset = this.humanoid.CameraOffset.Lerp(targetOffset, 0.15);
+
+							// 3. Camera Focusing enemy
 							const camera = Workspace.CurrentCamera;
 							if (camera) {
 								const camPos = camera.CFrame.Position;
 								const focusPoint = targetHrp.Position.add(new Vector3(0, 1.3, 0));
 								const desiredCamRot = CFrame.lookAt(camPos, focusPoint);
-								camera.CFrame = camera.CFrame.Lerp(desiredCamRot, isTouchDevice ? 0.10 : 0.15);
+								camera.CFrame = camera.CFrame.Lerp(desiredCamRot, isTouchDevice ? 0.1 : 0.15);
 							}
 						}
 					} else {
 						// ─── FREE CAMERA MODE (NON-LOCK) ───
+						// Kembalikan CameraOffset ke posisi tengah standar kombat
+						if (this.humanoid) {
+							const normalOffset = new Vector3(0, 0.5, 0);
+							this.humanoid.CameraOffset = this.humanoid.CameraOffset.Lerp(normalOffset, 0.15);
+						}
+
 						// Karakter berputar menghadap arah horizontal kamera hanya jika sedang berjalan
 						const camera = Workspace.CurrentCamera;
 						if (camera && this.humanoid.MoveDirection.Magnitude > 0.05) {
@@ -287,7 +298,9 @@ export class CombatController {
 			this.updateMovement();
 		});
 
-		this.studioPrint("[CombatController] Initialized successfully with Arczis system bindings & procedural fallback.");
+		this.studioPrint(
+			"[CombatController] Initialized successfully with Arczis system bindings & procedural fallback.",
+		);
 	}
 
 	private studioPrint(...args: unknown[]): void {
@@ -376,7 +389,9 @@ export class CombatController {
 
 		const isCombatTool = (name: string) => {
 			const lower = name.lower();
-			return lower === "fists" || lower === "fist" || lower === "combatgloves" || lower.find("fist")[0] !== undefined;
+			return (
+				lower === "fists" || lower === "fist" || lower === "combatgloves" || lower.find("fist")[0] !== undefined
+			);
 		};
 
 		// Check if Fists tool is already equipped
@@ -406,7 +421,9 @@ export class CombatController {
 	private setupCombatToolWatcher(): void {
 		const isCombatTool = (name: string) => {
 			const lower = name.lower();
-			return lower === "fists" || lower === "fist" || lower === "combatgloves" || lower.find("fist")[0] !== undefined;
+			return (
+				lower === "fists" || lower === "fist" || lower === "combatgloves" || lower.find("fist")[0] !== undefined
+			);
 		};
 
 		const handleToolAdded = (tool: Tool) => {
@@ -495,14 +512,13 @@ export class CombatController {
 	}
 
 	private playProceduralM1(combo: number): void {
-		if (!this.rightShoulder || !this.leftShoulder || !this.defaultRightShoulderC0 || !this.defaultLeftShoulderC0) return;
+		if (!this.rightShoulder || !this.leftShoulder || !this.defaultRightShoulderC0 || !this.defaultLeftShoulderC0)
+			return;
 		this.isProceduralPunching = true;
 
 		if (combo === 1) {
 			// Right jab: swing forward
-			const targetC0 = this.defaultRightShoulderC0.mul(
-				CFrame.Angles(math.rad(85), math.rad(10), math.rad(25)),
-			);
+			const targetC0 = this.defaultRightShoulderC0.mul(CFrame.Angles(math.rad(85), math.rad(10), math.rad(25)));
 			const tweenOut = TweenService.Create(
 				this.rightShoulder,
 				new TweenInfo(0.08, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
@@ -524,9 +540,7 @@ export class CombatController {
 			});
 		} else {
 			// Left straight punch
-			const targetC0 = this.defaultLeftShoulderC0.mul(
-				CFrame.Angles(math.rad(85), math.rad(-10), math.rad(-25)),
-			);
+			const targetC0 = this.defaultLeftShoulderC0.mul(CFrame.Angles(math.rad(85), math.rad(-10), math.rad(-25)));
 			const tweenOut = TweenService.Create(
 				this.leftShoulder,
 				new TweenInfo(0.08, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
@@ -550,34 +564,25 @@ export class CombatController {
 	}
 
 	private playProceduralHeavy(): void {
-		if (!this.rightShoulder || !this.leftShoulder || !this.defaultRightShoulderC0 || !this.defaultLeftShoulderC0) return;
+		if (!this.rightShoulder || !this.leftShoulder || !this.defaultRightShoulderC0 || !this.defaultLeftShoulderC0)
+			return;
 		this.isProceduralPunching = true;
 
 		// Both arms punch forward with torso lunge
-		const rightTarget = this.defaultRightShoulderC0.mul(
-			CFrame.Angles(math.rad(95), math.rad(20), math.rad(15)),
-		);
-		const leftTarget = this.defaultLeftShoulderC0.mul(
-			CFrame.Angles(math.rad(95), math.rad(-20), math.rad(-15)),
-		);
+		const rightTarget = this.defaultRightShoulderC0.mul(CFrame.Angles(math.rad(95), math.rad(20), math.rad(15)));
+		const leftTarget = this.defaultLeftShoulderC0.mul(CFrame.Angles(math.rad(95), math.rad(-20), math.rad(-15)));
 
-		TweenService.Create(
-			this.rightShoulder,
-			new TweenInfo(0.12, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
-			{ C0: rightTarget },
-		).Play();
-		TweenService.Create(
-			this.leftShoulder,
-			new TweenInfo(0.12, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
-			{ C0: leftTarget },
-		).Play();
+		TweenService.Create(this.rightShoulder, new TweenInfo(0.12, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
+			C0: rightTarget,
+		}).Play();
+		TweenService.Create(this.leftShoulder, new TweenInfo(0.12, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
+			C0: leftTarget,
+		}).Play();
 
 		if (this.rootJoint && this.defaultRootJointC0) {
-			TweenService.Create(
-				this.rootJoint,
-				new TweenInfo(0.12, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
-				{ C0: this.defaultRootJointC0.mul(CFrame.Angles(math.rad(15), 0, 0)) },
-			).Play();
+			TweenService.Create(this.rootJoint, new TweenInfo(0.12, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+				C0: this.defaultRootJointC0.mul(CFrame.Angles(math.rad(15), 0, 0)),
+			}).Play();
 		}
 
 		task.delay(0.25, () => {
@@ -610,7 +615,8 @@ export class CombatController {
 	}
 
 	private setProceduralBlock(active: boolean): void {
-		if (!this.rightShoulder || !this.leftShoulder || !this.defaultRightShoulderC0 || !this.defaultLeftShoulderC0) return;
+		if (!this.rightShoulder || !this.leftShoulder || !this.defaultRightShoulderC0 || !this.defaultLeftShoulderC0)
+			return;
 		this.isProceduralBlocking = active;
 
 		if (active) {
@@ -618,9 +624,7 @@ export class CombatController {
 			const rightTarget = this.defaultRightShoulderC0.mul(
 				CFrame.Angles(math.rad(70), math.rad(-20), math.rad(-45)),
 			);
-			const leftTarget = this.defaultLeftShoulderC0.mul(
-				CFrame.Angles(math.rad(70), math.rad(20), math.rad(45)),
-			);
+			const leftTarget = this.defaultLeftShoulderC0.mul(CFrame.Angles(math.rad(70), math.rad(20), math.rad(45)));
 			TweenService.Create(
 				this.rightShoulder,
 				new TweenInfo(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
@@ -693,6 +697,9 @@ export class CombatController {
 		// Tutup Avatar Context Menu jika sedang terbuka saat masuk fight mode
 		AvatarContextMenuView.getInstance().hide();
 
+		// Sembunyikan Hotbar saat masuk fight mode
+		HotbarController.getInstance().setVisible(false);
+
 		// Hentikan animasi tool bawaan Roblox (toolnone / slash)
 		this.suppressToolNoneAnimations();
 
@@ -708,12 +715,7 @@ export class CombatController {
 			equipTrack.Play(0.1);
 			this.playLocalSound(ARCZIS_COMBAT_CONFIG.Sounds.Equip);
 			task.delay(math.max(0.3, equipTrack.Length * 0.7), () => {
-				if (
-					this.isEquipped &&
-					!this.isGuardBroken &&
-					!this.isInClash &&
-					!this.isStunned
-				) {
+				if (this.isEquipped && !this.isGuardBroken && !this.isInClash && !this.isStunned) {
 					this.updateMovement();
 				}
 			});
@@ -760,6 +762,7 @@ export class CombatController {
 		this.setCombatCamera(false);
 
 		this.combatHud.setVisible(false);
+		HotbarController.getInstance().setVisible(true);
 		this.isBlocking = false;
 		this.isAttacking = false;
 		this.isSprinting = false;
@@ -787,6 +790,7 @@ export class CombatController {
 			this.isTargetLocked = false;
 			this.combatHud.setTargetLocked(false);
 			this.combatHud.setVisible(false);
+			HotbarController.getInstance().setVisible(true);
 			this.stopAllCombatAnims();
 			this.setProceduralBlock(false);
 			this.cleanToolNoneListeners();
@@ -804,6 +808,7 @@ export class CombatController {
 			UserInputService.MouseIconEnabled = true;
 			this.setCombatCamera(false);
 		} else if (this.isEquipped) {
+			HotbarController.getInstance().setVisible(false);
 			if (this.humanoid) {
 				this.humanoid.AutoRotate = false;
 				this.humanoid.CameraOffset = new Vector3(0, 0.5, 0);
@@ -981,6 +986,9 @@ export class CombatController {
 			this.currentLockTarget = undefined;
 			this.updateLockReticle(undefined);
 			this.combatHud.setTargetLocked(false);
+			if (this.humanoid) {
+				this.humanoid.CameraOffset = new Vector3(0, 0.5, 0);
+			}
 			this.lastActionDebug = "Target Lock: OFF (Free Camera)";
 			this.updateDebugHUD();
 		} else {
@@ -1014,11 +1022,7 @@ export class CombatController {
 			const targetHrp = target.FindFirstChild("HumanoidRootPart") as BasePart | undefined;
 			if (targetHrp) {
 				const myPos = this.humanoidRootPart.Position;
-				const dir = new Vector3(
-					targetHrp.Position.X - myPos.X,
-					0,
-					targetHrp.Position.Z - myPos.Z,
-				);
+				const dir = new Vector3(targetHrp.Position.X - myPos.X, 0, targetHrp.Position.Z - myPos.Z);
 				if (dir.Magnitude > 0.4) {
 					this.humanoidRootPart.CFrame = CFrame.lookAt(myPos, myPos.add(dir));
 					return;
@@ -1169,7 +1173,12 @@ export class CombatController {
 		return resolved;
 	}
 
-	private loadAnim(name: string, id: string, priority: Enum.AnimationPriority, looped = false): AnimationTrack | undefined {
+	private loadAnim(
+		name: string,
+		id: string,
+		priority: Enum.AnimationPriority,
+		looped = false,
+	): AnimationTrack | undefined {
 		if (!this.animator || !id || id === "" || id.find("YOUR_")[0] !== undefined) {
 			this.studioWarn(`[CombatController] Lewati '${name}': ID '${id}' tidak valid atau Animator tidak ada.`);
 			return undefined;
@@ -1253,7 +1262,9 @@ export class CombatController {
 		if (track) {
 			if (!track.IsPlaying) {
 				track.Play(fadeTime);
-				this.studioPrint(`[CombatController] Memainkan animasi: ${name} (Priority: ${track.Priority.Name}, Length: ${track.Length})`);
+				this.studioPrint(
+					`[CombatController] Memainkan animasi: ${name} (Priority: ${track.Priority.Name}, Length: ${track.Length})`,
+				);
 			}
 			return track;
 		} else {
@@ -1366,7 +1377,11 @@ export class CombatController {
 				this.stopAnim("CombatRun", 0.1);
 				const walkTrack = this.playAnim("CombatWalk", 0.15);
 				if (walkTrack && walkTrack.IsPlaying) {
-					const walkScale = math.clamp(this.humanoid.WalkSpeed / ARCZIS_COMBAT_CONFIG.DefaultWalkSpeed, 0.4, 1.4);
+					const walkScale = math.clamp(
+						this.humanoid.WalkSpeed / ARCZIS_COMBAT_CONFIG.DefaultWalkSpeed,
+						0.4,
+						1.4,
+					);
 					walkTrack.AdjustSpeed(walkScale);
 				}
 			}
@@ -1449,7 +1464,6 @@ export class CombatController {
 			}
 			return;
 		}
-
 	}
 
 	private onInputEnded(input: InputObject, _processed: boolean): void {
@@ -1661,11 +1675,9 @@ export class CombatController {
 		// Fallback prosedural jika animasi belum siap / tidak dimainkan
 		if (!playedAnim && this.rootJoint && this.defaultRootJointC0) {
 			const tiltAngle = dashAnimName === "DashBack" ? math.rad(-12) : math.rad(12);
-			TweenService.Create(
-				this.rootJoint,
-				new TweenInfo(0.08, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
-				{ C0: this.defaultRootJointC0.mul(CFrame.Angles(tiltAngle, 0, 0)) },
-			).Play();
+			TweenService.Create(this.rootJoint, new TweenInfo(0.08, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+				C0: this.defaultRootJointC0.mul(CFrame.Angles(tiltAngle, 0, 0)),
+			}).Play();
 			task.delay(0.18, () => {
 				if (this.rootJoint && this.defaultRootJointC0) {
 					TweenService.Create(
@@ -1713,7 +1725,13 @@ export class CombatController {
 		this.stopAnim("Block", 0.15);
 		this.setProceduralBlock(false);
 
-		if (this.isEquipped && !this.isGuardBroken && !this.isInClash && !this.isInClashWinAnimation && !this.isStunned) {
+		if (
+			this.isEquipped &&
+			!this.isGuardBroken &&
+			!this.isInClash &&
+			!this.isInClashWinAnimation &&
+			!this.isStunned
+		) {
 			this.updateMovement();
 		}
 	}
@@ -1752,7 +1770,9 @@ export class CombatController {
 				}
 
 				const lockTime =
-					attackType === "Heavy" ? ARCZIS_COMBAT_CONFIG.HeavyAnimationLock : ARCZIS_COMBAT_CONFIG.M1AnimationLock;
+					attackType === "Heavy"
+						? ARCZIS_COMBAT_CONFIG.HeavyAnimationLock
+						: ARCZIS_COMBAT_CONFIG.M1AnimationLock;
 
 				task.delay(lockTime, () => {
 					this.isAttacking = false;

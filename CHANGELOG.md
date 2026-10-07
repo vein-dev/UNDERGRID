@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased] - 2026-10-07
 
 ### Added
+- **Clean Combat & Duel Interface**:
+  - The hotbar now automatically hides during active combat (equipping fists) and throughout 1v1 duel matches (including the pre-fight countdown), ensuring an immersive and unobstructed view.
+  - Number hotkey item switching is temporarily suppressed while the hotbar is hidden to prevent accidental weapon swapping during fast-paced exchanges.
+  - The hotbar and item switching are instantly restored when exiting combat or when the duel ends.
+
 - **Directional Dash Movement (Front, Back, Left, Right)**:
   - 4 dynamic directional dodge animations:
     - **Front Dash**: Lunge forward when moving forward or while idle.
