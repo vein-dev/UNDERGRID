@@ -79,7 +79,6 @@ export class SpawnCinematicController {
 		this.hasPlayed = true;
 		print("[SpawnCinematicController] startCinematic invoked. Playing sequence now...");
 
-		task.wait(0.1);
 		this.playCinematicSequence(character, rootPart, humanoid);
 	}
 

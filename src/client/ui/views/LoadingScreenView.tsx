@@ -1,109 +1,118 @@
 import React, { useEffect, useRef, useState } from "@rbxts/react";
 import ReactRoblox, { Root } from "@rbxts/react-roblox";
-import { ContentProvider, Players, ReplicatedStorage, RunService, TweenService } from "@rbxts/services";
-import { MonochromeTheme } from "../Theme";
-import { Fonts } from "../Typography";
-import { LucideIcon } from "../components/LucideIcon";
-import { getRemoteFunction } from "shared/network/Remotes";
+import { ContentProvider, Players, RunService, TweenService } from "@rbxts/services";
 import { GraphicsController } from "client/controllers/GraphicsController";
-import { GameConfig } from "shared/config/GameConfig";
+import { getRemoteFunction } from "shared/network/Remotes";
+
+export const DEFAULT_LOADING_LOGO = "rbxassetid://79461853534630";
 
 export interface LoadingScreenProps {
 	isOpen: boolean;
 	onFinished?: () => void;
-	backgroundImage?: string;
-	overlayTransparency?: number;
+	logoAssetId?: string;
+	manualProgress?: number;
 }
 
 /**
- * Custom Loading Screen Component dengan Animasi Spinner Berputar & Progress Bar Halus.
- * Menampilkan teks status yang informatif di atas latar hitam pekat (#000000).
+ * Minimalist Cinematic Loading Screen (Under Grid Subculture).
+ * Strictly mirrors the 16:9 widescreen layout with pitch black (#000000) backdrop,
+ * centered pulsing game logo, and sharp slim progress bar (#2a2a2a / #ffffff).
  */
 export function LoadingScreenComponent({
 	isOpen,
 	onFinished,
-	backgroundImage,
-	overlayTransparency,
+	logoAssetId = DEFAULT_LOADING_LOGO,
+	manualProgress,
 }: LoadingScreenProps) {
-	const [statusText, setStatusText] = useState("Menghubungkan ke server...");
-	const [detailText, setDetailText] = useState("Menginisialisasi handshake jaringan...");
 	const [percent, setPercent] = useState(0);
 
-	const spinnerRef = useRef<Frame>();
+	const logoRef = useRef<ImageLabel>();
+	const scaleRef = useRef<UIScale>();
 	const barRef = useRef<Frame>();
 	const finishLoadingRef = useRef<() => void>();
-
-	const effectiveBgImage = backgroundImage ?? GameConfig.LOADING_SCREEN.BACKGROUND_IMAGE;
-	const effectiveOverlayAlpha = overlayTransparency ?? GameConfig.LOADING_SCREEN.OVERLAY_TRANSPARENCY;
-	const hasValidBg = effectiveBgImage !== "" && effectiveBgImage !== "rbxassetid://0";
 
 	useEffect(() => {
 		if (!isOpen) return;
 
 		let isCancelled = false;
 
-		// Preload background image jika disetel
-		if (hasValidBg) {
-			task.spawn(() => {
-				pcall(() => {
-					ContentProvider.PreloadAsync([effectiveBgImage]);
-				});
+		// 1. PRELOAD ASSET LOGO
+		task.spawn(() => {
+			pcall(() => {
+				ContentProvider.PreloadAsync([logoAssetId]);
 			});
-		}
+		});
 
-		// 1. ANIMASI SPINNER BERPUTAR TERUS MENERUS (Infinite 360° Rotation)
-		const spinner = spinnerRef.current;
-		let spinnerConn: RBXScriptConnection | undefined;
-		if (spinner) {
-			let currentAngle = 0;
-			spinnerConn = RunService.RenderStepped.Connect((dt) => {
-				currentAngle = (currentAngle + dt * 280) % 360;
-				spinner.Rotation = currentAngle;
-			});
-		}
+		// 2. ANIMASI BREATHING / PULSE LOGO (Ultra-smooth 2.8s continuous sinusoidal wave)
+		const scaleInstance = scaleRef.current;
+		const logoImage = logoRef.current;
+		const startTime = os.clock();
+		const cycleDuration = 2.8;
+
+		const pulseConn = RunService.RenderStepped.Connect(() => {
+			const elapsed = os.clock() - startTime;
+			// Gelombang sinus mulus tanpa patahan boundary jerk
+			const rawSine = (math.sin(elapsed * ((math.pi * 2) / cycleDuration) - math.pi / 2) + 1) / 2;
+			// Smoothstep interpolation (Hermite curve) untuk transisi super halus dan organik
+			const smooth = rawSine * rawSine * (3 - 2 * rawSine);
+
+			if (scaleInstance) {
+				// Skala berdenyut lembut dari 1.0 ke 1.045
+				scaleInstance.Scale = 1.0 + smooth * 0.045;
+			}
+			if (logoImage) {
+				// Transparansi bernapas lembut dari 0.10 ke 0.0 (opacity 0.90 -> 1.0)
+				logoImage.ImageTransparency = 0.1 * (1 - smooth);
+			}
+		});
 
 		// Helper untuk animasi pergerakan bar yang mulus menggunakan TweenService
-		const setTargetProgress = (target: number, duration: number = 0.4) => {
-			setPercent(math.floor(target * 100));
+		const setTargetProgress = (target: number, duration: number = 0.3) => {
+			const clamped = math.clamp(target, 0, 1);
+			setPercent(clamped);
 			const bar = barRef.current;
 			if (bar) {
 				TweenService.Create(bar, new TweenInfo(duration, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
-					Size: new UDim2(math.clamp(target, 0, 1), 0, 1, 0),
+					Size: new UDim2(clamped, 0, 1, 0),
 				}).Play();
 			}
 		};
+
+		// Jika dalam mode manual (misalnya di UI-Labs storybook), jangan jalankan pipeline real engine
+		if (manualProgress !== undefined) {
+			setTargetProgress(manualProgress, 0.2);
+			return () => {
+				pulseConn.Disconnect();
+			};
+		}
 
 		let completed = false;
 		const finishLoading = () => {
 			if (completed || isCancelled) return;
 			completed = true;
-			spinnerConn?.Disconnect();
+			pulseConn.Disconnect();
 			onFinished?.();
 		};
 		finishLoadingRef.current = finishLoading;
 
-		// Pengaman utama: Maksimal 240 detik agar jika koneksi Roblox lag parah tidak freeze selamanya
+		// Pengaman timeout 240 detik
 		task.delay(240, () => {
 			finishLoading();
 		});
 
-		// 2. PIPELINE PEMUATAN DATA SERVER SECARA NYATA
+		// 3. PIPELINE PEMUATAN DATA GAME OTORITATIF & REAL PRELOAD
 		task.spawn(async () => {
 			const graphicsCtrl = GraphicsController.getInstance();
 
-			// ─── TAHAP 1: Menunggu Replikasi Game Lengkap dari Roblox (0% -> 10%) ───
+			// ─── TAHAP 1: Replikasi Game (0% -> 10%) ───
 			if (!game.IsLoaded()) {
-				setStatusText("Menghubungkan ke server...");
-				setDetailText("Mengunduh replikasi map awal dari server...");
 				game.Loaded.Wait();
 			}
 			setTargetProgress(0.1, 0.4);
-			task.wait(0.3);
+			task.wait(0.2);
 			if (isCancelled || completed) return;
 
-			// ─── TAHAP 2: Mengunduh Data Profil & Streaming Map Sekitar Spawn (10% -> 20%) ───
-			setStatusText("Streaming geometri map...");
-			setDetailText("Meminta server streaming area map sekitar spawn...");
+			// ─── TAHAP 2: Streaming Map Sekitar Player (10% -> 20%) ───
 			await graphicsCtrl.requestMapStreamAroundPlayer();
 
 			pcall(() => {
@@ -112,53 +121,35 @@ export function LoadingScreenComponent({
 				print("[LoadingScreen] Server data successfully retrieved:", serverData);
 			});
 
-			setTargetProgress(0.2, 0.4);
-			task.wait(0.3);
+			setTargetProgress(0.2, 0.3);
+			task.wait(0.2);
 			if (isCancelled || completed) return;
 
-			// ─── TAHAP 3: Memuat Seluruh Objek & Mesh Map (20% -> 85%) ───
-			// Tombol SKIP akan otomatis muncul ketika progress melewati 50% di tahap ini
-			setStatusText("Memuat objek & mesh map...");
-			setDetailText("Mengunduh model dan geometri map...");
-			setTargetProgress(0.2, 0.3);
-
-			await graphicsCtrl.preloadAllGameAssets((ratio, assetName, loaded, total) => {
+			// ─── TAHAP 3: Preload Objek & Mesh Map (20% -> 85%) ───
+			await graphicsCtrl.preloadAllGameAssets((ratio) => {
 				if (isCancelled || completed) return;
-				const currentProgress = 0.2 + ratio * 0.65; // 20% -> 85%
+				const currentProgress = 0.2 + ratio * 0.65;
 				setTargetProgress(currentProgress, 0.05);
-				if (loaded !== undefined && total !== undefined && total > 0) {
-					setDetailText(`Memuat map: ${assetName} (${loaded}/${total})`);
-				} else {
-					setDetailText(`Memuat map: ${assetName}...`);
-				}
 			});
 
 			if (isCancelled || completed) return;
 
-			// ─── TAHAP 4: Mengunduh Seluruh Tekstur HD & Shader GPU (85% -> 94%) ───
-			setStatusText("Mengunduh tekstur HD & shader...");
-			setDetailText("Menyelesaikan buffer render GPU...");
+			// ─── TAHAP 4: Tekstur HD & GPU Buffer Queue (85% -> 94%) ───
 			const startQueue = math.max(ContentProvider.RequestQueueSize, 1);
-
 			await graphicsCtrl.waitForTextureAndMeshQueue((remaining) => {
 				if (isCancelled || completed) return;
 				const queueRatio = math.clamp(1 - remaining / startQueue, 0, 1);
 				setTargetProgress(0.85 + queueRatio * 0.09, 0.1);
-				setDetailText(`Mengunduh tekstur HD (Sisa antrean: ${remaining})...`);
 			});
 
 			setTargetProgress(0.94, 0.3);
 			if (isCancelled || completed) return;
 
-			// ─── TAHAP 5: Mengoptimalkan Pencahayaan & Karakter (94% -> 98%) ───
-			setStatusText("Mengoptimalkan pencahayaan & grafik...");
-			setDetailText("Mengkalibrasi DepthOfField & bayangan HD...");
-			setTargetProgress(0.96, 0.3);
-
+			// ─── TAHAP 5: Optimasi Pencahayaan & Visual (94% -> 98%) ───
 			graphicsCtrl.optimizeLighting();
 
 			const player = Players.LocalPlayer;
-			const char = player.Character;
+			const char = player?.Character;
 			if (char) {
 				graphicsCtrl.optimizeCharacterVisuals(char);
 			}
@@ -169,22 +160,15 @@ export function LoadingScreenComponent({
 
 			// ─── TAHAP 6: Selesai 100%! ───
 			setTargetProgress(1.0, 0.3);
-			setStatusText("Map 100% Siap!");
-			setDetailText("Selamat bermain!");
-
-			task.wait(0.6);
+			task.wait(0.5);
 			finishLoading();
 		});
 
 		return () => {
 			isCancelled = true;
-			spinnerConn?.Disconnect();
+			pulseConn.Disconnect();
 		};
-	}, [isOpen]);
-
-	const handleSkip = () => {
-		finishLoadingRef.current?.();
-	};
+	}, [isOpen, logoAssetId, manualProgress]);
 
 	if (!isOpen) {
 		return <></>;
@@ -192,143 +176,106 @@ export function LoadingScreenComponent({
 
 	return (
 		<frame
-			key="CustomLoadingScreen"
+			key="LoadingScreenContainer"
 			Size={new UDim2(1, 0, 1, 0)}
-			BackgroundColor3={MonochromeTheme.Background.PureBlack}
+			BackgroundColor3={Color3.fromRGB(0, 0, 0)}
 			BackgroundTransparency={0}
 			BorderSizePixel={0}
 			Active={true}
 			ZIndex={1}
 		>
-			{/* Background Image Wallpaper */}
-			{hasValidBg && (
-				<imagelabel
-					key="BackgroundImage"
-					Size={new UDim2(1, 0, 1, 0)}
-					Position={new UDim2(0, 0, 0, 0)}
-					Image={effectiveBgImage}
-					ScaleType={Enum.ScaleType.Crop}
-					BackgroundTransparency={1}
-					BorderSizePixel={0}
-					ZIndex={1}
-				/>
-			)}
-
-			{/* Dark Dim Overlay (agar teks status & progress bar tetap kontras dan mudah dibaca) */}
-			{hasValidBg && effectiveOverlayAlpha < 1 && (
-				<frame
-					key="DarkDimOverlay"
-					Size={new UDim2(1, 0, 1, 0)}
-					Position={new UDim2(0, 0, 0, 0)}
-					BackgroundColor3={Color3.fromRGB(0, 0, 0)}
-					BackgroundTransparency={effectiveOverlayAlpha}
-					BorderSizePixel={0}
-					ZIndex={2}
-				/>
-			)}
-
-			{/* Edge-to-Edge Minimalist Bottom Loading Bar & Info Row */}
+			{/* Main 16:9 cinematic widescreen frame mimicking game engine viewport */}
 			<frame
-				key="EdgeToEdgeBottomContainer"
-				Position={new UDim2(0, 0, 1, -38)}
-				Size={new UDim2(1, 0, 0, 38)}
+				key="CinematicViewport16x9"
+				AnchorPoint={new Vector2(0.5, 0.5)}
+				Position={new UDim2(0.5, 0, 0.5, 0)}
+				Size={new UDim2(1, 0, 1, 0)}
 				BackgroundTransparency={1}
-				ZIndex={3}
+				BorderSizePixel={0}
+				ZIndex={2}
 			>
-				{/* Baris Informasi: Circle Animation | Loading Assets [Percentage] (Tanpa Stroke) */}
-				<frame
-					key="InfoRow"
-					Position={new UDim2(0, 24, 0, 6)}
-					Size={percent >= 50 ? new UDim2(1, -110, 0, 18) : new UDim2(1, -48, 0, 18)}
-					BackgroundTransparency={1}
-					ZIndex={4}
-				>
-					<uilistlayout
-						FillDirection={Enum.FillDirection.Horizontal}
-						HorizontalAlignment={Enum.HorizontalAlignment.Left}
-						VerticalAlignment={Enum.VerticalAlignment.Center}
-						Padding={new UDim(0, 8)}
-						SortOrder={Enum.SortOrder.LayoutOrder}
-					/>
+				<uiaspectratioconstraint
+					AspectRatio={16 / 9}
+					AspectType={Enum.AspectType.FitWithinMaxSize}
+					DominantAxis={Enum.DominantAxis.Width}
+				/>
 
-					{/* Circle Animation Rotating Spinner */}
+				{/* Center Brand Section: Centered high-contrast game title/logo with subtle breathing pulse */}
+				<frame
+					key="CenterBrandSection"
+					AnchorPoint={new Vector2(0.5, 0.5)}
+					Position={new UDim2(0.5, 0, 0.5, 0)}
+					Size={new UDim2(0.35, 0, 0.32, 0)}
+					BackgroundTransparency={1}
+					BorderSizePixel={0}
+					ZIndex={10}
+				>
+					<uisizeconstraint
+						MinSize={new Vector2(280, 120)}
+						MaxSize={new Vector2(360, 200)}
+					/>
 					<frame
-						ref={spinnerRef}
-						key="AnimatedSpinnerContainer"
-						LayoutOrder={1}
-						Size={new UDim2(0, 14, 0, 14)}
+						key="LogoPulseContainer"
+						AnchorPoint={new Vector2(0.5, 0.5)}
+						Position={new UDim2(0.5, 0, 0.5, 0)}
+						Size={new UDim2(1, 0, 1, 0)}
 						BackgroundTransparency={1}
-						ZIndex={5}
+						BorderSizePixel={0}
 					>
-						<LucideIcon
-							name="loader-circle"
-							size={UDim2.fromOffset(14, 14)}
-							color={Color3.fromRGB(255, 255, 255)}
-							anchorPoint={new Vector2(0.5, 0.5)}
-							position={new UDim2(0.5, 0, 0.5, 0)}
-							zIndex={6}
+						<uiscale ref={scaleRef} Scale={1} />
+						<imagelabel
+							ref={logoRef}
+							key="UnderGridLogo"
+							AnchorPoint={new Vector2(0.5, 0.5)}
+							Position={new UDim2(0.5, 0, 0.5, 0)}
+							Size={new UDim2(1, 0, 1, 0)}
+							Image={logoAssetId}
+							ScaleType={Enum.ScaleType.Fit}
+							BackgroundTransparency={1}
+							BorderSizePixel={0}
+							ZIndex={11}
 						/>
 					</frame>
-
-					{/* Loading Assets & Percentage Text (Murni Putih Tanpa Stroke) */}
-					<textlabel
-						key="LoadingAssetsText"
-						LayoutOrder={2}
-						Size={new UDim2(1, -22, 1, 0)}
-						BackgroundTransparency={1}
-						Text={`${detailText !== "" ? detailText : statusText} [${percent}%]`}
-						Font={Fonts.Medium}
-						TextSize={12}
-						TextColor3={Color3.fromRGB(255, 255, 255)}
-						TextXAlignment={Enum.TextXAlignment.Left}
-						TextTruncate={Enum.TextTruncate.AtEnd}
-						ZIndex={5}
-					/>
 				</frame>
 
-				{/* Tombol Skip di Kanan Bawah Di Atas Bar Loading (Muncul Saat Loading >= 50%) */}
-				{percent >= 50 && (
-					<textbutton
-						key="SkipButton"
-						AnchorPoint={new Vector2(1, 1)}
-						Position={new UDim2(1, -24, 1, -8)}
-						Size={new UDim2(0, 64, 0, 22)}
-						BackgroundColor3={Color3.fromRGB(255, 255, 255)}
-						BorderSizePixel={0}
-						Text="SKIP"
-						Font={Fonts.Bold}
-						TextSize={11}
-						TextColor3={Color3.fromRGB(0, 0, 0)}
-						AutoButtonColor={true}
-						ZIndex={6}
-						Event={{
-							Activated: handleSkip,
-						}}
-					>
-						<uicorner CornerRadius={new UDim(0, 4)} />
-					</textbutton>
-				)}
-
-				{/* Bar Loading Rectangle Memanjang Penuh dari Ujung Kiri ke Kanan Layar (Tanpa Stroke & Tanpa Corner) */}
+				{/* Bottom Interface Section: Lower viewport section holding minimalist progress bar */}
 				<frame
-					key="ProgressBarTrack"
-					Position={new UDim2(0, 0, 1, -4)}
-					Size={new UDim2(1, 0, 0, 4)}
-					BackgroundColor3={Color3.fromRGB(0, 0, 0)}
-					BackgroundTransparency={0.5}
+					key="BottomInterfaceSection"
+					AnchorPoint={new Vector2(0.5, 1)}
+					Position={new UDim2(0.5, 0, 0.925, 0)}
+					Size={new UDim2(1, 0, 0, 24)}
+					BackgroundTransparency={1}
 					BorderSizePixel={0}
-					ZIndex={4}
+					ZIndex={10}
 				>
-					{/* Animated Progress Fill (Rectangle Murni Putih) */}
+					{/* Horizontal Slim Loading Progress Bar */}
 					<frame
-						ref={barRef}
-						key="ProgressBarFill"
-						Size={new UDim2(0, 0, 1, 0)}
-						BackgroundColor3={Color3.fromRGB(255, 255, 255)}
+						key="LoadingProgressBar"
+						AnchorPoint={new Vector2(0.5, 0.5)}
+						Position={new UDim2(0.5, 0, 0.5, 0)}
+						Size={new UDim2(0.38, 0, 0, 5)}
+						BackgroundColor3={Color3.fromHex("#2a2a2a")}
 						BackgroundTransparency={0}
 						BorderSizePixel={0}
-						ZIndex={5}
-					/>
+						ClipsDescendants={true}
+						ZIndex={11}
+					>
+						<uisizeconstraint
+							MinSize={new Vector2(340, 5)}
+							MaxSize={new Vector2(440, 6)}
+						/>
+						{/* Active fill matching pure white indicator */}
+						<frame
+							ref={barRef}
+							key="LoadingBarFill"
+							Position={new UDim2(0, 0, 0, 0)}
+							Size={new UDim2(manualProgress ?? percent, 0, 1, 0)}
+							BackgroundColor3={Color3.fromRGB(255, 255, 255)}
+							BackgroundTransparency={0}
+							BorderSizePixel={0}
+							ZIndex={12}
+						/>
+					</frame>
 				</frame>
 			</frame>
 		</frame>
@@ -344,8 +291,8 @@ export class LoadingScreenView {
 	private screenGui?: ScreenGui;
 	private _isOpen = false;
 	private finishCallbacks: Array<() => void> = [];
-	private backgroundImage?: string;
-	private overlayTransparency?: number;
+	private logoAssetId: string = DEFAULT_LOADING_LOGO;
+	private manualProgress?: number;
 
 	public constructor(targetParent?: Instance) {
 		const isGuiObject = targetParent && targetParent.IsA("GuiObject");
@@ -356,9 +303,10 @@ export class LoadingScreenView {
 			const gui = new Instance("ScreenGui");
 			gui.Name = "CustomLoadingGui";
 			gui.ResetOnSpawn = false;
-			gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling; // Pastikan hierarki ZIndex sibling aktif
-			gui.DisplayOrder = 999; // Prioritas absolut paling depan di atas segalanya
+			gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling;
+			gui.DisplayOrder = 999;
 			gui.IgnoreGuiInset = true;
+			gui.ScreenInsets = Enum.ScreenInsets.None;
 			gui.Enabled = false;
 			gui.Parent = container;
 			this.screenGui = gui;
@@ -384,8 +332,8 @@ export class LoadingScreenView {
 		this.root.render(
 			<LoadingScreenComponent
 				isOpen={this._isOpen}
-				backgroundImage={this.backgroundImage}
-				overlayTransparency={this.overlayTransparency}
+				logoAssetId={this.logoAssetId}
+				manualProgress={this.manualProgress}
 				onFinished={() => {
 					for (const cb of this.finishCallbacks) {
 						cb();
@@ -396,13 +344,23 @@ export class LoadingScreenView {
 		);
 	}
 
+	public setLogoAssetId(logoAssetId: string): void {
+		this.logoAssetId = logoAssetId;
+		this.render();
+	}
+
+	public setManualProgress(progress?: number): void {
+		this.manualProgress = progress;
+		this.render();
+	}
+
 	/**
-	 * Mengatur background image secara dinamis untuk loading screen.
+	 * Backward compatibility method.
 	 */
-	public setBackgroundImage(imageUri: string, overlayTransparency?: number): void {
-		this.backgroundImage = imageUri;
-		if (overlayTransparency !== undefined) {
-			this.overlayTransparency = overlayTransparency;
+	public setBackgroundImage(imageUri: string, _overlayTransparency?: number): void {
+		// Minimalist cinematic loading screen enforces solid black backdrop
+		if (imageUri !== "") {
+			this.logoAssetId = imageUri;
 		}
 		this.render();
 	}

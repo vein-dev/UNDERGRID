@@ -1,16 +1,18 @@
 import { ContextActionService, Players, StarterGui } from "@rbxts/services";
 import { LoadingScreenView } from "client/ui/views/LoadingScreenView";
+import { MainMenuView } from "client/ui/views/MainMenuView";
 import { SpawnCinematicController } from "./SpawnCinematicController";
 
 /**
  * Controller yang mengatur seluruh urutan onboarding pembuka game:
- * 1. Custom Loading Screen (Layar Hitam Pekat, Handshake Data, & Progress Bar Halus)
- * 2. Cinematic Spawn Camera Orbit (8 Detik)
- * 3. Gameplay dimulai dengan kontrol penuh.
+ * 1. Custom Loading Screen (100% Selesai)
+ * 2. Main Menu Sinematik (Start / Graphics / Credits)
+ * 3. Pemain klik "Start" -> Cinematic Spawn Camera Orbit & Gameplay dimulai.
  */
 export class OnboardingController {
 	private static instance?: OnboardingController;
 	private loadingView?: LoadingScreenView;
+	private mainMenuView?: MainMenuView;
 	private charAddedConn?: RBXScriptConnection;
 	private hasCompleted = false;
 
@@ -32,21 +34,30 @@ export class OnboardingController {
 			StarterGui.SetCore("TopbarEnabled", false);
 		});
 
-		// Sembunyikan UI gameplay dari awal loading screen
+		// Sembunyikan UI gameplay dari awal
 		SpawnCinematicController.getInstance().setCinematicUiVisible(false);
 
 		// B. FREEZE INPUT & FISIKA PEMAIN SECARA TOTAL (Hanya pada join pertama)
 		this.freezePlayerMovement();
 
 		this.loadingView = LoadingScreenView.getInstance();
+		this.mainMenuView = MainMenuView.getInstance();
 
-		// 1. TAMPILKAN CUSTOM LOADING SCREEN HITAM PEKAT SAAT PERTAMA JOIN
+		// 1. TAMPILKAN CUSTOM LOADING SCREEN SAAT PERTAMA JOIN
 		this.loadingView.show();
 
-		// 2. KETIKA LOADING SCREEN SELESAI
+		// 2. KETIKA LOADING SCREEN SELESAI (100%) -> BUKA MAIN MENU
 		this.loadingView.onFinished(() => {
-			this.hasCompleted = true;
 			this.loadingView?.hide();
+
+			// Tampilkan Main Menu sesuai template HTML
+			this.mainMenuView?.show();
+		});
+
+		// 3. KETIKA PEMAIN KLIK "START" DI MAIN MENU -> MASUK KE GAMEPLAY
+		this.mainMenuView.onStart(() => {
+			this.hasCompleted = true;
+			// Catatan: MainMenuView mengelola lifecycle animasi transisi swipe-out dan hide secara mandiri
 
 			// Putus koneksi lock karakter agar saat respawn tidak pernah terkunci lagi
 			this.charAddedConn?.Disconnect();
@@ -55,13 +66,13 @@ export class OnboardingController {
 			// Lepaskan lock input onboarding
 			ContextActionService.UnbindAction("OnboardingFreeze");
 
-			// Langsung jalankan sinematik spawn kamera (8 detik orbit)
+			// Langsung jalankan sinematik spawn kamera (orbit) & aktifkan kontrol gameplay
 			task.defer(() => {
 				SpawnCinematicController.getInstance().startCinematic();
 			});
 		});
 
-		print("[OnboardingController] Initialized: Loading -> Cinematic Spawn -> Gameplay.");
+		print("[OnboardingController] Initialized: Loading (100%) -> Main Menu -> Start -> Gameplay.");
 	}
 
 	private freezePlayerMovement(): void {

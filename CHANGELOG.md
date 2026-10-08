@@ -5,7 +5,16 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased] - 2026-10-08
 
 ### Added
-- **Mobile Map & Graphics Performance Optimization**:
+- **Credits View & Main Menu Integration**:
+  - Implemented `CreditsView.tsx` and UI-Labs `CreditsView.story.tsx` featuring authentic Undergrid aesthetics, textured underground banner, and top/bottom gradient vignettes.
+  - Developed a 60 FPS infinite continuous rolling credits loop using a 3-set seamless buffer and physically normalized `UIScale` distance calculation for zero-stutter looping.
+  - Added interactive roll pausing upon cursor hover or touch input.
+  - Integrated header with Undergrid Subculture logo and resolved native image texture asset ID (`rbxassetid://111047265380104`).
+  - Added industrial monochrome `[ BACK ]` button with crisp pitch-matched confirm sound (`1.35`) and `ESC` keyboard shortcut returning seamlessly to the Main Menu.
+- **Cinematic Main Menu & Graphics Presets System**:
+  - Integrated `MainMenuView.tsx` supporting Start, Graphics, and Credits options with responsive 3-pillar layout scaling.
+  - Implemented `GraphicsPresetView.tsx` with Low, Medium, High, and Ultra presets dynamically controlling render parameters.
+  - Streamlined player onboarding flow in `OnboardingController.ts` (Loading Screen 100% -> Main Menu -> Cinematic Spawn Orbit).
   - **Massive Workspace Cleanup (-70% Descendants)**:
     - Archived 51,225 raw editor animation/pose instances from `Workspace` into `ServerStorage/WorkspaceBackupAnimations`, freeing significant mobile RAM and replication overhead.
   - **Dynamic Lighting & Shadow Pass Relief**:

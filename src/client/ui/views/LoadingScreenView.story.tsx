@@ -1,24 +1,27 @@
 import { CreateGenericStory, Boolean, String, Slider } from "@rbxts/ui-labs";
-import { LoadingScreenView } from "./LoadingScreenView";
-import { GameConfig } from "shared/config/GameConfig";
+import { LoadingScreenView, DEFAULT_LOADING_LOGO } from "./LoadingScreenView";
 
 const story = CreateGenericStory(
 	{
-		name: "Custom Loading Screen",
-		summary: "Layar pemuatan modern minimalis bergaya iOS dengan background wallpaper dan animasi smooth progress bar",
+		name: "Cinematic Loading Screen",
+		summary: "Layar pemuatan minimalis sinematik 16:9 Under Grid Subculture dengan pulsing logo dan slim progress bar",
 		controls: {
 			isOpen: Boolean(true),
-			backgroundImage: String(GameConfig.LOADING_SCREEN.BACKGROUND_IMAGE),
-			overlayTransparency: Slider(GameConfig.LOADING_SCREEN.OVERLAY_TRANSPARENCY, 0, 1, 0.05),
+			logoAssetId: String(DEFAULT_LOADING_LOGO),
+			progress: Slider(0.45, 0, 1, 0.01),
 		},
 	},
 	(props) => {
 		const view = new LoadingScreenView(props.target);
-		view.setBackgroundImage(props.controls.backgroundImage, props.controls.overlayTransparency);
-		view.show();
+		view.setLogoAssetId(props.controls.logoAssetId);
+		view.setManualProgress(props.controls.progress);
+		if (props.controls.isOpen) {
+			view.show();
+		}
 
 		const unsubscribe = props.subscribe((controls) => {
-			view.setBackgroundImage(controls.backgroundImage, controls.overlayTransparency);
+			view.setLogoAssetId(controls.logoAssetId);
+			view.setManualProgress(controls.progress);
 			if (controls.isOpen) {
 				view.show();
 			} else {

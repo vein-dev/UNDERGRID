@@ -69,6 +69,29 @@ Arsitektur codebase ini memisahkan secara tegas antara domain logika murni dan d
 * **Class Adapter Pattern**: Seluruh View utama (`views/`, `admin/`, `apps/`) wajib menyediakan Class Adapter berorientasi objek (misal: `getInstance()`, `show()`, `hide()`, `toggle()`, `destroy()`) agar controller client (`TopbarController`, `HotbarController`, `BackpackController`) dapat berinteraksi secara mulus tanpa ketergantungan langsung ke siklus render React.
 * **Desain Modern & Glassmorphism**: Terapkan estetika modern bergaya Apple iOS (sudut melengkung dengan `UICorner`, border tipis halus dengan `UIStroke`, palet warna gelap elegan `#0c0c0c` / `#121212`, dan latar belakang semi-transparan).
 * **Tata Letak & Spasi Proporsional**: Berikan padding dan margin terukur (`UIPadding`, `UIListLayout`) agar elemen tidak saling bertumpuk atau tertekan.
+* **Standar Responsif Multi-Platform (Sistem 3-Pilar Wajib untuk Seluruh UI)**:
+  Untuk memastikan seluruh UI tampil seragam, tidak pernah terpotong di Mobile, dan tidak kekecilan di PC 1080p:
+  1. **True Edge-to-Edge ScreenGui (Anti-Bocor Notch/Emulator)**:
+     Setiap `ScreenGui` layar penuh (Main Menu, Loading, HUD, Cinematic) **wajib** menggunakan:
+     ```typescript
+     gui.IgnoreGuiInset = true;
+     gui.ScreenInsets = Enum.ScreenInsets.None; // Menembus 100% kaca fisik HP di balik notch
+     ```
+  2. **Full-Bleed Background Layer**:
+     Background banner/artwork langsung menjadi child dari root container (`Size = UDim2.new(1, 0, 1, 0)`) dengan `ScaleType = Enum.ScaleType.Crop` (tanpa batasan `UIAspectRatioConstraint` 16:9 yang memicu black bars).
+  3. **Dynamic Canvas Scaling via `UIScale`**:
+     Container UI interaktif (logo, tombol, panel) **wajib** menggunakan `<uiscale Scale={uiScale} />` yang dihitung secara dinamis dari `camera.ViewportSize.Y`:
+     ```typescript
+     const uiScale = math.clamp(viewportSize.Y / 760, 0.46, 1.15);
+     ```
+     - PC (1080p): `~1.15x`
+     - Tablet (768p): `~0.95x`
+     - Mobile (375p): `~0.49x` (mengecil rapi, aman dari tabrakan Roblox Topbar).
+  4. **Safe Inset Offset**:
+     Gunakan `GuiService.GetGuiInset()` untuk menghitung batas aman horizontal agar tombol tidak tertutup poni/kamera HP:
+     ```typescript
+     const safeLeft = math.max(48, safeInset.X + 24);
+     ```
 
 ---
 
