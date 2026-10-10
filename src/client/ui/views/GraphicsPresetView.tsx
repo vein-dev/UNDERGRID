@@ -10,7 +10,9 @@ import {
 	Workspace,
 } from "@rbxts/services";
 import { GraphicsPreset, GraphicsService } from "client/services/GraphicsService";
+import { SpringPresets } from "../SpringConfig";
 import { Fonts } from "../Typography";
+import { usePressSpring } from "../hooks";
 
 export const DEFAULT_GRAPHICS_BANNER = "rbxassetid://134317644021810";
 export const DEFAULT_GRAPHICS_LOGO = "rbxassetid://79461853534630";
@@ -36,6 +38,127 @@ const PRESET_OPTIONS: PresetOption[] = [
 	{ id: "Ultra", imageAssetId: GRAPHICS_PRESET_IMAGES.ULTRA },
 ];
 
+interface PresetCardItemProps {
+	preset: PresetOption;
+	index: number;
+	isSelected: boolean;
+	isHovered: boolean;
+	onHover: () => void;
+	onUnhover: () => void;
+	onSelect: () => void;
+}
+
+function PresetCardItem({
+	preset,
+	index,
+	isSelected,
+	isHovered,
+	onHover,
+	onUnhover,
+	onSelect,
+}: PresetCardItemProps) {
+	const { scaleBinding: pressScale, eventHandlers } = usePressSpring({
+		hoverScale: isSelected ? 1.03 : 1.02,
+		pressScale: 0.97,
+		springConfig: SpringPresets.snappy,
+	});
+
+	return (
+		<frame
+			key={`CardContainer_${preset.id}`}
+			LayoutOrder={index}
+			Size={new UDim2(0, 267, 0, 195)}
+			BackgroundColor3={Color3.fromRGB(0, 0, 0)}
+			BackgroundTransparency={isSelected ? 0.1 : 0.3}
+			BorderSizePixel={0}
+			ZIndex={12}
+		>
+			<uiscale Scale={pressScale} />
+
+			{/* Border Stroke tegas dengan ApplyStrokeMode.Border */}
+			<uistroke
+				ApplyStrokeMode={Enum.ApplyStrokeMode.Border}
+				LineJoinMode={Enum.LineJoinMode.Miter}
+				Color={
+					isSelected
+						? Color3.fromRGB(255, 255, 255)
+						: isHovered
+							? Color3.fromHex("#999999")
+							: Color3.fromHex("#585858")
+				}
+				Thickness={isSelected ? 2 : 1.5}
+			/>
+
+			{/* Floating Pill Badge: [ACTIVE PRESET] di atas border kartu aktif */}
+			{isSelected && (
+				<frame
+					key="ActiveBadge"
+					Position={new UDim2(0, 14, 0, -10)}
+					Size={new UDim2(0, 96, 0, 20)}
+					BackgroundColor3={Color3.fromRGB(255, 255, 255)}
+					BorderSizePixel={0}
+					ZIndex={15}
+				>
+					<textlabel
+						Position={new UDim2(0.5, 0, 0.5, 0)}
+						AnchorPoint={new Vector2(0.5, 0.5)}
+						Size={new UDim2(1, -6, 1, 0)}
+						BackgroundTransparency={1}
+						Text="ACTIVE PRESET"
+						Font={Fonts.Bold}
+						TextSize={10}
+						TextColor3={Color3.fromRGB(0, 0, 0)}
+						ZIndex={16}
+					/>
+				</frame>
+			)}
+
+			{/* Tipografi Blackletter PNG: Ukuran Box Seragam (Tinggi 58px) agar semua font sama besar & tegas */}
+			<imagelabel
+				key="PresetNameImage"
+				Position={new UDim2(0.5, 0, 0.5, 0)}
+				AnchorPoint={new Vector2(0.5, 0.5)}
+				Size={new UDim2(0, 210, 0, 58)}
+				Image={preset.imageAssetId}
+				ImageColor3={
+					isSelected || isHovered
+						? Color3.fromRGB(255, 255, 255)
+						: Color3.fromHex("#8a8a8a")
+				}
+				ScaleType={Enum.ScaleType.Fit}
+				BackgroundTransparency={1}
+				BorderSizePixel={0}
+				ZIndex={13}
+			/>
+
+			{/* Invisible Full-Area Click & Hover Handler with Spring Touch Feedback */}
+			<textbutton
+				key="ClickHandler"
+				Size={new UDim2(1, 0, 1, 0)}
+				BackgroundTransparency={1}
+				BorderSizePixel={0}
+				AutoButtonColor={false}
+				Text=""
+				Active={true}
+				ZIndex={14}
+				Event={{
+					MouseEnter: () => {
+						eventHandlers.MouseEnter();
+						onHover();
+					},
+					MouseLeave: () => {
+						eventHandlers.MouseLeave();
+						onUnhover();
+					},
+					MouseButton1Down: eventHandlers.MouseButton1Down,
+					MouseButton1Up: eventHandlers.MouseButton1Up,
+					Activated: onSelect,
+				}}
+			/>
+		</frame>
+	);
+}
+
 export interface GraphicsPresetProps {
 	isOpen: boolean;
 	onClose: () => void;
@@ -46,7 +169,15 @@ export function GraphicsPresetComponent({ isOpen, onClose, onApply }: GraphicsPr
 	const graphicsService = GraphicsService.getInstance();
 	const [activePreset, setActivePreset] = useState<GraphicsPreset>(graphicsService.getPreset());
 	const [hoveredPreset, setHoveredPreset] = useState<GraphicsPreset | undefined>();
-	const [isApplyHovered, setIsApplyHovered] = useState(false);
+	const {
+		scaleBinding: applyScale,
+		isHovered: isApplyHovered,
+		eventHandlers: applyHandlers,
+	} = usePressSpring({
+		hoverScale: 1.04,
+		pressScale: 0.95,
+		springConfig: SpringPresets.snappy,
+	});
 
 	const [viewportSize, setViewportSize] = useState(() => {
 		const camera = Workspace.CurrentCamera;
@@ -361,96 +492,18 @@ export function GraphicsPresetComponent({ isOpen, onClose, onApply }: GraphicsPr
 						SortOrder={Enum.SortOrder.LayoutOrder}
 					/>
 
-					{PRESET_OPTIONS.map((preset, index) => {
-						const isSelected = activePreset === preset.id;
-						const isHovered = hoveredPreset === preset.id;
-
-						return (
-							/* Setiap kartu adalah Container Frame mandiri dengan UIStroke aktif */
-							<frame
-								key={`CardContainer_${preset.id}`}
-								LayoutOrder={index}
-								Size={new UDim2(0, 267, 0, 195)}
-								BackgroundColor3={Color3.fromRGB(0, 0, 0)}
-								BackgroundTransparency={isSelected ? 0.1 : 0.3}
-								BorderSizePixel={0}
-								ZIndex={12}
-							>
-								{/* Border Stroke tegas dengan ApplyStrokeMode.Border */}
-								<uistroke
-									ApplyStrokeMode={Enum.ApplyStrokeMode.Border}
-									LineJoinMode={Enum.LineJoinMode.Miter}
-									Color={
-										isSelected
-											? Color3.fromRGB(255, 255, 255)
-											: isHovered
-												? Color3.fromHex("#999999")
-												: Color3.fromHex("#585858")
-									}
-									Thickness={isSelected ? 2 : 1.5}
-								/>
-
-								{/* Floating Pill Badge: [ACTIVE PRESET] di atas border kartu aktif */}
-								{isSelected && (
-									<frame
-										key="ActiveBadge"
-										Position={new UDim2(0, 14, 0, -10)}
-										Size={new UDim2(0, 96, 0, 20)}
-										BackgroundColor3={Color3.fromRGB(255, 255, 255)}
-										BorderSizePixel={0}
-										ZIndex={15}
-									>
-										<textlabel
-											Position={new UDim2(0.5, 0, 0.5, 0)}
-											AnchorPoint={new Vector2(0.5, 0.5)}
-											Size={new UDim2(1, -6, 1, 0)}
-											BackgroundTransparency={1}
-											Text="ACTIVE PRESET"
-											Font={Fonts.Bold}
-											TextSize={10}
-											TextColor3={Color3.fromRGB(0, 0, 0)}
-											ZIndex={16}
-										/>
-									</frame>
-								)}
-
-								{/* Tipografi Blackletter PNG: Ukuran Box Seragam (Tinggi 58px) agar semua font sama besar & tegas */}
-								<imagelabel
-									key="PresetNameImage"
-									Position={new UDim2(0.5, 0, 0.5, 0)}
-									AnchorPoint={new Vector2(0.5, 0.5)}
-									Size={new UDim2(0, 210, 0, 58)}
-									Image={preset.imageAssetId}
-									ImageColor3={
-										isSelected || isHovered
-											? Color3.fromRGB(255, 255, 255)
-											: Color3.fromHex("#8a8a8a")
-									}
-									ScaleType={Enum.ScaleType.Fit}
-									BackgroundTransparency={1}
-									BorderSizePixel={0}
-									ZIndex={13}
-								/>
-
-								{/* Invisible Full-Area Click & Hover Handler */}
-								<textbutton
-									key="ClickHandler"
-									Size={new UDim2(1, 0, 1, 0)}
-									BackgroundTransparency={1}
-									BorderSizePixel={0}
-									AutoButtonColor={false}
-									Text=""
-									Active={true}
-									ZIndex={14}
-									Event={{
-										MouseEnter: () => handlePresetHover(preset.id),
-										MouseLeave: () => handlePresetUnhover(preset.id),
-										Activated: () => handleSelectPreset(preset.id),
-									}}
-								/>
-							</frame>
-						);
-					})}
+					{PRESET_OPTIONS.map((preset, index) => (
+						<PresetCardItem
+							key={`CardContainer_${preset.id}`}
+							preset={preset}
+							index={index}
+							isSelected={activePreset === preset.id}
+							isHovered={hoveredPreset === preset.id}
+							onHover={() => handlePresetHover(preset.id)}
+							onUnhover={() => handlePresetUnhover(preset.id)}
+							onSelect={() => handleSelectPreset(preset.id)}
+						/>
+					))}
 				</frame>
 			</frame>
 
@@ -466,7 +519,7 @@ export function GraphicsPresetComponent({ isOpen, onClose, onApply }: GraphicsPr
 			>
 				<uiscale Scale={uiScale} />
 
-				{/* Tombol APPLY Tunggal dengan border stroke putih */}
+				{/* Tombol APPLY Tunggal dengan border stroke putih & tactile spring */}
 				<textbutton
 					key="ApplyButton"
 					Position={new UDim2(0, 0, 0, 0)}
@@ -479,11 +532,14 @@ export function GraphicsPresetComponent({ isOpen, onClose, onApply }: GraphicsPr
 					Text=""
 					ZIndex={16}
 					Event={{
-						MouseEnter: () => setIsApplyHovered(true),
-						MouseLeave: () => setIsApplyHovered(false),
+						MouseEnter: applyHandlers.MouseEnter,
+						MouseLeave: applyHandlers.MouseLeave,
+						MouseButton1Down: applyHandlers.MouseButton1Down,
+						MouseButton1Up: applyHandlers.MouseButton1Up,
 						Activated: handleApply,
 					}}
 				>
+					<uiscale Scale={applyScale} />
 					<uistroke
 						ApplyStrokeMode={Enum.ApplyStrokeMode.Border}
 						LineJoinMode={Enum.LineJoinMode.Miter}
@@ -516,6 +572,7 @@ export class GraphicsPresetView {
 	private screenGui?: ScreenGui;
 	private _isOpen = false;
 	private closeCallbacks: Array<() => void> = [];
+	private toggleCallbacks: Array<(isOpen: boolean) => void> = [];
 
 	public constructor(targetParent?: Instance) {
 		const isGuiObject = targetParent && targetParent.IsA("GuiObject");
@@ -572,6 +629,9 @@ export class GraphicsPresetView {
 			this.screenGui.Enabled = true;
 		}
 		this.render();
+		for (const cb of this.toggleCallbacks) {
+			cb(true);
+		}
 	}
 
 	public hide(): void {
@@ -581,14 +641,25 @@ export class GraphicsPresetView {
 			this.screenGui.Enabled = false;
 		}
 		this.render();
+		for (const cb of this.toggleCallbacks) {
+			cb(false);
+		}
 	}
 
-	public toggle(): void {
-		if (this._isOpen) {
-			this.hide();
-		} else {
+	public toggle(forceState?: boolean): void {
+		const target = forceState !== undefined ? forceState : !this._isOpen;
+		if (target) {
 			this.show();
+		} else {
+			this.hide();
 		}
+	}
+
+	public onToggle(callback: (isOpen: boolean) => void): () => void {
+		this.toggleCallbacks.push(callback);
+		return () => {
+			this.toggleCallbacks = this.toggleCallbacks.filter((cb) => cb !== callback);
+		};
 	}
 
 	public onClose(callback: () => void): () => void {

@@ -1,8 +1,10 @@
 import React, { useEffect, useRef, useState } from "@rbxts/react";
 import ReactRoblox, { Root } from "@rbxts/react-roblox";
-import { ContentProvider, Players, RunService, TweenService } from "@rbxts/services";
+import { ContentProvider, Players, RunService } from "@rbxts/services";
 import { GraphicsController } from "client/controllers/GraphicsController";
+import { GameConfig } from "shared/config";
 import { getRemoteFunction } from "shared/network/Remotes";
+import { SpringPresets, useSpring } from "../SpringConfig";
 
 export const DEFAULT_LOADING_LOGO = "rbxassetid://79461853534630";
 
@@ -24,11 +26,23 @@ export function LoadingScreenComponent({
 	logoAssetId = DEFAULT_LOADING_LOGO,
 	manualProgress,
 }: LoadingScreenProps) {
-	const [percent, setPercent] = useState(0);
+	const initialVal = manualProgress ?? 0;
+	const [targetPercent, setTargetPercent] = useState(initialVal);
+	const [progressBinding, progressSpring] = useSpring(initialVal, SpringPresets.snappy);
+
+	useEffect(() => {
+		if (manualProgress !== undefined) {
+			setTargetPercent(manualProgress);
+			progressSpring.setGoal(manualProgress);
+		}
+	}, [manualProgress]);
+
+	useEffect(() => {
+		progressSpring.setGoal(targetPercent);
+	}, [targetPercent]);
 
 	const logoRef = useRef<ImageLabel>();
 	const scaleRef = useRef<UIScale>();
-	const barRef = useRef<Frame>();
 	const finishLoadingRef = useRef<() => void>();
 
 	useEffect(() => {
@@ -66,21 +80,15 @@ export function LoadingScreenComponent({
 			}
 		});
 
-		// Helper untuk animasi pergerakan bar yang mulus menggunakan TweenService
-		const setTargetProgress = (target: number, duration: number = 0.3) => {
+		// Helper untuk animasi pergerakan bar yang mulus menggunakan Spring physics
+		const setTargetProgress = (target: number, _duration?: number) => {
 			const clamped = math.clamp(target, 0, 1);
-			setPercent(clamped);
-			const bar = barRef.current;
-			if (bar) {
-				TweenService.Create(bar, new TweenInfo(duration, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
-					Size: new UDim2(clamped, 0, 1, 0),
-				}).Play();
-			}
+			setTargetPercent(clamped);
 		};
 
 		// Jika dalam mode manual (misalnya di UI-Labs storybook), jangan jalankan pipeline real engine
 		if (manualProgress !== undefined) {
-			setTargetProgress(manualProgress, 0.2);
+			setTargetProgress(manualProgress);
 			return () => {
 				pulseConn.Disconnect();
 			};
@@ -95,72 +103,92 @@ export function LoadingScreenComponent({
 		};
 		finishLoadingRef.current = finishLoading;
 
-		// Pengaman timeout 240 detik
-		task.delay(240, () => {
+		const targetDuration = GameConfig.LOADING_SCREEN.TARGET_DURATION; // 15 detik
+		const fallbackTimeout = GameConfig.LOADING_SCREEN.FALLBACK_TIMEOUT; // 17 detik
+
+		// Pengaman timeout darurat jika terjadi gangguan jaringan ekstrem
+		task.delay(fallbackTimeout, () => {
 			finishLoading();
 		});
 
-		// 3. PIPELINE PEMUATAN DATA GAME OTORITATIF & REAL PRELOAD
+		// 3. PIPELINE PEMUATAN DATA GAME OTORITATIF & REAL PRELOAD (Pacing 15 Detik)
 		task.spawn(async () => {
+			const pipelineStart = os.clock();
 			const graphicsCtrl = GraphicsController.getInstance();
 
-			// ─── TAHAP 1: Replikasi Game (0% -> 10%) ───
+			// ─── TAHAP 1: Replikasi Game & Profil Server (0.0s -> 2.0s, 0% -> 15%) ───
 			if (!game.IsLoaded()) {
-				game.Loaded.Wait();
+				const isLoadedStart = os.clock();
+				while (!game.IsLoaded() && os.clock() - isLoadedStart < 2.0) {
+					task.wait(0.1);
+				}
 			}
 			setTargetProgress(0.1, 0.4);
-			task.wait(0.2);
-			if (isCancelled || completed) return;
 
-			// ─── TAHAP 2: Streaming Map Sekitar Player (10% -> 20%) ───
+			// Panggilan data server secara asynchronous & aman
+			task.spawn(() => {
+				pcall(() => {
+					const initialDataFunc = getRemoteFunction("GetInitialPlayerData");
+					const serverData = initialDataFunc.InvokeServer();
+					print("[LoadingScreen] Server data successfully retrieved:", serverData);
+				});
+			});
+
 			await graphicsCtrl.requestMapStreamAroundPlayer();
+			setTargetProgress(0.15, 0.3);
 
-			pcall(() => {
-				const initialDataFunc = getRemoteFunction("GetInitialPlayerData");
-				const serverData = initialDataFunc.InvokeServer();
-				print("[LoadingScreen] Server data successfully retrieved:", serverData);
-			});
-
-			setTargetProgress(0.2, 0.3);
-			task.wait(0.2);
+			// Jaga ritme fase 1 agar genap 2.0 detik
+			while (os.clock() - pipelineStart < 2.0 && !isCancelled && !completed) {
+				task.wait(0.1);
+			}
 			if (isCancelled || completed) return;
 
-			// ─── TAHAP 3: Preload Objek & Mesh Map (20% -> 85%) ───
-			await graphicsCtrl.preloadAllGameAssets((ratio) => {
+			// ─── TAHAP 2: Smart Hybrid Preload Aset (2.0s -> 12.5s, 15% -> 88%) ───
+			// Alokasikan batas waktu 10.0 detik untuk memuat aset visual & prioritas
+			let currentAssetRatio = 0;
+			const preloadPromise = graphicsCtrl.preloadAllGameAssets((ratio) => {
 				if (isCancelled || completed) return;
-				const currentProgress = 0.2 + ratio * 0.65;
-				setTargetProgress(currentProgress, 0.05);
-			});
+				currentAssetRatio = ratio;
+			}, 10.0);
 
+			// Interpolasi bar secara kontinu & mulus selama durasi 10.5 detik
+			const phase2Start = os.clock();
+			const phase2Duration = 10.5;
+			while (os.clock() - phase2Start < phase2Duration && !isCancelled && !completed) {
+				const timeRatio = math.clamp((os.clock() - phase2Start) / phase2Duration, 0, 1);
+				// Kombinasikan waktu dan rasio aset aktual untuk pergerakan bar yang paling alami
+				const blendedRatio = math.max(timeRatio, currentAssetRatio);
+				const targetP = 0.15 + blendedRatio * 0.73;
+				setTargetProgress(targetP, 0.15);
+				task.wait(0.08);
+			}
+			await preloadPromise;
 			if (isCancelled || completed) return;
 
-			// ─── TAHAP 4: Tekstur HD & GPU Buffer Queue (85% -> 94%) ───
-			const startQueue = math.max(ContentProvider.RequestQueueSize, 1);
-			await graphicsCtrl.waitForTextureAndMeshQueue((remaining) => {
-				if (isCancelled || completed) return;
-				const queueRatio = math.clamp(1 - remaining / startQueue, 0, 1);
-				setTargetProgress(0.85 + queueRatio * 0.09, 0.1);
-			});
+			// ─── TAHAP 3: Buffer Queue & Optimasi Visual (12.5s -> 14.0s, 88% -> 96%) ───
+			await graphicsCtrl.waitForTextureAndMeshQueue();
 
-			setTargetProgress(0.94, 0.3);
-			if (isCancelled || completed) return;
-
-			// ─── TAHAP 5: Optimasi Pencahayaan & Visual (94% -> 98%) ───
 			graphicsCtrl.optimizeLighting();
-
 			const player = Players.LocalPlayer;
 			const char = player?.Character;
 			if (char) {
 				graphicsCtrl.optimizeCharacterVisuals(char);
 			}
 
-			setTargetProgress(0.98, 0.2);
-			task.wait(0.3);
+			setTargetProgress(0.96, 0.4);
+			while (os.clock() - pipelineStart < 14.0 && !isCancelled && !completed) {
+				task.wait(0.1);
+			}
 			if (isCancelled || completed) return;
 
-			// ─── TAHAP 6: Selesai 100%! ───
-			setTargetProgress(1.0, 0.3);
-			task.wait(0.5);
+			// ─── TAHAP 4: Selesai 100% Sinematik (14.0s -> 15.0s, 96% -> 100%) ───
+			setTargetProgress(1.0, 0.4);
+
+			// Tunggu hingga genap target durasi 15 detik
+			while (os.clock() - pipelineStart < targetDuration && !isCancelled && !completed) {
+				task.wait(0.05);
+			}
+
 			finishLoading();
 		});
 
@@ -266,10 +294,9 @@ export function LoadingScreenComponent({
 						/>
 						{/* Active fill matching pure white indicator */}
 						<frame
-							ref={barRef}
 							key="LoadingBarFill"
 							Position={new UDim2(0, 0, 0, 0)}
-							Size={new UDim2(manualProgress ?? percent, 0, 1, 0)}
+							Size={progressBinding.map((p) => new UDim2(p, 0, 1, 0))}
 							BackgroundColor3={Color3.fromRGB(255, 255, 255)}
 							BackgroundTransparency={0}
 							BorderSizePixel={0}

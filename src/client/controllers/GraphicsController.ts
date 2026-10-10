@@ -237,30 +237,34 @@ export class GraphicsController {
 	}
 
 	/**
-	 * Mem-preload SELURUH aset game dan map (World, Map, Models, Textures, Meshes, Sounds)
-	 * secara komprehensif sampai tuntas agar tidak ada pop-in tekstur atau mesh kosong saat spawn.
+	 * Mem-preload aset visual dan audio game secara cerdas (Smart Hybrid Preloading).
+	 * Aset prioritas (Lighting, Sky, Audio, dan visual utama) dimuat dalam batas waktu loading screen (~10.5 detik),
+	 * sedangkan sisa aset seisi map dilanjutkan di latar belakang (background) secara non-blocking
+	 * agar tidak memicu lag dan tidak pernah menahan layar pemain terlalu lama.
 	 *
 	 * @param onProgressCallback Callback opsional untuk update progress bar secara granular.
+	 * @param timeBudgetSec Alokasi waktu maksimal pemuatan sinkron (default: 10.5 detik).
 	 */
 	public async preloadAllGameAssets(
 		onProgressCallback?: (progress: number, assetName: string, loadedCount?: number, totalCount?: number) => void,
+		timeBudgetSec: number = 10.5,
 	): Promise<void> {
-		const assetTargets: Instance[] = [];
+		const priorityTargets: Instance[] = [];
+		const mapTargets: Instance[] = [];
 
-		// 1. Aset dari Workspace (Seluruh MeshPart, Decal, Texture, SurfaceAppearance, SpecialMesh)
-		for (const desc of Workspace.GetDescendants()) {
-			if (
-				desc.IsA("Decal") ||
-				desc.IsA("Texture") ||
-				desc.IsA("MeshPart") ||
-				desc.IsA("SpecialMesh") ||
-				desc.IsA("SurfaceAppearance")
-			) {
-				assetTargets.push(desc);
+		// 1. Aset Prioritas Utama: Lighting (Skybox, Atmosphere) & Audio (SoundService)
+		for (const desc of Lighting.GetDescendants()) {
+			if (desc.IsA("Sky") || desc.IsA("Atmosphere")) {
+				priorityTargets.push(desc);
+			}
+		}
+		for (const desc of SoundService.GetDescendants()) {
+			if (desc.IsA("Sound")) {
+				priorityTargets.push(desc);
 			}
 		}
 
-		// 2. Aset dari ReplicatedStorage (Model, Prefab, Animasi, Tool)
+		// 2. Aset ReplicatedStorage (Prefab, Tool, Animasi, Model)
 		for (const desc of ReplicatedStorage.GetDescendants()) {
 			if (
 				desc.IsA("Decal") ||
@@ -271,47 +275,49 @@ export class GraphicsController {
 				desc.IsA("Animation") ||
 				desc.IsA("Sound")
 			) {
-				assetTargets.push(desc);
+				priorityTargets.push(desc);
 			}
 		}
 
-		// 3. Aset dari Lighting (Skybox textures, Atmosphere)
-		for (const desc of Lighting.GetDescendants()) {
-			if (desc.IsA("Sky") || desc.IsA("Atmosphere")) {
-				assetTargets.push(desc);
+		// 3. Aset dari Workspace (Geometri & Dekorasi Map)
+		for (const desc of Workspace.GetDescendants()) {
+			if (
+				desc.IsA("Decal") ||
+				desc.IsA("Texture") ||
+				desc.IsA("MeshPart") ||
+				desc.IsA("SpecialMesh") ||
+				desc.IsA("SurfaceAppearance")
+			) {
+				mapTargets.push(desc);
 			}
 		}
 
-		// 4. Aset Audio (SoundService)
-		for (const desc of SoundService.GetDescendants()) {
-			if (desc.IsA("Sound")) {
-				assetTargets.push(desc);
-			}
-		}
+		// Gabungkan dengan prioritas visual utama di depan
+		const combinedTargets = [...priorityTargets, ...mapTargets];
+		const totalAssets = combinedTargets.size();
 
-		const totalAssets = assetTargets.size();
-		print(`[GraphicsController] Preloading ALL ${totalAssets} map & visual assets completely...`);
+		print(`[GraphicsController] Starting Smart Hybrid Preload: ${totalAssets} total assets (Priority: ${priorityTargets.size()}, Map: ${mapTargets.size()}).`);
 
 		if (totalAssets === 0) {
 			onProgressCallback?.(1, "Semua aset siap", 0, 0);
 			return;
 		}
 
-		// Preload dalam batch efisien (100 aset per batch untuk performa optimal)
-		const batchSize = 100;
+		const batchSize = 60;
 		let loadedCount = 0;
-		const maxTimeout = 300.0; // Waktu pengaman sangat longgar agar tidak pernah memotong loading pemain
 		const startTime = os.clock();
+		let remainingBatchIndex = 0;
 
+		// Fase Sinkron: Muat aset sebanyak mungkin dalam rentang waktu terukur
 		for (let i = 0; i < totalAssets; i += batchSize) {
-			if (os.clock() - startTime > maxTimeout) {
-				warn(`[GraphicsController] Preload reached extreme safety timeout (${maxTimeout}s).`);
+			if (os.clock() - startTime >= timeBudgetSec) {
+				remainingBatchIndex = i;
 				break;
 			}
 
 			const batch: Instance[] = [];
 			for (let j = i; j < math.min(i + batchSize, totalAssets); j++) {
-				batch.push(assetTargets[j]);
+				batch.push(combinedTargets[j]);
 			}
 
 			pcall(() => {
@@ -326,51 +332,83 @@ export class GraphicsController {
 			task.wait(0.01);
 		}
 
-		onProgressCallback?.(1, "Semua aset siap", loadedCount, totalAssets);
-		print(`[GraphicsController] Successfully preloaded ${loadedCount}/${totalAssets} assets to HD.`);
+		// Berikan sinyal bahwa fase loading screen telah selesai memuat aset prioritas
+		onProgressCallback?.(1, "Aset prioritas siap", loadedCount, totalAssets);
+		print(
+			`[GraphicsController] Synchronous preload completed: ${loadedCount}/${totalAssets} assets in ${string.format("%.2f", os.clock() - startTime)}s.`,
+		);
+
+		// Fase Background: Jika masih ada sisa aset map, lanjutkan di background secara non-blocking
+		if (remainingBatchIndex > 0 && remainingBatchIndex < totalAssets) {
+			task.spawn(() => {
+				const backgroundStart = os.clock();
+				for (let i = remainingBatchIndex; i < totalAssets; i += batchSize) {
+					const batch: Instance[] = [];
+					for (let j = i; j < math.min(i + batchSize, totalAssets); j++) {
+						batch.push(combinedTargets[j]);
+					}
+
+					pcall(() => {
+						ContentProvider.PreloadAsync(batch);
+					});
+
+					loadedCount += batch.size();
+					task.wait(0.05); // Throttle agar CPU dan memori tetap santai saat pemain mulai bermain
+				}
+				print(
+					`[GraphicsController] Background preload completed: all ${totalAssets} assets cached in ${string.format("%.2f", os.clock() - backgroundStart)}s.`,
+				);
+			});
+		}
 	}
 
 	/**
 	 * Memaksa server Roblox streaming geometri map di sekitar spawn lokasi pemain.
-	 * Sangat krusial saat StreamingEnabled = true agar pemain tidak melihat map kosong.
+	 * Dilengkapi batas waktu aman (maks 2.5s) agar pemain dengan jaringan lambat tidak hang.
 	 */
 	public async requestMapStreamAroundPlayer(): Promise<void> {
 		const player = Players.LocalPlayer;
 		let char = player.Character;
-		if (!char) {
-			char = player.CharacterAdded.Wait()[0];
-		}
 
-		const rootPart = (char.FindFirstChild("HumanoidRootPart") ??
-			char.WaitForChild("HumanoidRootPart", 12)) as BasePart | undefined;
+		// Cek langsung jika root part sudah ada
+		let rootPart = char?.FindFirstChild("HumanoidRootPart") as BasePart | undefined;
+
+		if (!rootPart) {
+			// Tunggu dengan batas pengaman maksimal 2.5 detik
+			const waitStart = os.clock();
+			while (!rootPart && os.clock() - waitStart < 2.5) {
+				char = player.Character;
+				if (char) {
+					rootPart = char.FindFirstChild("HumanoidRootPart") as BasePart | undefined;
+				}
+				if (rootPart) break;
+				task.wait(0.1);
+			}
+		}
 
 		if (rootPart) {
 			pcall(() => {
 				player.RequestStreamAroundAsync(rootPart.Position);
 			});
-			// Beri waktu engine streaming merespons replikasi part terdekat
-			task.wait(0.5);
+			task.wait(0.2);
 		}
 	}
 
 	/**
-	 * Memantau antrean unduhan internal Roblox (ContentProvider.RequestQueueSize).
-	 * Menunggu hingga seluruh tekstur, mesh, material, dan gambar diunduh 100% ke memori GPU.
+	 * Memantau antrean unduhan internal Roblox (ContentProvider.RequestQueueSize)
+	 * dengan batas toleransi ketat (maksimal 1.0s) agar tidak menahan pemain.
 	 */
 	public async waitForTextureAndMeshQueue(onQueueUpdate?: (remaining: number) => void): Promise<void> {
-		const maxWait = 25.0; // Batas pengaman maksimal antrean CDN
+		const maxWait = 1.0; // Maksimal 1.0 detik toleransi antrean
 		const startTime = os.clock();
 
 		while (ContentProvider.RequestQueueSize > 0) {
-			if (os.clock() - startTime > maxWait) {
-				warn(
-					`[GraphicsController] ContentProvider queue wait reached safety limit with ${ContentProvider.RequestQueueSize} items remaining.`,
-				);
+			if (os.clock() - startTime >= maxWait) {
 				break;
 			}
 			const remaining = ContentProvider.RequestQueueSize;
 			onQueueUpdate?.(remaining);
-			task.wait(0.15);
+			task.wait(0.1);
 		}
 	}
 

@@ -1,5 +1,6 @@
-import React, { useState } from "@rbxts/react";
+import React from "@rbxts/react";
 import { MonochromeTheme } from "../Theme";
+import { usePressSpring } from "../hooks";
 
 export interface CardProps {
 	size?: UDim2;
@@ -33,9 +34,14 @@ export function Card({
 	children,
 	onClick,
 }: CardProps) {
-	const [isHovered, setIsHovered] = useState(false);
-
 	const isClickable = onClick !== undefined;
+	const { scaleBinding, isHovered, eventHandlers } = usePressSpring({
+		disabled: !isClickable,
+		idleScale: 1.0,
+		hoverScale: 1.01,
+		pressScale: 0.98,
+	});
+
 	const activeBgColor = isClickable && isHovered ? MonochromeTheme.Background.CardHover : backgroundColor;
 	const activeBorderColor = isClickable && isHovered ? MonochromeTheme.Border.Strong : borderColor;
 
@@ -51,11 +57,11 @@ export function Card({
 				AutoButtonColor={false}
 				Text=""
 				Event={{
-					MouseEnter: () => setIsHovered(true),
-					MouseLeave: () => setIsHovered(false),
+					...eventHandlers,
 					Activated: onClick,
 				}}
 			>
+				<uiscale Scale={scaleBinding} />
 				<uicorner CornerRadius={cornerRadius} />
 				<uistroke
 					Color={activeBorderColor}

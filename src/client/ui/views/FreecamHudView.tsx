@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from "@rbxts/react";
 import ReactRoblox, { Root } from "@rbxts/react-roblox";
-import { Players, StarterGui, TweenService, UserInputService, Workspace } from "@rbxts/services";
+import { Players, StarterGui, UserInputService, Workspace } from "@rbxts/services";
 import { FreecamController, FreecamState } from "client/controllers/FreecamController";
 import { EmoteModalView } from "./EmoteModalView";
 import { Fonts } from "../Typography";

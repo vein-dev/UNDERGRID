@@ -2,6 +2,8 @@ import React, { useEffect, useState } from "@rbxts/react";
 import ReactRoblox, { Root } from "@rbxts/react-roblox";
 import { Players, Workspace } from "@rbxts/services";
 import { Fonts } from "../Typography";
+import { LucideIcon } from "../components/LucideIcon";
+import { SpringPresets, useSpring } from "../SpringConfig";
 
 export interface SlotData {
 	tool?: Tool;
@@ -24,42 +26,94 @@ export function HotbarSlot({
 	onClick: (slot: number) => void;
 }) {
 	const [isHovered, setIsHovered] = useState(false);
+
 	const isEquipped = data?.isEquipped ?? false;
 	const hasTool = data?.tool !== undefined;
 
-	let strokeColor = Color3.fromHex("#262626");
-	let strokeThickness = 1.2;
-	let bgColor = Color3.fromHex("#121212");
-	let bgTrans = 0.45;
-	let numColor = Color3.fromHex("#666666");
-	let nameColor = Color3.fromHex("#d0d0d0");
+	const targetHeight = isEquipped ? 88 : 70;
+	const [heightBinding, heightSpring] = useSpring(targetHeight, SpringPresets.snappy);
+
+	// Smooth reactive spring transition when equipped state changes
+	useEffect(() => {
+		heightSpring.setGoal(targetHeight);
+	}, [targetHeight]);
+
+	// Visual theme styling based on HTML template
+	let bgColor = Color3.fromHex("#201f1f");
+	let bgTrans = 0.15;
+	let strokeColor = Color3.fromHex("#2a2a2a");
+	let strokeThickness = 1.0;
+	let numColor = Color3.fromHex("#c4c7cb");
+	let iconColor = Color3.fromHex("#c4c7cb");
+	let nameColor = Color3.fromHex("#c4c7cb");
+	let iconSize = 26;
 
 	if (hasTool) {
 		if (isEquipped) {
+			// Template active slot: solid white, crisp black text/icon, elevated height (88px)
+			bgColor = Color3.fromHex("#ffffff");
+			bgTrans = 0.0;
 			strokeColor = Color3.fromHex("#ffffff");
-			strokeThickness = 2.0;
-			bgColor = Color3.fromHex("#2c2c2c");
-			bgTrans = 0.1;
-			numColor = Color3.fromHex("#ffffff");
-			nameColor = Color3.fromHex("#ffffff");
-		} else {
-			strokeColor = isHovered ? Color3.fromHex("#555555") : Color3.fromHex("#3a3a3a");
 			strokeThickness = 1.5;
-			bgColor = Color3.fromHex("#181818");
-			bgTrans = 0.25;
-			numColor = Color3.fromHex("#888888");
-			nameColor = Color3.fromHex("#d0d0d0");
+			numColor = Color3.fromHex("#000000");
+			iconColor = Color3.fromHex("#000000");
+			nameColor = Color3.fromHex("#000000");
+			iconSize = 28;
+		} else if (isHovered) {
+			// Template hover slot: surface-container-high, white text/icon
+			bgColor = Color3.fromHex("#2a2a2a");
+			bgTrans = 0.05;
+			strokeColor = Color3.fromHex("#444748");
+			strokeThickness = 1.2;
+			numColor = Color3.fromHex("#ffffff");
+			iconColor = Color3.fromHex("#ffffff");
+			nameColor = Color3.fromHex("#ffffff");
+			iconSize = 28;
+		} else {
+			// Template normal item slot: surface-container (#201f1f)
+			bgColor = Color3.fromHex("#201f1f");
+			bgTrans = 0.15;
+			strokeColor = Color3.fromHex("#2a2a2a");
+			strokeThickness = 1.0;
+			numColor = Color3.fromHex("#c4c7cb");
+			iconColor = Color3.fromHex("#c4c7cb");
+			nameColor = Color3.fromHex("#c4c7cb");
+			iconSize = 26;
 		}
-	} else if (isHovered) {
-		strokeColor = Color3.fromHex("#555555");
-		strokeThickness = 1.5;
+	} else {
+		// Empty slot
+		bgColor = isHovered ? Color3.fromHex("#1a1a1a") : Color3.fromHex("#141414");
+		bgTrans = 0.45;
+		strokeColor = isHovered ? Color3.fromHex("#3a3a3a") : Color3.fromHex("#222222");
+		strokeThickness = 1.0;
+		numColor = isHovered ? Color3.fromHex("#888888") : Color3.fromHex("#555555");
+		iconColor = Color3.fromHex("#333333");
+		nameColor = Color3.fromHex("#333333");
+		iconSize = 24;
+	}
+
+	// Smart Lucide icon detection matching reference icons (smartphone, radio, lock, etc.)
+	let iconName = "box";
+	if (data?.tool) {
+		const lowerName = data.tool.Name.lower();
+		if (lowerName.find("phone")[0] !== undefined) iconName = "smartphone";
+		else if (lowerName.find("radio")[0] !== undefined) iconName = "radio";
+		else if (lowerName.find("lock")[0] !== undefined || lowerName.find("shield")[0] !== undefined) iconName = "lock";
+		else if (lowerName.find("potion")[0] !== undefined || lowerName.find("flask")[0] !== undefined || lowerName.find("med")[0] !== undefined || lowerName.find("health")[0] !== undefined) iconName = "plus";
+		else if (lowerName.find("bolt")[0] !== undefined || lowerName.find("lightning")[0] !== undefined || lowerName.find("plasma")[0] !== undefined) iconName = "zap";
+		else if (lowerName.find("camera")[0] !== undefined || lowerName.find("video")[0] !== undefined) iconName = "camera";
+		else if (lowerName.find("key")[0] !== undefined) iconName = "key";
+		else if (lowerName.find("chip")[0] !== undefined || lowerName.find("core")[0] !== undefined) iconName = "cpu";
+		else if (lowerName.find("headphone")[0] !== undefined || lowerName.find("audio")[0] !== undefined) iconName = "headphones";
+		else if (lowerName.find("wrench")[0] !== undefined || lowerName.find("tool")[0] !== undefined) iconName = "wrench";
+		else if (lowerName.find("blade")[0] !== undefined || lowerName.find("dagger")[0] !== undefined || lowerName.find("sword")[0] !== undefined) iconName = "sword";
 	}
 
 	return (
 		<imagebutton
 			key={`slot_btn_${slotNumber}`}
 			LayoutOrder={slotNumber}
-			Size={new UDim2(0, 58, 0, 58)}
+			Size={heightBinding.map((h) => new UDim2(0, 68, 0, h))}
 			BackgroundColor3={bgColor}
 			BackgroundTransparency={bgTrans}
 			AutoButtonColor={false}
@@ -69,47 +123,76 @@ export function HotbarSlot({
 				MouseButton1Click: () => onClick(slotNumber),
 			}}
 		>
-			<uicorner CornerRadius={new UDim(0, 8)} />
 			<uistroke
 				Color={strokeColor}
 				Thickness={strokeThickness}
 				ApplyStrokeMode={Enum.ApplyStrokeMode.Border}
 			/>
+			<uipadding
+				PaddingTop={new UDim(0, 7)}
+				PaddingBottom={new UDim(0, 7)}
+				PaddingLeft={new UDim(0, 7)}
+				PaddingRight={new UDim(0, 7)}
+			/>
+
+			{/* Slot Number (Top Left) */}
 			<textlabel
-				key="NumberLabel"
-				Size={new UDim2(0, 16, 0, 14)}
-				Position={new UDim2(0, 6, 0, 4)}
+				key="SlotNum"
+				AnchorPoint={new Vector2(0, 0)}
+				Position={new UDim2(0, 0, 0, 0)}
+				Size={new UDim2(0, 20, 0, 16)}
 				BackgroundTransparency={1}
 				Text={tostring(slotNumber)}
 				TextColor3={numColor}
 				TextScaled={true}
 				Font={Fonts.Bold}
 				TextXAlignment={Enum.TextXAlignment.Left}
+				TextYAlignment={Enum.TextYAlignment.Top}
 			>
-				<uitextsizeconstraint MaxTextSize={11} MinTextSize={7} />
+				<uitextsizeconstraint MaxTextSize={14} MinTextSize={9} />
 			</textlabel>
+
+			{/* Center Icon */}
 			{data?.tool?.TextureId && data.tool.TextureId !== "" ? (
 				<imagelabel
-					key="ToolIcon"
+					key="ToolTexture"
 					AnchorPoint={new Vector2(0.5, 0.5)}
-					Position={new UDim2(0.5, 0, 0.42, 0)}
-					Size={new UDim2(0, 32, 0, 32)}
+					Position={new UDim2(0.5, 0, 0.46, 0)}
+					Size={new UDim2(0, iconSize, 0, iconSize)}
 					BackgroundTransparency={1}
 					Image={data.tool.TextureId}
+					ScaleType={Enum.ScaleType.Fit}
 				/>
-			) : undefined}
-			{data?.tool ? (
-				<textlabel
-					key="ToolName"
-					AnchorPoint={new Vector2(0.5, 1)}
-					Position={new UDim2(0.5, 0, 1, -4)}
-					Size={new UDim2(1, -8, 0, 12)}
+			) : hasTool ? (
+				<frame
+					key="ToolIconFrame"
+					AnchorPoint={new Vector2(0.5, 0.5)}
+					Position={new UDim2(0.5, 0, 0.46, 0)}
+					Size={new UDim2(0, iconSize, 0, iconSize)}
 					BackgroundTransparency={1}
-					Text={data.tool.Name}
+				>
+					<LucideIcon
+						name={iconName}
+						size={new UDim2(1, 0, 1, 0)}
+						color={iconColor}
+					/>
+				</frame>
+			) : undefined}
+
+			{/* Bottom Label (Uppercase, Truncated, Centered) */}
+			{hasTool ? (
+				<textlabel
+					key="SlotLabel"
+					AnchorPoint={new Vector2(0.5, 1)}
+					Position={new UDim2(0.5, 0, 1, 0)}
+					Size={new UDim2(1, 0, 0, 12)}
+					BackgroundTransparency={1}
+					Text={string.upper(data!.tool!.Name)}
 					TextColor3={nameColor}
 					TextScaled={true}
-					Font={Fonts.Medium}
+					Font={isEquipped ? Fonts.Bold : Fonts.Medium}
 					TextTruncate={Enum.TextTruncate.AtEnd}
+					TextXAlignment={Enum.TextXAlignment.Center}
 				>
 					<uitextsizeconstraint MaxTextSize={9} MinTextSize={6} />
 				</textlabel>
@@ -129,9 +212,8 @@ export function HotbarComponent({
 		const updateScale = () => {
 			const camera = Workspace.CurrentCamera;
 			const vp = camera ? camera.ViewportSize : new Vector2(1280, 720);
-			const scaleY = (vp.Y * 0.18) / 62;
-			const scaleX = (vp.X * 0.85) / 340;
-			setScale(math.clamp(math.min(scaleY, scaleX), 0.55, 1.0));
+			const scaleFactor = math.clamp(vp.Y / 760, 0.55, 1.25);
+			setScale(scaleFactor);
 		};
 
 		updateScale();
@@ -162,10 +244,10 @@ export function HotbarComponent({
 
 	return (
 		<frame
-			key="HotbarContainer"
+			key="HotbarDockContainer"
 			AnchorPoint={new Vector2(0.5, 1)}
 			Position={new UDim2(0.5, 0, 1, -16)}
-			Size={new UDim2(0, 0, 0, 62)}
+			Size={new UDim2(0, 0, 0, 88)}
 			AutomaticSize={Enum.AutomaticSize.X}
 			BackgroundTransparency={1}
 		>
@@ -173,13 +255,9 @@ export function HotbarComponent({
 			<uilistlayout
 				FillDirection={Enum.FillDirection.Horizontal}
 				HorizontalAlignment={Enum.HorizontalAlignment.Center}
-				VerticalAlignment={Enum.VerticalAlignment.Center}
+				VerticalAlignment={Enum.VerticalAlignment.Bottom}
 				Padding={new UDim(0, 6)}
 				SortOrder={Enum.SortOrder.LayoutOrder}
-			/>
-			<uipadding
-				PaddingLeft={new UDim(0, 4)}
-				PaddingRight={new UDim(0, 4)}
 			/>
 			{slotElements}
 		</frame>

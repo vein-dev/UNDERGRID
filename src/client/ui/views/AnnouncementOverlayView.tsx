@@ -1,6 +1,7 @@
-import React, { useEffect, useRef, useState } from "@rbxts/react";
+import React, { useEffect, useState } from "@rbxts/react";
 import ReactRoblox, { Root } from "@rbxts/react-roblox";
-import { Lighting, Players, RunService, TweenService } from "@rbxts/services";
+import { Lighting, Players, RunService } from "@rbxts/services";
+import { createSpring, Spring, SpringPresets, useSpring } from "../SpringConfig";
 import { Fonts } from "../Typography";
 
 export interface AnnouncementOverlayComponentProps {
@@ -18,10 +19,11 @@ export function AnnouncementOverlayComponent({
 	duration = 5.0,
 	onFinished,
 }: AnnouncementOverlayComponentProps) {
-	const canvasGroupRef = useRef<CanvasGroup>();
-	const scaleRef = useRef<UIScale>();
 	const [displayedText, setDisplayedText] = useState("");
 	const [isTyping, setIsTyping] = useState(false);
+
+	const [groupTransBinding, groupTransSpring] = useSpring(1, SpringPresets.gentle);
+	const [scaleBinding, scaleSpring] = useSpring(0.92, SpringPresets.snappy);
 
 	// ─── Efek Mesin Ketik (Typewriter Animation) ───
 	useEffect(() => {
@@ -66,51 +68,41 @@ export function AnnouncementOverlayComponent({
 		};
 	}, [visible, text]);
 
+	// ─── Spring Entrance & Exit Animation ───
 	useEffect(() => {
-		if (!visible) return;
+		if (!visible) {
+			groupTransSpring.setGoal(1);
+			scaleSpring.setGoal(0.92);
+			return;
+		}
 
-		const cg = canvasGroupRef.current;
-		const sc = scaleRef.current;
-		if (!cg || !sc) return;
+		// 1. Entrance: Fade In + Smooth Zoom
+		groupTransSpring.setPosition(1);
+		scaleSpring.setPosition(0.92);
+		groupTransSpring.setGoal(0);
+		scaleSpring.setGoal(1.0);
 
-		// ─── 1. Inisialisasi State (Transparan & Scaled Down) ───
-		cg.GroupTransparency = 1;
-		sc.Scale = 0.92;
-
-		// ─── 2. Animasi Masuk: Fade In + Smooth Zoom (0.4 detik) ───
-		const enterInfo = new TweenInfo(0.4, Enum.EasingStyle.Quart, Enum.EasingDirection.Out);
-		const enterTweenGroup = TweenService.Create(cg, enterInfo, { GroupTransparency: 0 });
-		const enterTweenScale = TweenService.Create(sc, enterInfo, { Scale: 1.0 });
-
-		enterTweenGroup.Play();
-		enterTweenScale.Play();
-
-		// Hitung durasi efektif agar efek mesin ketik selesai diketik dan sempat dibaca
+		// 2. Hitung durasi efektif agar efek mesin ketik selesai diketik dan sempat dibaca
 		const effectiveDuration = math.max(duration, 0.2 + text.size() * 0.03 + 2.5);
-
-		// ─── 3. Animasi Keluar: Fade Out + Smooth Zoom (0.45 detik) setelah durasi ───
 		let isCancelled = false;
+
 		const timerThread = task.delay(effectiveDuration, () => {
 			if (isCancelled) return;
-			const exitInfo = new TweenInfo(0.45, Enum.EasingStyle.Quad, Enum.EasingDirection.In);
-			const exitTweenGroup = TweenService.Create(cg, exitInfo, { GroupTransparency: 1 });
-			const exitTweenScale = TweenService.Create(sc, exitInfo, { Scale: 1.06 });
+			// 3. Exit: Fade Out + Smooth Zoom
+			groupTransSpring.setGoal(1);
+			scaleSpring.setGoal(1.06);
+		});
 
-			exitTweenGroup.Play();
-			exitTweenScale.Play();
-
-			exitTweenGroup.Completed.Connect(() => {
-				if (!isCancelled && onFinished) {
-					onFinished();
-				}
-			});
+		const unsub = groupTransSpring.onComplete((val: number) => {
+			if (!isCancelled && val >= 0.95 && onFinished) {
+				onFinished();
+			}
 		});
 
 		return () => {
 			isCancelled = true;
 			task.cancel(timerThread);
-			enterTweenGroup.Cancel();
-			enterTweenScale.Cancel();
+			unsub();
 		};
 	}, [visible, text, duration]);
 
@@ -132,17 +124,17 @@ export function AnnouncementOverlayComponent({
 				BorderSizePixel={0}
 			/>
 
-			{/* Center Text Container: Animasi fade in/out dan scale zoom tanpa kotak/border */}
+			{/* Center Text Container: Animasi fade in/out dan scale zoom dengan spring */}
 			<canvasgroup
 				key="CenterTextContainer"
-				ref={canvasGroupRef}
 				AnchorPoint={new Vector2(0.5, 0.5)}
 				Position={new UDim2(0.5, 0, 0.5, 0)}
 				Size={new UDim2(0.85, 0, 0.35, 0)}
+				GroupTransparency={groupTransBinding}
 				BackgroundTransparency={1}
 				BorderSizePixel={0}
 			>
-				<uiscale ref={scaleRef} Scale={0.92} />
+				<uiscale Scale={scaleBinding} />
 				<uisizeconstraint MaxSize={new Vector2(960, 360)} />
 
 				{/* Teks Pengumuman Bold di Tengah dengan Efek Mesin Ketik */}
@@ -171,7 +163,7 @@ export function AnnouncementOverlayComponent({
 
 /**
  * Singleton OOP Class Adapter for AnnouncementOverlayView.
- * Controls full-screen blur and dynamic presentation across all clients.
+ * Controls full-screen blur and dynamic presentation across all clients using spring physics.
  */
 export class AnnouncementOverlayView {
 	private static instance?: AnnouncementOverlayView;
@@ -181,7 +173,7 @@ export class AnnouncementOverlayView {
 	private currentText = "";
 	private currentDuration = 5.0;
 	private blurEffect?: BlurEffect;
-	private blurTween?: Tween;
+	private blurSpring: Spring<number>;
 
 	constructor(targetContainer?: Instance) {
 		let container = targetContainer;
@@ -204,6 +196,18 @@ export class AnnouncementOverlayView {
 			this.screenGui = gui;
 			container = gui;
 		}
+
+		this.blurSpring = createSpring(0, SpringPresets.gentle);
+		this.blurSpring.onChange((blurSize: number) => {
+			if (this.blurEffect) {
+				this.blurEffect.Size = blurSize;
+			}
+		});
+		this.blurSpring.onComplete((blurSize: number) => {
+			if (!this.isVisible && blurSize <= 0.5 && this.blurEffect) {
+				this.blurEffect.Enabled = false;
+			}
+		});
 
 		this.root = ReactRoblox.createRoot(container);
 		this.render();
@@ -232,8 +236,6 @@ export class AnnouncementOverlayView {
 		if (!RunService.IsRunning()) return;
 
 		let blur = Lighting.FindFirstChild("AnnouncementBlur") as BlurEffect | undefined;
-		this.blurTween?.Cancel();
-
 		if (active) {
 			if (!blur) {
 				blur = new Instance("BlurEffect");
@@ -243,25 +245,9 @@ export class AnnouncementOverlayView {
 			}
 			blur.Enabled = true;
 			this.blurEffect = blur;
-
-			this.blurTween = TweenService.Create(
-				blur,
-				new TweenInfo(0.4, Enum.EasingStyle.Quart, Enum.EasingDirection.Out),
-				{ Size: 24 },
-			);
-			this.blurTween.Play();
+			this.blurSpring.setGoal(24);
 		} else if (blur) {
-			this.blurTween = TweenService.Create(
-				blur,
-				new TweenInfo(0.45, Enum.EasingStyle.Quad, Enum.EasingDirection.In),
-				{ Size: 0 },
-			);
-			this.blurTween.Play();
-			this.blurTween.Completed.Connect(() => {
-				if (!this.isVisible && blur && blur.Parent) {
-					blur.Enabled = false;
-				}
-			});
+			this.blurSpring.setGoal(0);
 		}
 	}
 
@@ -282,6 +268,7 @@ export class AnnouncementOverlayView {
 
 	public destroy(): void {
 		this.hide();
+		this.blurSpring.destroy();
 		this.root.unmount();
 		if (this.screenGui) {
 			this.screenGui.Destroy();

@@ -1,9 +1,10 @@
-import React from "@rbxts/react";
+import React, { useEffect, useState } from "@rbxts/react";
 import ReactRoblox, { Root } from "@rbxts/react-roblox";
 import { SoundService } from "@rbxts/services";
 import { AppNotificationOptions, ChatMessage } from "shared/types";
 import { Fonts } from "../Typography";
 import { LucideIcon } from "../components/LucideIcon";
+import { SpringPresets, useSpring } from "../SpringConfig";
 
 export type BannerClickCallback = (message: ChatMessage) => void;
 
@@ -14,22 +15,56 @@ export interface NotificationBannerProps {
 }
 
 export function NotificationBannerComponent({ visible, options, onActionClick }: NotificationBannerProps) {
-	if (!visible || !options) return <></>;
+	const [shouldRender, setShouldRender] = useState(visible && options !== undefined);
+	const [cachedOptions, setCachedOptions] = useState(options);
 
-	const title = options.title ?? "";
-	const message = options.message ?? "";
-	const subtext = options.subtext ?? "";
-	const icon = options.icon;
-	const badgeIcon = options.badgeIcon ?? "bell";
-	const badgeColor = options.badgeColor ?? Color3.fromHex("#2a2a2a");
-	const actionText = options.actionText;
-	const actionColor = options.actionColor ?? Color3.fromHex("#ffffff");
+	useEffect(() => {
+		if (options) {
+			setCachedOptions(options);
+		}
+	}, [options]);
+
+	const isOpen = visible && options !== undefined;
+
+	const hiddenPos = new UDim2(0.5, 0, 0, -60);
+	const shownPos = new UDim2(0.5, 0, 0, 10);
+
+	const [posBinding, posSpring] = useSpring(isOpen ? shownPos : hiddenPos, SpringPresets.bouncy);
+
+	useEffect(() => {
+		if (isOpen) {
+			setShouldRender(true);
+			posSpring.setGoal(shownPos);
+		} else {
+			posSpring.setGoal(hiddenPos);
+		}
+	}, [isOpen]);
+
+	useEffect(() => {
+		const unsub = posSpring.onComplete(() => {
+			if (!isOpen) {
+				setShouldRender(false);
+			}
+		});
+		return unsub;
+	}, [isOpen]);
+
+	if (!shouldRender || !cachedOptions) return <></>;
+
+	const title = cachedOptions.title ?? "";
+	const message = cachedOptions.message ?? "";
+	const subtext = cachedOptions.subtext ?? "";
+	const icon = cachedOptions.icon;
+	const badgeIcon = cachedOptions.badgeIcon ?? "bell";
+	const badgeColor = cachedOptions.badgeColor ?? Color3.fromHex("#2a2a2a");
+	const actionText = cachedOptions.actionText;
+	const actionColor = cachedOptions.actionColor ?? Color3.fromHex("#ffffff");
 
 	return (
 		<frame
 			key="NotificationBanner"
 			AnchorPoint={new Vector2(0.5, 0)}
-			Position={new UDim2(0.5, 0, 0, 10)}
+			Position={posBinding}
 			Size={new UDim2(0.85, 0, 0, 52)}
 			BackgroundColor3={Color3.fromHex("#0c0c0c")}
 			BackgroundTransparency={0.05}
@@ -83,7 +118,7 @@ export function NotificationBannerComponent({ visible, options, onActionClick }:
 				)}
 
 				{/* App Badge Pill (hanya tampil jika ada icon/avatar dan hideBadge tidak aktif) */}
-				{icon && icon !== "" && !options.hideBadge ? (
+				{icon && icon !== "" && !cachedOptions.hideBadge ? (
 					<frame
 						key="AppBadge"
 						AnchorPoint={new Vector2(1, 1)}

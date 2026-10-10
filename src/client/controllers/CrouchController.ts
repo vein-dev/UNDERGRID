@@ -1,5 +1,6 @@
-import { Players, RunService, TweenService, UserInputService, Workspace } from "@rbxts/services";
+import { Players, RunService, UserInputService, Workspace } from "@rbxts/services";
 import { MovementConfig } from "shared/config/MovementConfig";
+import { createSpring, Spring, SpringPresets } from "client/ui/SpringConfig";
 
 export interface MovementControlState {
 	isSprinting: boolean;
@@ -36,9 +37,9 @@ export class CrouchController {
 	private currentCrouchAnim?: "idle" | "walk";
 	private currentCrawlAnim?: "idle" | "walk";
 
-	// Tweens
-	private fovTween?: Tween;
-	private camOffsetTween?: Tween;
+	// Physics Springs
+	private fovSpring?: Spring<number>;
+	private camOffsetSpring?: Spring<Vector3>;
 
 	private isPaused = false;
 	private sprintListeners = new Set<(isSprinting: boolean) => void>();
@@ -310,29 +311,44 @@ export class CrouchController {
 		}
 	}
 
-	private tweenFOV(targetFOV: number, duration: number): void {
+	private setSpringFOV(targetFOV: number): void {
 		const camera = Workspace.CurrentCamera;
 		if (!camera) return;
 
-		this.fovTween?.Cancel();
-		this.fovTween = TweenService.Create(
-			camera,
-			new TweenInfo(duration, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
-			{ FieldOfView: targetFOV },
-		);
-		this.fovTween.Play();
+		if (!this.fovSpring) {
+			this.fovSpring = createSpring(camera.FieldOfView > 0 ? camera.FieldOfView : targetFOV, SpringPresets.snappy);
+			this.fovSpring.onChange((fov: number) => {
+				const currentCam = Workspace.CurrentCamera;
+				if (currentCam) {
+					currentCam.FieldOfView = fov;
+				}
+			});
+		}
+
+		this.fovSpring.setGoal(targetFOV);
 	}
 
-	private tweenCamOffset(targetY: number, duration: number): void {
+	private setSpringCamOffset(targetY: number): void {
 		if (!this.humanoid) return;
 
-		this.camOffsetTween?.Cancel();
-		this.camOffsetTween = TweenService.Create(
-			this.humanoid,
-			new TweenInfo(duration, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
-			{ CameraOffset: new Vector3(0, targetY, 0) },
-		);
-		this.camOffsetTween.Play();
+		if (!this.camOffsetSpring) {
+			this.camOffsetSpring = createSpring(this.humanoid.CameraOffset, SpringPresets.snappy);
+			this.camOffsetSpring.onChange((offset: Vector3) => {
+				if (this.humanoid) {
+					this.humanoid.CameraOffset = offset;
+				}
+			});
+		}
+
+		this.camOffsetSpring.setGoal(new Vector3(0, targetY, 0));
+	}
+
+	private tweenFOV(targetFOV: number, _duration?: number): void {
+		this.setSpringFOV(targetFOV);
+	}
+
+	private tweenCamOffset(targetY: number, _duration?: number): void {
+		this.setSpringCamOffset(targetY);
 	}
 
 	private isObstructed(height: number): boolean {

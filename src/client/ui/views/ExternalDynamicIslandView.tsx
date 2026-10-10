@@ -1,9 +1,10 @@
 import React, { useEffect, useState } from "@rbxts/react";
 import ReactRoblox, { Root } from "@rbxts/react-roblox";
-import { Players, SoundService, Workspace } from "@rbxts/services";
+import { Players, RunService, SoundService, Workspace } from "@rbxts/services";
 import { AppNotificationOptions, ChatMessage } from "shared/types";
 import { Fonts } from "../Typography";
 import { LucideIcon } from "../components/LucideIcon";
+import { SpringPresets, useSpring } from "../SpringConfig";
 
 export type DynamicIslandClickCallback = (message: ChatMessage) => void;
 
@@ -22,6 +23,25 @@ export function ExternalDynamicIslandComponent({
 	onActionClick: () => void;
 }) {
 	const [scale, setScale] = useState(1);
+	const [shouldRender, setShouldRender] = useState(visible && options !== undefined);
+	const [cachedOptions, setCachedOptions] = useState(options);
+
+	useEffect(() => {
+		if (options) {
+			setCachedOptions(options);
+		}
+	}, [options]);
+
+	const isOpen = visible && options !== undefined;
+
+	const retractedSize = new UDim2(0, 120, 0, 32);
+	const expandedSize = new UDim2(0, 360, 0, 68);
+
+	const retractedPos = new UDim2(0.5, 0, 0, -42);
+	const expandedPos = new UDim2(0.5, 0, 0, 16);
+
+	const [sizeBinding, sizeSpring] = useSpring(isOpen ? expandedSize : retractedSize, SpringPresets.bouncy);
+	const [posBinding, posSpring] = useSpring(isOpen ? expandedPos : retractedPos, SpringPresets.bouncy);
 
 	useEffect(() => {
 		const updateScale = () => {
@@ -36,25 +56,46 @@ export function ExternalDynamicIslandComponent({
 		return () => conn?.Disconnect();
 	}, []);
 
-	if (!visible || !options) return <></>;
+	useEffect(() => {
+		if (isOpen) {
+			setShouldRender(true);
+			sizeSpring.setGoal(expandedSize);
+			posSpring.setGoal(expandedPos);
+		} else {
+			sizeSpring.setGoal(retractedSize);
+			posSpring.setGoal(retractedPos);
+		}
+	}, [isOpen]);
 
-	const title = options.title ?? "";
-	const message = options.message ?? "";
-	const subtext = options.subtext ?? "";
-	const icon = options.icon;
-	const badgeIcon = options.badgeIcon ?? "bell";
-	const badgeColor = options.badgeColor ?? Color3.fromHex("#2a2a2a");
-	const actionText = options.actionText;
-	const actionColor = options.actionColor ?? Color3.fromHex("#ffffff");
+	useEffect(() => {
+		const unsub = posSpring.onComplete(() => {
+			if (!isOpen) {
+				setShouldRender(false);
+			}
+		});
+		return unsub;
+	}, [isOpen]);
+
+	if (!shouldRender || !cachedOptions) return <></>;
+
+	const title = cachedOptions.title ?? "";
+	const message = cachedOptions.message ?? "";
+	const subtext = cachedOptions.subtext ?? "";
+	const icon = cachedOptions.icon;
+	const badgeIcon = cachedOptions.badgeIcon ?? "bell";
+	const badgeColor = cachedOptions.badgeColor ?? Color3.fromHex("#2a2a2a");
+	const actionText = cachedOptions.actionText;
+	const actionColor = cachedOptions.actionColor ?? Color3.fromHex("#ffffff");
 
 	return (
 		<frame
 			key="IslandContainer"
 			AnchorPoint={new Vector2(0.5, 0)}
-			Position={new UDim2(0.5, 0, 0, 16)}
-			Size={new UDim2(0, 360, 0, 68)}
+			Position={posBinding}
+			Size={sizeBinding}
 			BackgroundColor3={Color3.fromHex("#0a0a0a")}
 			BackgroundTransparency={0.08}
+			ClipsDescendants={true}
 			ZIndex={151}
 		>
 			<uiscale Scale={scale} />
@@ -105,7 +146,7 @@ export function ExternalDynamicIslandComponent({
 				)}
 
 				{/* App Badge Pill (hanya tampil jika ada icon/avatar dan hideBadge tidak aktif) */}
-				{icon && icon !== "" && !options.hideBadge ? (
+				{icon && icon !== "" && !cachedOptions.hideBadge ? (
 					<frame
 						key="AppBadge"
 						AnchorPoint={new Vector2(1, 1)}
@@ -283,7 +324,7 @@ export class ExternalDynamicIslandView {
 				(parentContainer as PlayerGui) ??
 				(localPlayer
 					? ((localPlayer.FindFirstChild("PlayerGui") as PlayerGui) ??
-						(localPlayer.WaitForChild("PlayerGui") as PlayerGui))
+						(RunService.IsRunning() ? (localPlayer.WaitForChild("PlayerGui", 2) as PlayerGui) : undefined))
 					: undefined);
 			if (playerGui) {
 				this.screenGui.Parent = playerGui;

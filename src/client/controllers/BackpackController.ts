@@ -18,7 +18,7 @@ export class BackpackController {
 	private backpackView?: BackpackView;
 	private storageFolder: Folder;
 
-	// Storage slots: 1 to 20
+	// Storage slots: 1 to 10
 	private storageTools = new Map<number, Tool>();
 
 	// Currently selected slot for swap

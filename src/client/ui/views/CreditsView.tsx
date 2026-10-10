@@ -9,7 +9,9 @@ import {
 	UserInputService,
 	Workspace,
 } from "@rbxts/services";
+import { SpringPresets } from "../SpringConfig";
 import { Fonts } from "../Typography";
+import { usePressSpring } from "../hooks";
 
 export const DEFAULT_CREDITS_BANNER = "rbxassetid://134317644021810";
 export const DEFAULT_CREDITS_LOGO = "rbxassetid://79461853534630";
@@ -54,7 +56,15 @@ export function CreditsViewComponent({
 	logoAssetId = DEFAULT_CREDITS_LOGO,
 	titleImageAssetId = DEFAULT_CREDITS_TITLE_IMAGE,
 }: CreditsViewProps) {
-	const [isBackHovered, setIsBackHovered] = useState(false);
+	const {
+		scaleBinding: backScale,
+		isHovered: isBackHovered,
+		eventHandlers: backHandlers,
+	} = usePressSpring({
+		hoverScale: 1.05,
+		pressScale: 0.94,
+		springConfig: SpringPresets.snappy,
+	});
 	const [isRollHovered, setIsRollHovered] = useState(false);
 
 	const [viewportSize, setViewportSize] = useState(() => {
@@ -538,7 +548,7 @@ export function CreditsViewComponent({
 			>
 				<uiscale Scale={uiScale} />
 
-				{/* Tombol BACK Putih Monokrom Industri */}
+				{/* Tombol BACK Putih Monokrom Industri dengan tactile spring */}
 				<textbutton
 					key="BackButton"
 					Position={new UDim2(0, 0, 0, 0)}
@@ -551,11 +561,14 @@ export function CreditsViewComponent({
 					Text=""
 					ZIndex={31}
 					Event={{
-						MouseEnter: () => setIsBackHovered(true),
-						MouseLeave: () => setIsBackHovered(false),
+						MouseEnter: backHandlers.MouseEnter,
+						MouseLeave: backHandlers.MouseLeave,
+						MouseButton1Down: backHandlers.MouseButton1Down,
+						MouseButton1Up: backHandlers.MouseButton1Up,
 						Activated: handleBack,
 					}}
 				>
+					<uiscale Scale={backScale} />
 					<uistroke
 						ApplyStrokeMode={Enum.ApplyStrokeMode.Border}
 						LineJoinMode={Enum.LineJoinMode.Miter}

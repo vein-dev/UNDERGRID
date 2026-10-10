@@ -2,7 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
-## [Unreleased] - 2026-10-08
+## [Unreleased] - 2026-10-10
+
+### Added
+- **TopbarPlus Direct Graphics Presets Access**:
+  - Bound TopbarPlus Settings icon and shortcut key (`M`) directly to `GraphicsPresetView` (`Presets Setting`), allowing players to adjust graphic fidelity (`Low`, `Medium`, `High`, `Ultra`) without traversing intermediate menus.
+  - Implemented two-way synchronization via `GraphicsPresetView.onToggle()` and `toggle(forceState)` to automatically sync icon selected/deselected states.
+- **Declarative Spring Motion & Tactile Press Physics**:
+  - Introduced unified `SpringConfig.ts` with physics presets (`gentle`, `snappy`, `bouncy`) and `usePressSpring.ts` hook for natural interactive response on UI elements.
+  - Upgraded buttons, cards, and modal components across client views with tactile spring animations.
+
+## [0.9.0] - 2026-10-08
 
 ### Added
 - **Credits View & Main Menu Integration**:

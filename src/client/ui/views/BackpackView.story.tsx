@@ -4,11 +4,11 @@ import { BackpackSlotInfo, BackpackView } from "./BackpackView";
 const story = CreateGenericStory(
 	{
 		name: "Backpack & Inventory View",
-		summary: "Interactive 3D Avatar Portrait, 5 Pickup Slots, 20 Storage Slots, and Search Filter",
+		summary: "Interactive 3D Avatar Portrait, 5 Pickup Slots, 10 Storage Slots, and Search Filter",
 		controls: {
 			isOpen: Boolean(true),
 			pickupFilled: Slider(3, 0, 5, 1),
-			storageFilled: Slider(8, 0, 20, 1),
+			storageFilled: Slider(5, 0, 10, 1),
 			searchFilter: String(""),
 		},
 	},
@@ -17,33 +17,25 @@ const story = CreateGenericStory(
 		backpack.setVisible(props.controls.isOpen);
 
 		const sampleToolNames = [
-			"Hyperion Blade",
-			"Aegis Shield",
-			"Starlight Potion",
-			"Shadow Bow",
-			"Cyber Dagger",
-			"Void Wand",
-			"Plasma Blaster",
-			"Health Flask",
-			"Mana Elixir",
-			"Smoke Grenade",
-			"Speed Boots",
-			"Flashlight",
-			"Grappling Hook",
-			"Radar Beacon",
-			"Bandage",
-			"C4 Explosive",
-			"Energy Core",
-			"EMP Device",
-			"Nano Medkit",
-			"Titan Gauntlet",
+			"Smartphone",
+			"Radio Device",
+			"Security Lock",
+			"Health Pack",
+			"Lightning Core",
+			"Wrench Tool",
+			"Mini Camera",
+			"Paint Tool",
+			"Access Key",
+			"Processor Chip",
+			"Battery Pack",
+			"Audio Headset",
 		];
 
 		const createdTools: Tool[] = [];
 		for (const name of sampleToolNames) {
 			const tool = new Instance("Tool");
 			tool.Name = name;
-			tool.TextureId = "rbxassetid://10849912198";
+			tool.TextureId = ""; // Uses crisp smart Lucide icons
 			createdTools.push(tool);
 		}
 

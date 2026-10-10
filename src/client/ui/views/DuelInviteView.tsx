@@ -1,7 +1,9 @@
-import React, { useEffect, useRef, useState } from "@rbxts/react";
+import React, { useEffect, useState } from "@rbxts/react";
 import ReactRoblox, { Root } from "@rbxts/react-roblox";
-import { Players, TweenService } from "@rbxts/services";
+import { Players } from "@rbxts/services";
 import { DuelInviteData } from "shared/types";
+import { SpringPresets, useSpring } from "../SpringConfig";
+import { usePressSpring } from "../hooks";
 import { MonochromeTheme } from "../Theme";
 import { Fonts } from "../Typography";
 import { LucideIcon } from "../components/LucideIcon";
@@ -19,9 +21,47 @@ export function DuelInviteComponent({
 	onAccept,
 	onDecline,
 }: DuelInviteComponentProps) {
-	const canvasGroupRef = useRef<CanvasGroup>();
+	const [shouldRender, setShouldRender] = useState(visible);
 	const [timeLeft, setTimeLeft] = useState(data ? data.durationSeconds : 15);
 	const totalDuration = data ? data.durationSeconds : 15;
+
+	const targetPos = new UDim2(0.5, 0, 0, 75);
+	const offscreenPos = new UDim2(0.5, 0, 0, -180);
+
+	const [posBinding, posSpring] = useSpring(visible ? targetPos : offscreenPos, SpringPresets.bouncy);
+	const [transBinding, transSpring] = useSpring(visible ? 0 : 1, SpringPresets.gentle);
+
+	const { scaleBinding: declineScale, eventHandlers: declineHandlers } = usePressSpring({
+		hoverScale: 1.04,
+		pressScale: 0.95,
+		springConfig: SpringPresets.snappy,
+	});
+
+	const { scaleBinding: acceptScale, eventHandlers: acceptHandlers } = usePressSpring({
+		hoverScale: 1.04,
+		pressScale: 0.95,
+		springConfig: SpringPresets.snappy,
+	});
+
+	useEffect(() => {
+		if (visible && data) {
+			setShouldRender(true);
+			posSpring.setGoal(targetPos);
+			transSpring.setGoal(0);
+		} else {
+			posSpring.setGoal(offscreenPos);
+			transSpring.setGoal(1);
+		}
+	}, [visible, data]);
+
+	useEffect(() => {
+		const unsub = posSpring.onComplete(() => {
+			if (!visible) {
+				setShouldRender(false);
+			}
+		});
+		return unsub;
+	}, [visible]);
 
 	// Timer Countdown
 	useEffect(() => {
@@ -46,31 +86,8 @@ export function DuelInviteComponent({
 		};
 	}, [visible, data]);
 
-	// Fade & Pop Animation
-	useEffect(() => {
-		const canvas = canvasGroupRef.current;
-		if (!canvas) return;
-
-		if (visible) {
-			canvas.GroupTransparency = 1;
-			const tween = TweenService.Create(
-				canvas,
-				new TweenInfo(0.3, Enum.EasingStyle.Quart, Enum.EasingDirection.Out),
-				{ GroupTransparency: 0 },
-			);
-			tween.Play();
-		} else {
-			const tween = TweenService.Create(
-				canvas,
-				new TweenInfo(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.In),
-				{ GroupTransparency: 1 },
-			);
-			tween.Play();
-		}
-	}, [visible]);
-
-	if (!visible || !data) {
-		return <frame BackgroundTransparency={1} Size={UDim2.fromScale(1, 1)} />;
+	if (!shouldRender || !data) {
+		return <></>;
 	}
 
 	const headshotUri = `rbxthumb://type=AvatarHeadShot&id=${data.challengerUserId}&w=150&h=150`;
@@ -78,9 +95,9 @@ export function DuelInviteComponent({
 
 	return (
 		<canvasgroup
-			ref={canvasGroupRef}
 			AnchorPoint={new Vector2(0.5, 0)}
-			Position={new UDim2(0.5, 0, 0, 75)}
+			Position={posBinding}
+			GroupTransparency={transBinding}
 			Size={new UDim2(0, 320, 0, 160)}
 			BackgroundColor3={MonochromeTheme.Background.DeepCharcoal}
 			BackgroundTransparency={0.12}
@@ -213,18 +230,23 @@ export function DuelInviteComponent({
 					Padding={new UDim(0, 10)}
 				/>
 
-				{/* Decline Button */}
+				{/* Decline Button with Spring Feedback */}
 				<textbutton
 					Size={new UDim2(0.5, -5, 0, 34)}
 					BackgroundColor3={MonochromeTheme.Background.Card}
 					BackgroundTransparency={0.2}
-					AutoButtonColor={true}
+					AutoButtonColor={false}
 					Text=""
 					ZIndex={97}
 					Event={{
+						MouseEnter: declineHandlers.MouseEnter,
+						MouseLeave: declineHandlers.MouseLeave,
+						MouseButton1Down: declineHandlers.MouseButton1Down,
+						MouseButton1Up: declineHandlers.MouseButton1Up,
 						MouseButton1Click: onDecline,
 					}}
 				>
+					<uiscale Scale={declineScale} />
 					<uicorner CornerRadius={new UDim(0, 8)} />
 					<uistroke Color={MonochromeTheme.Border.Subtle} Thickness={1} />
 					<uilistlayout
@@ -250,18 +272,23 @@ export function DuelInviteComponent({
 					/>
 				</textbutton>
 
-				{/* Accept Button */}
+				{/* Accept Button with Spring Feedback */}
 				<textbutton
 					Size={new UDim2(0.5, -5, 0, 34)}
 					BackgroundColor3={Color3.fromHex("#10b981")}
 					BackgroundTransparency={0.2}
-					AutoButtonColor={true}
+					AutoButtonColor={false}
 					Text=""
 					ZIndex={97}
 					Event={{
+						MouseEnter: acceptHandlers.MouseEnter,
+						MouseLeave: acceptHandlers.MouseLeave,
+						MouseButton1Down: acceptHandlers.MouseButton1Down,
+						MouseButton1Up: acceptHandlers.MouseButton1Up,
 						MouseButton1Click: onAccept,
 					}}
 				>
+					<uiscale Scale={acceptScale} />
 					<uicorner CornerRadius={new UDim(0, 8)} />
 					<uistroke Color={Color3.fromHex("#34d399")} Thickness={1} />
 					<uilistlayout

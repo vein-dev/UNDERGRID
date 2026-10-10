@@ -4,9 +4,9 @@ import { HotbarView, SlotData } from "./HotbarView";
 const story = CreateGenericStory(
 	{
 		name: "Hotbar HUD",
-		summary: "Bottom HUD standard 5-slot Hotbar with equipped states",
+		summary: "Bottom HUD modern 5-slot Hotbar dock with 150ms pop-up transition",
 		controls: {
-			filledSlots: Slider(3, 0, 5, 1),
+			filledSlots: Slider(5, 0, 5, 1),
 			equippedSlot: Slider(1, 0, 5, 1),
 		},
 	},
@@ -14,12 +14,12 @@ const story = CreateGenericStory(
 		const hotbar = new HotbarView(props.target);
 		hotbar.setVisible(true);
 
-		const dummyToolNames = ["Katana", "Health Potion", "Crossbow", "Energy Shield", "Grappling Hook"];
+		const dummyToolNames = ["Item 01", "Item 02", "Item 03", "Item 04", "Item 05"];
 		const dummyIcons = [
 			"rbxassetid://10849912198",
+			"",
 			"rbxassetid://10849912198",
-			"rbxassetid://10849912198",
-			"rbxassetid://10849912198",
+			"",
 			"rbxassetid://10849912198",
 		];
 
@@ -31,7 +31,10 @@ const story = CreateGenericStory(
 			dummyTools.push(tool);
 		}
 
+		let currentEquipped = props.controls.equippedSlot;
+
 		const applySlots = (filled: number, equipped: number) => {
+			currentEquipped = equipped;
 			const slots = new Map<number, SlotData>();
 			for (let i = 1; i <= 5; i++) {
 				if (i <= filled) {
@@ -48,6 +51,11 @@ const story = CreateGenericStory(
 			}
 			hotbar.updateSlots(slots);
 		};
+
+		hotbar.onSlotClicked((slotNum) => {
+			const nextEquipped = currentEquipped === slotNum ? 0 : slotNum;
+			applySlots(props.controls.filledSlots, nextEquipped);
+		});
 
 		applySlots(props.controls.filledSlots, props.controls.equippedSlot);
 

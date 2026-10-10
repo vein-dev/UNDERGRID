@@ -1,16 +1,16 @@
-import { Players, TweenService } from "@rbxts/services";
+import { Players } from "@rbxts/services";
+import { createSpring, Spring, SpringPresets } from "../SpringConfig";
 
 /**
  * OOP Class Adapter for CinematicOverlayView.
  * - Start (show): Letterbox bars stay fixed in place without entrance animation.
- * - End (hide): Bars smoothly and slowly slide away (top slides up, bottom slides down).
+ * - End (hide): Bars smoothly and slowly slide away (top slides up, bottom slides down) using spring physics.
  */
 export class CinematicOverlayView {
 	private screenGui: ScreenGui;
 	private topBar: Frame;
 	private bottomBar: Frame;
-	private topTween?: Tween;
-	private bottomTween?: Tween;
+	private offsetSpring: Spring<number>;
 	private isVisible = false;
 
 	constructor(parentContainer?: Instance) {
@@ -55,14 +55,24 @@ export class CinematicOverlayView {
 		this.bottomBar.BorderSizePixel = 0;
 		this.bottomBar.ZIndex = 201;
 		this.bottomBar.Parent = this.screenGui;
+
+		// Offset spring: 0 = on screen, 1 = off screen
+		this.offsetSpring = createSpring(0, SpringPresets.gentle);
+		this.offsetSpring.onChange((offset: number) => {
+			this.topBar.Position = new UDim2(0, -100, -0.2 * offset, 0);
+			this.bottomBar.Position = new UDim2(0, -100, 1 + 0.2 * offset, 0);
+		});
+		this.offsetSpring.onComplete((offset: number) => {
+			if (!this.isVisible && offset >= 0.95) {
+				this.screenGui.Enabled = false;
+			}
+		});
 	}
 
 	public show(): void {
 		this.isVisible = true;
-		this.topTween?.Cancel();
-		this.bottomTween?.Cancel();
-
-		// Langsung tampil diam di tempat tanpa animasi masuk
+		this.offsetSpring.setPosition(0);
+		this.offsetSpring.setGoal(0);
 		this.topBar.Position = new UDim2(0, -100, 0, 0);
 		this.bottomBar.Position = new UDim2(0, -100, 1, 0);
 		this.screenGui.Enabled = true;
@@ -70,33 +80,12 @@ export class CinematicOverlayView {
 
 	public hide(): void {
 		this.isVisible = false;
-
-		this.topTween?.Cancel();
-		this.bottomTween?.Cancel();
-
-		// Animasi slide keluar dibuat lambat & sangat smooth (2.0 detik Cubic InOut)
-		const tweenInfo = new TweenInfo(2.0, Enum.EasingStyle.Cubic, Enum.EasingDirection.InOut);
-
-		this.topTween = TweenService.Create(this.topBar, tweenInfo, {
-			Position: new UDim2(0, -100, -0.2, 0),
-		});
-		this.bottomTween = TweenService.Create(this.bottomBar, tweenInfo, {
-			Position: new UDim2(0, -100, 1.2, 0),
-		});
-
-		this.topTween.Completed.Connect((status) => {
-			if (status === Enum.PlaybackState.Completed && !this.isVisible) {
-				this.screenGui.Enabled = false;
-			}
-		});
-
-		this.topTween.Play();
-		this.bottomTween.Play();
+		// Animasi slide keluar lambat & sangat halus dengan spring physics
+		this.offsetSpring.setGoal(1);
 	}
 
 	public destroy(): void {
-		this.topTween?.Cancel();
-		this.bottomTween?.Cancel();
+		this.offsetSpring.destroy();
 		this.screenGui.Destroy();
 	}
 }

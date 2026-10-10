@@ -1,7 +1,9 @@
-import React, { useEffect, useRef, useState } from "@rbxts/react";
+import React, { useEffect, useState } from "@rbxts/react";
 import ReactRoblox, { Root } from "@rbxts/react-roblox";
-import { Players, TweenService, Workspace } from "@rbxts/services";
+import { Players, Workspace } from "@rbxts/services";
 import { GUITAR_ANIMATION_CONFIG, GuitarAnimationItem } from "shared/config";
+import { SpringPresets, useSpring } from "../SpringConfig";
+import { usePressSpring } from "../hooks";
 import { AnimationSpeedSlider } from "../components/AnimationSpeedSlider";
 import { Fonts } from "../Typography";
 
@@ -16,6 +18,71 @@ export interface GuitarHudProps {
 	onStop?: () => void;
 }
 
+interface GuitarAnimationButtonItemProps {
+	anim: GuitarAnimationItem;
+	idx: number;
+	isActive: boolean;
+	onSelect: () => void;
+}
+
+function GuitarAnimationButtonItem({ anim, idx, isActive, onSelect }: GuitarAnimationButtonItemProps) {
+	const { scaleBinding, isHovered, eventHandlers } = usePressSpring({
+		hoverScale: 1.02,
+		pressScale: 0.98,
+		springConfig: SpringPresets.snappy,
+	});
+
+	return (
+		<textbutton
+			key={`anim_${anim.id}`}
+			LayoutOrder={idx}
+			Size={new UDim2(1, 0, 0, 36)}
+			BackgroundColor3={
+				isActive
+					? Color3.fromHex("#ffffff")
+					: isHovered
+						? Color3.fromHex("#1f1f26")
+						: Color3.fromHex("#141418")
+			}
+			BackgroundTransparency={isActive ? 0 : 0.25}
+			AutoButtonColor={false}
+			Text=""
+			ZIndex={52}
+			Event={{
+				MouseEnter: eventHandlers.MouseEnter,
+				MouseLeave: eventHandlers.MouseLeave,
+				MouseButton1Down: eventHandlers.MouseButton1Down,
+				MouseButton1Up: eventHandlers.MouseButton1Up,
+				MouseButton1Click: onSelect,
+			}}
+		>
+			<uiscale Scale={scaleBinding} />
+			<uicorner CornerRadius={new UDim(0, 8)} />
+			<uistroke
+				Color={
+					isActive
+						? Color3.fromHex("#ffffff")
+						: isHovered
+							? Color3.fromHex("#444455")
+							: Color3.fromHex("#26262e")
+				}
+				Thickness={isActive ? 1.5 : 1}
+			/>
+			<textlabel
+				Size={new UDim2(1, 0, 1, 0)}
+				Text={anim.name}
+				Font={isActive ? Fonts.Bold : Fonts.Medium}
+				TextSize={12}
+				TextColor3={isActive ? Color3.fromHex("#000000") : Color3.fromHex("#f1f5f9")}
+				TextXAlignment={Enum.TextXAlignment.Center}
+				TextYAlignment={Enum.TextYAlignment.Center}
+				BackgroundTransparency={1}
+				ZIndex={53}
+			/>
+		</textbutton>
+	);
+}
+
 export function GuitarHudComponent({
 	visible,
 	animations = GUITAR_ANIMATION_CONFIG.ANIMATIONS,
@@ -27,20 +94,19 @@ export function GuitarHudComponent({
 	onStop,
 }: GuitarHudProps) {
 	const [shouldRender, setShouldRender] = useState(visible);
-	const [hoveredAnimId, setHoveredAnimId] = useState<string | undefined>();
-	const [isStopHovered, setIsStopHovered] = useState(false);
-
 	const [scale, setScale] = useState(1);
 	const [targetPos, setTargetPos] = useState(new UDim2(0, 24, 0.5, 0));
 	const [offscreenPos, setOffscreenPos] = useState(new UDim2(0, -260, 0.5, 0));
 	const [anchorPoint, setAnchorPoint] = useState(new Vector2(0, 0.5));
 
-	const containerRef = useRef<Frame>();
-	const isMountedRef = useRef(false);
+	const [posBinding, posSpring] = useSpring(visible ? targetPos : offscreenPos, SpringPresets.snappy);
+	const [bgTransBinding, bgTransSpring] = useSpring(visible ? 0.15 : 1, SpringPresets.gentle);
 
-	useEffect(() => {
-		isMountedRef.current = true;
-	}, []);
+	const { scaleBinding: stopScale, isHovered: isStopHovered, eventHandlers: stopHandlers } = usePressSpring({
+		hoverScale: 1.03,
+		pressScale: 0.96,
+		springConfig: SpringPresets.snappy,
+	});
 
 	// Responsive placement & scaling listener
 	useEffect(() => {
@@ -75,63 +141,26 @@ export function GuitarHudComponent({
 		};
 	}, []);
 
-	// Trigger render mounting when visible becomes true
+	// Spring updates
 	useEffect(() => {
 		if (visible) {
 			setShouldRender(true);
-		}
-	}, [visible]);
-
-	// Open / Close Tween animation
-	useEffect(() => {
-		if (!shouldRender) return;
-
-		const container = containerRef.current;
-		if (!container) return;
-
-		if (visible) {
-			container.Position = offscreenPos;
-			container.BackgroundTransparency = 1;
-
-			const tween = TweenService.Create(
-				container,
-				new TweenInfo(0.35, Enum.EasingStyle.Quart, Enum.EasingDirection.Out),
-				{
-					Position: targetPos,
-					BackgroundTransparency: 0.15,
-				},
-			);
-			tween.Play();
-			return () => tween.Cancel();
+			posSpring.setGoal(targetPos);
+			bgTransSpring.setGoal(0.15);
 		} else {
-			if (!isMountedRef.current) {
-				container.Position = offscreenPos;
-				container.BackgroundTransparency = 1;
-				setShouldRender(false);
-				return;
-			}
-
-			const tween = TweenService.Create(
-				container,
-				new TweenInfo(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.In),
-				{
-					Position: offscreenPos,
-					BackgroundTransparency: 1,
-				},
-			);
-			const conn = tween.Completed.Connect((status) => {
-				conn.Disconnect();
-				if (status === Enum.PlaybackState.Completed) {
-					setShouldRender(false);
-				}
-			});
-			tween.Play();
-			return () => {
-				conn.Disconnect();
-				tween.Cancel();
-			};
+			posSpring.setGoal(offscreenPos);
+			bgTransSpring.setGoal(1);
 		}
-	}, [visible, shouldRender, targetPos, offscreenPos]);
+	}, [visible, targetPos, offscreenPos]);
+
+	useEffect(() => {
+		const unsub = posSpring.onComplete(() => {
+			if (!visible) {
+				setShouldRender(false);
+			}
+		});
+		return unsub;
+	}, [visible]);
 
 	if (!shouldRender) {
 		return <></>;
@@ -139,13 +168,12 @@ export function GuitarHudComponent({
 
 	return (
 		<frame
-			ref={containerRef}
 			AnchorPoint={anchorPoint}
-			Position={offscreenPos}
+			Position={posBinding}
 			Size={new UDim2(0, 200, 0, 0)}
 			AutomaticSize={Enum.AutomaticSize.Y}
 			BackgroundColor3={Color3.fromHex("#0c0c10")}
-			BackgroundTransparency={0.15}
+			BackgroundTransparency={bgTransBinding}
 			ZIndex={50}
 		>
 			<uiscale Scale={scale} />
@@ -217,57 +245,15 @@ export function GuitarHudComponent({
 					Padding={new UDim(0, 6)}
 					SortOrder={Enum.SortOrder.LayoutOrder}
 				/>
-				{animations.map((anim: GuitarAnimationItem, idx: number) => {
-					const isActive = isPlaying && anim.id === activeAnimationId;
-					const isHovered = anim.id === hoveredAnimId;
-
-					return (
-						<textbutton
-							key={`anim_${anim.id}`}
-							LayoutOrder={idx}
-							Size={new UDim2(1, 0, 0, 36)}
-							BackgroundColor3={
-								isActive
-									? Color3.fromHex("#ffffff")
-									: isHovered
-										? Color3.fromHex("#1f1f26")
-										: Color3.fromHex("#141418")
-							}
-							BackgroundTransparency={isActive ? 0 : 0.25}
-							AutoButtonColor={false}
-							Text=""
-							ZIndex={52}
-							Event={{
-								MouseEnter: () => setHoveredAnimId(anim.id),
-								MouseLeave: () => setHoveredAnimId(undefined),
-								MouseButton1Click: () => onSelectAnimation?.(anim.id),
-							}}
-						>
-							<uicorner CornerRadius={new UDim(0, 8)} />
-							<uistroke
-								Color={
-									isActive
-										? Color3.fromHex("#ffffff")
-										: isHovered
-											? Color3.fromHex("#444455")
-											: Color3.fromHex("#26262e")
-								}
-								Thickness={isActive ? 1.5 : 1}
-							/>
-							<textlabel
-								Size={new UDim2(1, 0, 1, 0)}
-								Text={anim.name}
-								Font={isActive ? Fonts.Bold : Fonts.Medium}
-								TextSize={12}
-								TextColor3={isActive ? Color3.fromHex("#000000") : Color3.fromHex("#f1f5f9")}
-								TextXAlignment={Enum.TextXAlignment.Center}
-								TextYAlignment={Enum.TextYAlignment.Center}
-								BackgroundTransparency={1}
-								ZIndex={53}
-							/>
-						</textbutton>
-					);
-				})}
+				{animations.map((anim: GuitarAnimationItem, idx: number) => (
+					<GuitarAnimationButtonItem
+						key={`anim_${anim.id}`}
+						anim={anim}
+						idx={idx}
+						isActive={isPlaying && anim.id === activeAnimationId}
+						onSelect={() => onSelectAnimation?.(anim.id)}
+					/>
+				))}
 			</frame>
 
 			{/* Animation Speed Slider */}
@@ -287,7 +273,7 @@ export function GuitarHudComponent({
 				ZIndex={51}
 			/>
 
-			{/* Stop Playing Button */}
+			{/* Stop Playing Button with Spring Feedback */}
 			<textbutton
 				key="StopBtn"
 				LayoutOrder={6}
@@ -300,11 +286,14 @@ export function GuitarHudComponent({
 				Text=""
 				ZIndex={52}
 				Event={{
-					MouseEnter: () => setIsStopHovered(true),
-					MouseLeave: () => setIsStopHovered(false),
+					MouseEnter: stopHandlers.MouseEnter,
+					MouseLeave: stopHandlers.MouseLeave,
+					MouseButton1Down: stopHandlers.MouseButton1Down,
+					MouseButton1Up: stopHandlers.MouseButton1Up,
 					MouseButton1Click: () => onStop?.(),
 				}}
 			>
+				<uiscale Scale={stopScale} />
 				<uicorner CornerRadius={new UDim(0, 8)} />
 				<uistroke
 					Color={isStopHovered ? Color3.fromHex("#555566") : Color3.fromHex("#33333e")}

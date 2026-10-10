@@ -1,4 +1,4 @@
-import { Players, TweenService, UserInputService, Workspace } from "@rbxts/services";
+import { Players, UserInputService, Workspace } from "@rbxts/services";
 import { AppId } from "shared/types";
 import { getGMT7TimeInfo, GetIconUri } from "shared/utils";
 import { Fonts } from "../Typography";
@@ -12,6 +12,7 @@ import { GlobalNotificationService } from "client/services/GlobalNotificationSer
 import { FreecamController } from "client/controllers/FreecamController";
 import { HotbarController } from "client/controllers/HotbarController";
 import type { ExternalDynamicIslandView } from "./ExternalDynamicIslandView";
+import { createSpring, Spring, SpringPresets } from "../SpringConfig";
 
 /**
  * Main Smartphone shell View.
@@ -39,7 +40,7 @@ export class SmartphoneView {
 	private isDestroyed = false;
 	private closeCallbacks: Array<() => void> = [];
 	private openCallbacks: Array<() => void> = [];
-	private slideTween?: Tween;
+	private phoneSpring: Spring<UDim2>;
 
 	private static instance?: SmartphoneView;
 
@@ -146,6 +147,25 @@ export class SmartphoneView {
 		phoneStroke.Thickness = 2.0;
 		phoneStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border;
 		phoneStroke.Parent = this.phoneFrame;
+
+		// Spring animation physics controller
+		this.phoneSpring = createSpring(new UDim2(1, 420, 0.5, 0), SpringPresets.snappy);
+		this.phoneSpring.start();
+		this.phoneSpring.onChange((pos) => {
+			this.phoneFrame.Position = pos;
+		});
+		this.phoneSpring.onComplete(() => {
+			if (!this.isPhoneOpen) {
+				this.screenGui.Enabled = false;
+				this.phoneFrame.Visible = false;
+				this.lockScreen.hide();
+				this.lockContainer.Visible = false;
+				this.homeScreen.hide();
+				this.homeContainer.Visible = false;
+				this.appRouter.hideAll();
+				this.appContainer.Visible = false;
+			}
+		});
 
 		// Responsive scaling
 		const uiScale = new Instance("UIScale");
@@ -542,7 +562,9 @@ export class SmartphoneView {
 		} catch {}
 
 		this.notificationBanner.forceHide();
-		GlobalNotificationService.getInstance().getExternalView().forceHide();
+		try {
+			GlobalNotificationService.getInstance().getExternalView().forceHide();
+		} catch {}
 		this.updateClock();
 		this.appRouter.hideAll();
 		this.appContainer.Visible = false;
@@ -554,14 +576,9 @@ export class SmartphoneView {
 		this.dimOverlay.Visible = true;
 		this.phoneFrame.Visible = true;
 
-		// Animasi slide-in mulus dari sisi kanan layar
-		this.slideTween?.Cancel();
-		this.slideTween = TweenService.Create(
-			this.phoneFrame,
-			new TweenInfo(0.38, Enum.EasingStyle.Quart, Enum.EasingDirection.Out),
-			{ Position: new UDim2(1, -36, 0.5, 0) },
-		);
-		this.slideTween.Play();
+		// Animasi slide-in elastis menggunakan spring physics
+		this.phoneSpring.start();
+		this.phoneSpring.setGoal(new UDim2(1, -36, 0.5, 0));
 
 		for (const cb of this.openCallbacks) {
 			cb();
@@ -581,28 +598,9 @@ export class SmartphoneView {
 		this.notificationBanner.forceHide();
 		this.dimOverlay.Visible = false;
 
-		// Animasi slide-out mulus ke sisi kanan layar
-		this.slideTween?.Cancel();
-		this.slideTween = TweenService.Create(
-			this.phoneFrame,
-			new TweenInfo(0.28, Enum.EasingStyle.Quad, Enum.EasingDirection.In),
-			{ Position: new UDim2(1, 420, 0.5, 0) },
-		);
-
-		this.slideTween.Completed.Connect((status) => {
-			if (status === Enum.PlaybackState.Completed && !this.isPhoneOpen) {
-				this.screenGui.Enabled = false;
-				this.phoneFrame.Visible = false;
-				this.lockScreen.hide();
-				this.lockContainer.Visible = false;
-				this.homeScreen.hide();
-				this.homeContainer.Visible = false;
-				this.appRouter.hideAll();
-				this.appContainer.Visible = false;
-			}
-		});
-
-		this.slideTween.Play();
+		// Animasi slide-out elastis menggunakan spring physics
+		this.phoneSpring.start();
+		this.phoneSpring.setGoal(new UDim2(1, 420, 0.5, 0));
 
 		for (const cb of this.closeCallbacks) {
 			cb();
@@ -643,7 +641,7 @@ export class SmartphoneView {
 
 	public destroy(): void {
 		this.isDestroyed = true;
-		this.slideTween?.Cancel();
+		this.phoneSpring.destroy();
 		GlobalNotificationService.getInstance().unregisterInternalBanner();
 		this.notificationBanner.destroy();
 		this.lockScreen.destroy();

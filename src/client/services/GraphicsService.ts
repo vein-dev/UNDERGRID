@@ -8,7 +8,7 @@ export type GraphicsPreset = "Low" | "Medium" | "High" | "Ultra";
  */
 export class GraphicsService {
 	private static instance?: GraphicsService;
-	private currentPreset: GraphicsPreset = "High";
+	private currentPreset: GraphicsPreset = "Low";
 	private presetChangedCallbacks: Array<(preset: GraphicsPreset) => void> = [];
 
 	private constructor() {

@@ -1,4 +1,4 @@
-import { Players, TweenService, Workspace } from "@rbxts/services";
+import { Players, Workspace } from "@rbxts/services";
 import { ARCZIS_COMBAT_CONFIG, DuelActiveData, DuelEndData, DuelIntroData, DuelInviteData } from "shared/types";
 import { BackpackController } from "./BackpackController";
 import { HotbarController } from "./HotbarController";
@@ -6,6 +6,7 @@ import { DuelService } from "../services/DuelService";
 import { DuelHudView } from "../ui/views/DuelHudView";
 import { DuelInviteView } from "../ui/views/DuelInviteView";
 import { CinematicOverlayView } from "../ui/views/CinematicOverlayView";
+import { createSpring, Spring, SpringPresets } from "../ui/SpringConfig";
 
 /**
  * DuelController - Controls client-side duel flow:
@@ -20,7 +21,7 @@ export class DuelController {
 	private localPlayer = Players.LocalPlayer;
 
 	private isPlayingIntro = false;
-	private activeCameraTween?: Tween;
+	private activeCameraSpring?: Spring<CFrame>;
 	private activeTracks: AnimationTrack[] = [];
 	private originalCameraType: Enum.CameraType = Enum.CameraType.Custom;
 
@@ -193,15 +194,16 @@ export class DuelController {
 		const startPos = hrp.Position.add(threeQuarterDir.mul(startDistance)).add(new Vector3(0, startHeight, 0));
 		const endPos = hrp.Position.add(threeQuarterDir.mul(endDistance)).add(new Vector3(0, endHeight, 0));
 
-		camera.CFrame = CFrame.lookAt(startPos, chestTarget);
+		const startCFrame = CFrame.lookAt(startPos, chestTarget);
+		const endCFrame = CFrame.lookAt(endPos, chestTarget);
+		camera.CFrame = startCFrame;
 
-		this.activeCameraTween?.Cancel();
-		this.activeCameraTween = TweenService.Create(
-			camera,
-			new TweenInfo(duration, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
-			{ CFrame: CFrame.lookAt(endPos, chestTarget) },
-		);
-		this.activeCameraTween.Play();
+		this.activeCameraSpring?.destroy();
+		this.activeCameraSpring = createSpring<CFrame>(startCFrame, SpringPresets.gentle);
+		this.activeCameraSpring.onChange((cf: CFrame) => {
+			camera.CFrame = cf;
+		});
+		this.activeCameraSpring.setGoal(endCFrame);
 
 		// Play walking animation transitioning into fists equip pose
 		let walkTrack: AnimationTrack | undefined;
@@ -282,15 +284,17 @@ export class DuelController {
 		// Mulai slide-out letterbox bar secara halus (persis spawn animation)
 		this.cinematicOverlay.hide();
 
-		this.activeCameraTween?.Cancel();
-		this.activeCameraTween = TweenService.Create(
-			camera,
-			new TweenInfo(duration, Enum.EasingStyle.Cubic, Enum.EasingDirection.Out),
-			{ CFrame: targetCombatCFrame },
-		);
+		this.activeCameraSpring?.destroy();
+		this.activeCameraSpring = createSpring<CFrame>(camera.CFrame, SpringPresets.gentle);
+		this.activeCameraSpring.onChange((cf: CFrame) => {
+			camera.CFrame = cf;
+		});
 
-		this.activeCameraTween.Completed.Connect((status) => {
-			if (status === Enum.PlaybackState.Completed && this.isPlayingIntro) {
+		let isCompleted = false;
+		this.activeCameraSpring.onComplete(() => {
+			if (isCompleted) return;
+			isCompleted = true;
+			if (this.isPlayingIntro) {
 				camera.CameraSubject = myHum;
 				camera.Focus = new CFrame(myHrp.Position);
 				camera.CFrame = targetCombatCFrame;
@@ -301,12 +305,12 @@ export class DuelController {
 			onDone();
 		});
 
-		this.activeCameraTween.Play();
+		this.activeCameraSpring.setGoal(targetCombatCFrame);
 	}
 
 	private cleanupCinematicCamera(): void {
-		this.activeCameraTween?.Cancel();
-		this.activeCameraTween = undefined;
+		this.activeCameraSpring?.destroy();
+		this.activeCameraSpring = undefined;
 
 		for (const track of this.activeTracks) {
 			if (track.IsPlaying) {

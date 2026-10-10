@@ -1,9 +1,10 @@
-import { ContentProvider, Players, RunService, TweenService, UserInputService, Workspace } from "@rbxts/services";
+import { ContentProvider, Players, RunService, UserInputService, Workspace } from "@rbxts/services";
 import { DEFAULT_SMARTPHONE_CONFIG, SMARTPHONE_ANIMATIONS } from "shared/types";
 import { IToolComponent } from "./IToolComponent";
 import { MusicPlayerService } from "client/services/MusicPlayerService";
 import { SmartphoneView } from "client/ui/views/SmartphoneView";
 import { FreecamController } from "client/controllers/FreecamController";
+import { createSpring, Spring, SpringPresets } from "client/ui/SpringConfig";
 
 /**
  * OOP Client Component bound to the "Smartphone" Tool for LocalPlayer.
@@ -26,10 +27,10 @@ export class SmartphoneClientComponent implements IToolComponent {
 	private unuseTrack?: AnimationTrack;
 
 	private ikControl?: IKControl;
-	private currentTween?: Tween;
+	private ikWeightSpring?: Spring<number>;
 
 	private originalFOV = 70;
-	private fovTween?: Tween;
+	private fovSpring?: Spring<number>;
 
 	constructor(public readonly tool: Tool) {
 		// Pastikan klik mouse memicu tool.Activated
@@ -113,55 +114,51 @@ export class SmartphoneClientComponent implements IToolComponent {
 
 		if (!this.ikControl) return;
 
-		this.currentTween?.Cancel();
 		const targetWeight = active ? 0.85 : 0;
-		const duration = active ? 0.35 : 0.25;
-
-		this.currentTween = TweenService.Create(
-			this.ikControl,
-			new TweenInfo(duration, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
-			{ Weight: targetWeight },
-		);
-
-		if (!active) {
-			this.currentTween.Completed.Connect((status) => {
-				if (status === Enum.PlaybackState.Completed && this.ikControl && !this.smartphoneView.isOpen()) {
+		if (!this.ikWeightSpring) {
+			this.ikWeightSpring = createSpring(0, SpringPresets.snappy);
+			this.ikWeightSpring.onChange((weight: number) => {
+				if (this.ikControl) {
+					this.ikControl.Weight = weight;
+				}
+			});
+			this.ikWeightSpring.onComplete((weight: number) => {
+				if (weight <= 0.05 && this.ikControl && !this.smartphoneView.isOpen()) {
 					this.ikControl.Enabled = false;
 				}
 			});
 		}
 
-		this.currentTween.Play();
+		this.ikWeightSpring.setGoal(targetWeight);
 	}
 
 	private animateFOV(zoomIn: boolean): void {
 		const camera = Workspace.CurrentCamera;
 		if (!camera) return;
 
-		this.fovTween?.Cancel();
+		if (!this.fovSpring) {
+			this.originalFOV = camera.FieldOfView > 0 ? camera.FieldOfView : 70;
+			this.fovSpring = createSpring(camera.FieldOfView, SpringPresets.gentle);
+			this.fovSpring.onChange((fov: number) => {
+				const currentCam = Workspace.CurrentCamera;
+				if (currentCam) {
+					currentCam.FieldOfView = fov;
+				}
+			});
+		}
 
 		if (zoomIn) {
 			this.originalFOV = camera.FieldOfView > 0 ? camera.FieldOfView : 70;
 			const targetFOV = math.max(this.originalFOV - 35, 45); // Zoom-in halus ~10 derajat FOV
-			this.fovTween = TweenService.Create(
-				camera,
-				new TweenInfo(0.4, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
-				{ FieldOfView: targetFOV },
-			);
+			this.fovSpring.setGoal(targetFOV);
 		} else {
-			this.fovTween = TweenService.Create(
-				camera,
-				new TweenInfo(0.35, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
-				{ FieldOfView: this.originalFOV },
-			);
+			this.fovSpring.setGoal(this.originalFOV);
 		}
-
-		this.fovTween.Play();
 	}
 
 	private cleanupIKControl(): void {
-		this.currentTween?.Cancel();
-		this.currentTween = undefined;
+		this.ikWeightSpring?.destroy();
+		this.ikWeightSpring = undefined;
 		if (this.ikControl) {
 			this.ikControl.Destroy();
 			this.ikControl = undefined;
@@ -377,6 +374,8 @@ export class SmartphoneClientComponent implements IToolComponent {
 		this.connections = [];
 		this.cleanupEquippedConnections();
 		this.animateFOV(false);
+		this.fovSpring?.destroy();
+		this.fovSpring = undefined;
 		this.cleanupIKControl();
 		this.stopAnimations();
 

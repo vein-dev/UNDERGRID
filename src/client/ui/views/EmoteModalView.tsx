@@ -1,10 +1,12 @@
 import React, { useCallback, useEffect, useRef, useState } from "@rbxts/react";
 import ReactRoblox, { Root } from "@rbxts/react-roblox";
-import { GuiService, Players, RunService, TweenService, UserInputService, Workspace } from "@rbxts/services";
+import { GuiService, Players, RunService, UserInputService, Workspace } from "@rbxts/services";
 import { EmoteService } from "client/services/EmoteService";
+import { createSpring, Spring, SpringPresets, useSpring } from "../SpringConfig";
 import { Fonts } from "../Typography";
 import { EMOTE_CONFIG } from "shared/config";
 import { EmoteCategory, EmoteItem } from "shared/types";
+import { usePressSpring } from "../hooks";
 import { LucideIcon } from "../components/LucideIcon";
 
 const CATEGORIES: EmoteCategory[] = ["Dance", "Pose", "Reaction"];
@@ -13,6 +15,89 @@ export interface EmoteModalProps {
 	isOpen: boolean;
 	onClose: () => void;
 	onAnimationFinished?: () => void;
+}
+
+interface EmoteRowItemProps {
+	item: EmoteItem;
+	idx: number;
+	isPlayingThis: boolean;
+	onToggle: () => void;
+}
+
+function EmoteRowItem({ item, idx, isPlayingThis, onToggle }: EmoteRowItemProps) {
+	const { scaleBinding, eventHandlers } = usePressSpring({
+		hoverScale: 1.02,
+		pressScale: 0.98,
+		springConfig: SpringPresets.snappy,
+	});
+
+	return (
+		<textbutton
+			key={`emote_${item.id}`}
+			LayoutOrder={idx}
+			Size={new UDim2(1, 0, 0, 38)}
+			BackgroundColor3={
+				isPlayingThis ? Color3.fromHex("#ffffff") : Color3.fromHex("#181818")
+			}
+			BackgroundTransparency={isPlayingThis ? 0 : 0.4}
+			AutoButtonColor={false}
+			Text=""
+			Event={{
+				MouseEnter: eventHandlers.MouseEnter,
+				MouseLeave: eventHandlers.MouseLeave,
+				MouseButton1Down: eventHandlers.MouseButton1Down,
+				MouseButton1Up: eventHandlers.MouseButton1Up,
+				MouseButton1Click: onToggle,
+			}}
+		>
+			<uiscale Scale={scaleBinding} />
+			<uicorner CornerRadius={new UDim(0, 8)} />
+			<uistroke
+				Color={
+					isPlayingThis
+						? Color3.fromHex("#ffffff")
+						: Color3.fromHex("#282828")
+				}
+				Thickness={1}
+				Transparency={0.5}
+				ApplyStrokeMode={Enum.ApplyStrokeMode.Border}
+			/>
+			<frame
+				key="Inner"
+				Size={new UDim2(1, 0, 1, 0)}
+				BackgroundTransparency={1}
+			>
+				<uilistlayout
+					FillDirection={Enum.FillDirection.Horizontal}
+					VerticalAlignment={Enum.VerticalAlignment.Center}
+					Padding={new UDim(0, 8)}
+				/>
+				<uipadding PaddingLeft={new UDim(0, 10)} />
+				<LucideIcon
+					name={item.category === "Reaction" ? "smile" : "activity"}
+					size={new UDim2(0, 16, 0, 16)}
+					color={
+						isPlayingThis
+							? Color3.fromHex("#000000")
+							: Color3.fromHex("#888888")
+					}
+				/>
+				<textlabel
+					key="Label"
+					BackgroundTransparency={1}
+					AutomaticSize={Enum.AutomaticSize.XY}
+					Text={item.name.upper()}
+					TextColor3={
+						isPlayingThis
+							? Color3.fromHex("#000000")
+							: Color3.fromHex("#d0d0d0")
+					}
+					Font={isPlayingThis ? Fonts.Bold : Fonts.Medium}
+					TextSize={12}
+				/>
+			</frame>
+		</textbutton>
+	);
 }
 
 interface SpeedSliderProps {
@@ -237,10 +322,16 @@ export function EmoteModalComponent({ isOpen, onClose, onAnimationFinished }: Em
 	const [isFreecam, setIsFreecam] = useState(false);
 	const [shouldRender, setShouldRender] = useState(isOpen);
 
+	const [posBinding, posSpring] = useSpring(isOpen ? targetPos : offscreenPos, SpringPresets.gentle);
+	const [backdropTransBinding, backdropTransSpring] = useSpring(isOpen ? 0.35 : 1, SpringPresets.gentle);
+
+	const { scaleBinding: closeScale, eventHandlers: closeHandlers } = usePressSpring({
+		hoverScale: 1.1,
+		pressScale: 0.9,
+		springConfig: SpringPresets.snappy,
+	});
+
 	const panelRef = useRef<Frame>();
-	const backdropRef = useRef<TextButton>();
-	const isMountedRef = useRef(false);
-	const wasOpenRef = useRef(false);
 
 	const updateScale = useCallback(() => {
 		const camera = Workspace.CurrentCamera;
@@ -314,73 +405,25 @@ export function EmoteModalComponent({ isOpen, onClose, onAnimationFinished }: Em
 			updateScale();
 			openTimeRef.current = os.clock();
 			setShouldRender(true);
-		}
-	}, [isOpen, updateScale]);
-
-	const isCurrentlyRendering = isOpen || shouldRender;
-
-	useEffect(() => {
-		if (!isCurrentlyRendering) return;
-
-		const panel = panelRef.current;
-		const backdrop = backdropRef.current;
-		if (!panel || !backdrop) return;
-
-		if (isOpen) {
-			if (!wasOpenRef.current) {
-				wasOpenRef.current = true;
-				panel.Position = offscreenPos;
-				backdrop.BackgroundTransparency = 1;
-			}
-
-			const openPanelTween = TweenService.Create(
-				panel,
-				new TweenInfo(0.38, Enum.EasingStyle.Quart, Enum.EasingDirection.Out),
-				{ Position: targetPos },
-			);
-
-			openPanelTween.Play();
-
-			return () => {
-				openPanelTween.Cancel();
-			};
+			posSpring.setGoal(targetPos);
+			backdropTransSpring.setGoal(0.35);
 		} else {
-			wasOpenRef.current = false;
-			if (!isMountedRef.current) {
-				panel.Position = offscreenPos;
-				backdrop.BackgroundTransparency = 1;
-				setShouldRender(false);
-				return;
-			}
-
-			const closePanelTween = TweenService.Create(
-				panel,
-				new TweenInfo(0.28, Enum.EasingStyle.Quad, Enum.EasingDirection.In),
-				{ Position: offscreenPos },
-			);
-
-			const conn = closePanelTween.Completed.Connect((status) => {
-				conn.Disconnect();
-				if (status === Enum.PlaybackState.Completed) {
-					setShouldRender(false);
-					onAnimationFinished?.();
-				}
-			});
-
-			closePanelTween.Play();
-
-			return () => {
-				conn.Disconnect();
-				closePanelTween.Cancel();
-			};
+			posSpring.setGoal(offscreenPos);
+			backdropTransSpring.setGoal(1);
 		}
-	}, [isOpen, isCurrentlyRendering, targetPos, offscreenPos]);
+	}, [isOpen, targetPos, offscreenPos, updateScale]);
 
 	useEffect(() => {
-		isMountedRef.current = true;
-	}, []);
+		const unsub = posSpring.onComplete(() => {
+			if (!isOpen) {
+				setShouldRender(false);
+				onAnimationFinished?.();
+			}
+		});
+		return unsub;
+	}, [isOpen, onAnimationFinished]);
 
-	if (!isCurrentlyRendering) return <></>;
+	if (!shouldRender) return <></>;
 
 	const rawItems: EmoteItem[] =
 		currentTab === "Dance"
@@ -428,12 +471,11 @@ export function EmoteModalComponent({ isOpen, onClose, onAnimationFinished }: Em
 		<frame key="EmoteModalRoot" Size={new UDim2(1, 0, 1, 0)} BackgroundTransparency={1} ZIndex={1}>
 			{/* Backdrop - Berada di bawah Topbar agar menu Topbar tidak tertutup dan bebas diklik */}
 			<textbutton
-				ref={backdropRef}
 				key="Backdrop"
 				Position={new UDim2(0, isFreecam ? 76 : 0, 0, isFreecam ? 0 : topbarHeight)}
 				Size={new UDim2(1, isFreecam ? -76 : 0, 1, isFreecam ? 0 : -topbarHeight)}
 				BackgroundColor3={Color3.fromHex("#000000")}
-				BackgroundTransparency={1}
+				BackgroundTransparency={backdropTransBinding}
 				Text=""
 				Active={true}
 				AutoButtonColor={false}
@@ -449,7 +491,7 @@ export function EmoteModalComponent({ isOpen, onClose, onAnimationFinished }: Em
 				ref={panelRef}
 				key="EmotePanelWrapper"
 				AnchorPoint={anchorPoint}
-				Position={offscreenPos}
+				Position={posBinding}
 				Size={new UDim2(0, 310, 0, 500)}
 				BackgroundColor3={Color3.fromHex("#141414")}
 				BackgroundTransparency={0}
@@ -498,9 +540,14 @@ export function EmoteModalComponent({ isOpen, onClose, onAnimationFinished }: Em
 						Text=""
 						AutoButtonColor={false}
 						Event={{
+							MouseEnter: closeHandlers.MouseEnter,
+							MouseLeave: closeHandlers.MouseLeave,
+							MouseButton1Down: closeHandlers.MouseButton1Down,
+							MouseButton1Up: closeHandlers.MouseButton1Up,
 							MouseButton1Click: onClose,
 						}}
 					>
+						<uiscale Scale={closeScale} />
 						<uicorner CornerRadius={new UDim(0, 8)} />
 						<LucideIcon
 							name="x"
@@ -617,72 +664,19 @@ export function EmoteModalComponent({ isOpen, onClose, onAnimationFinished }: Em
 					{items.map((item: EmoteItem, idx: number) => {
 						const isPlayingThis = activeEmoteId === item.id;
 						return (
-							<textbutton
+							<EmoteRowItem
 								key={`emote_${item.id}`}
-								LayoutOrder={idx}
-								Size={new UDim2(1, 0, 0, 38)}
-								BackgroundColor3={
-									isPlayingThis ? Color3.fromHex("#ffffff") : Color3.fromHex("#181818")
-								}
-								BackgroundTransparency={isPlayingThis ? 0 : 0.4}
-								AutoButtonColor={false}
-								Text=""
-								Event={{
-									MouseButton1Click: () => {
-										if (isPlayingThis) {
-											EmoteService.getInstance().stopEmote();
-										} else {
-											EmoteService.getInstance().playEmote(item);
-										}
-									},
-								}}
-							>
-								<uicorner CornerRadius={new UDim(0, 8)} />
-								<uistroke
-									Color={
-										isPlayingThis
-											? Color3.fromHex("#ffffff")
-											: Color3.fromHex("#282828")
+								item={item}
+								idx={idx}
+								isPlayingThis={isPlayingThis}
+								onToggle={() => {
+									if (isPlayingThis) {
+										EmoteService.getInstance().stopEmote();
+									} else {
+										EmoteService.getInstance().playEmote(item);
 									}
-									Thickness={1}
-									Transparency={0.5}
-									ApplyStrokeMode={Enum.ApplyStrokeMode.Border}
-								/>
-								<frame
-									key="Inner"
-									Size={new UDim2(1, 0, 1, 0)}
-									BackgroundTransparency={1}
-								>
-									<uilistlayout
-										FillDirection={Enum.FillDirection.Horizontal}
-										VerticalAlignment={Enum.VerticalAlignment.Center}
-										Padding={new UDim(0, 8)}
-									/>
-									<uipadding PaddingLeft={new UDim(0, 10)} />
-									<LucideIcon
-										name={item.category === "Reaction" ? "smile" : "activity"}
-										size={new UDim2(0, 16, 0, 16)}
-										color={
-											isPlayingThis
-												? Color3.fromHex("#000000")
-												: Color3.fromHex("#888888")
-										}
-									/>
-									<textlabel
-										key="Label"
-										BackgroundTransparency={1}
-										AutomaticSize={Enum.AutomaticSize.XY}
-										Text={item.name.upper()}
-										TextColor3={
-											isPlayingThis
-												? Color3.fromHex("#000000")
-												: Color3.fromHex("#d0d0d0")
-										}
-										Font={isPlayingThis ? Fonts.Bold : Fonts.Medium}
-										TextSize={12}
-									/>
-								</frame>
-							</textbutton>
+								}}
+							/>
 						);
 					})}
 				</scrollingframe>
@@ -752,7 +746,7 @@ export class EmoteModalView {
 	private _isOpen = false;
 	private isGuiObject: boolean;
 	private originalFOV = 70;
-	private fovTween?: Tween;
+	private fovSpring?: Spring<number>;
 	private toggleCallbacks: Array<(isOpen: boolean) => void> = [];
 
 	constructor(parentContainer?: Instance) {
@@ -803,25 +797,24 @@ export class EmoteModalView {
 		if (!camera) return;
 		if (camera.CameraType === Enum.CameraType.Scriptable) return;
 
-		this.fovTween?.Cancel();
+		if (!this.fovSpring) {
+			this.originalFOV = camera.FieldOfView > 0 ? camera.FieldOfView : 70;
+			this.fovSpring = createSpring(camera.FieldOfView, SpringPresets.gentle);
+			this.fovSpring.onChange((fov: number) => {
+				const currentCam = Workspace.CurrentCamera;
+				if (currentCam && currentCam.CameraType !== Enum.CameraType.Scriptable) {
+					currentCam.FieldOfView = fov;
+				}
+			});
+		}
 
 		if (zoomIn) {
 			this.originalFOV = camera.FieldOfView > 0 ? camera.FieldOfView : 70;
 			const targetFOV = math.max(this.originalFOV - 35, 45); // Zoom-in halus seperti saat buka smartphone
-			this.fovTween = TweenService.Create(
-				camera,
-				new TweenInfo(0.4, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
-				{ FieldOfView: targetFOV },
-			);
+			this.fovSpring.setGoal(targetFOV);
 		} else {
-			this.fovTween = TweenService.Create(
-				camera,
-				new TweenInfo(0.35, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
-				{ FieldOfView: this.originalFOV },
-			);
+			this.fovSpring.setGoal(this.originalFOV);
 		}
-
-		this.fovTween.Play();
 	}
 
 	private render(): void {
@@ -866,7 +859,7 @@ export class EmoteModalView {
 	}
 
 	public destroy(): void {
-		this.fovTween?.Cancel();
+		this.fovSpring?.destroy();
 		const camera = Workspace.CurrentCamera;
 		if (camera && this._isOpen && camera.CameraType !== Enum.CameraType.Scriptable) {
 			camera.FieldOfView = this.originalFOV;

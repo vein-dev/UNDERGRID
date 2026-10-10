@@ -1,9 +1,11 @@
 import React, { useEffect, useRef, useState } from "@rbxts/react";
 import ReactRoblox, { Root } from "@rbxts/react-roblox";
-import { Players, TweenService, UserInputService, Workspace } from "@rbxts/services";
+import { Players, UserInputService, Workspace } from "@rbxts/services";
 import { MovementController } from "client/controllers/MovementController";
 import { MusicPlayerService } from "client/services/MusicPlayerService";
 import { DjMusicPlayerService } from "client/services/DjMusicPlayerService";
+import { SpringPresets, useSpring } from "../SpringConfig";
+import { usePressSpring } from "../hooks";
 import { LucideIcon } from "../components/LucideIcon";
 import { Fonts } from "../Typography";
 
@@ -23,6 +25,11 @@ interface ToggleRowProps {
 
 function ToggleRow({ title, description, iconName, isOn, onToggle }: ToggleRowProps) {
 	const [isHovered, setIsHovered] = useState(false);
+	const [knobPosBinding, knobSpring] = useSpring(isOn ? 1 : 0, SpringPresets.snappy);
+
+	useEffect(() => {
+		knobSpring.setGoal(isOn ? 1 : 0);
+	}, [isOn]);
 
 	return (
 		<textbutton
@@ -112,10 +119,10 @@ function ToggleRow({ title, description, iconName, isOn, onToggle }: ToggleRowPr
 				<uicorner CornerRadius={new UDim(1, 0)} />
 				<uistroke Color={isOn ? Color3.fromHex("#30b351") : Color3.fromHex("#3a3a3c")} Thickness={1} />
 
-				{/* Knob circle */}
+				{/* Knob circle with Spring Physics */}
 				<frame
 					AnchorPoint={new Vector2(0, 0.5)}
-					Position={isOn ? new UDim2(1, -24, 0.5, 0) : new UDim2(0, 4, 0.5, 0)}
+					Position={knobPosBinding.map((val: number) => new UDim2(0, 4 + val * 20, 0.5, 0))}
 					Size={new UDim2(0, 20, 0, 20)}
 					BackgroundColor3={Color3.fromHex("#ffffff")}
 					ZIndex={5}
@@ -296,7 +303,21 @@ export function SettingsModalComponent({ isOpen, onClose, onAnimationFinished }:
 	const [scale, setScale] = useState(1);
 	const [shouldRender, setShouldRender] = useState(isOpen);
 
-	const [isCloseHovered, setIsCloseHovered] = useState(false);
+	const TOP_OFFSCREEN = new UDim2(0.5, 0, 0, -420);
+	const CENTER_ONSCREEN = new UDim2(0.5, 0, 0.5, 0);
+
+	const [posBinding, posSpring] = useSpring(isOpen ? CENTER_ONSCREEN : TOP_OFFSCREEN, SpringPresets.gentle);
+	const [backdropTransBinding, backdropTransSpring] = useSpring(isOpen ? 0.55 : 1, SpringPresets.gentle);
+
+	const {
+		scaleBinding: closeScale,
+		isHovered: isCloseHovered,
+		eventHandlers: closeHandlers,
+	} = usePressSpring({
+		hoverScale: 1.1,
+		pressScale: 0.9,
+		springConfig: SpringPresets.snappy,
+	});
 
 	const handleRefreshMusic = () => {
 		if (refreshState === "refreshing") return;
@@ -312,8 +333,6 @@ export function SettingsModalComponent({ isOpen, onClose, onAnimationFinished }:
 	};
 
 	const panelRef = useRef<Frame>();
-	const backdropRef = useRef<TextButton>();
-	const isMountedRef = useRef(false);
 
 	useEffect(() => {
 		const updateScale = () => {
@@ -340,93 +359,23 @@ export function SettingsModalComponent({ isOpen, onClose, onAnimationFinished }:
 			setShouldRender(true);
 			setLeanActive(movementController.isLeanActive());
 			setBobbingActive(movementController.isCameraBobbingActive());
+			posSpring.setGoal(CENTER_ONSCREEN);
+			backdropTransSpring.setGoal(0.55);
+		} else {
+			posSpring.setGoal(TOP_OFFSCREEN);
+			backdropTransSpring.setGoal(1);
 		}
 	}, [isOpen, movementController]);
 
 	useEffect(() => {
-		if (!shouldRender) return;
-
-		const panel = panelRef.current;
-		const backdrop = backdropRef.current;
-		if (!panel || !backdrop) return;
-
-		const TOP_OFFSCREEN = new UDim2(0.5, 0, 0, -420);
-		const CENTER_ONSCREEN = new UDim2(0.5, 0, 0.5, 0);
-
-		if (isOpen) {
-			// Slide-in dari atas layar (0.38s Quart Out, identik dengan EmoteModal)
-			panel.Position = TOP_OFFSCREEN;
-			backdrop.BackgroundTransparency = 1;
-
-			const openPanelTween = TweenService.Create(
-				panel,
-				new TweenInfo(0.38, Enum.EasingStyle.Quart, Enum.EasingDirection.Out),
-				{
-					Position: CENTER_ONSCREEN,
-					BackgroundTransparency: 0.1,
-				},
-			);
-			const openBackdropTween = TweenService.Create(
-				backdrop,
-				new TweenInfo(0.38, Enum.EasingStyle.Quart, Enum.EasingDirection.Out),
-				{
-					BackgroundTransparency: 0.55,
-				},
-			);
-
-			openPanelTween.Play();
-			openBackdropTween.Play();
-
-			return () => {
-				openPanelTween.Cancel();
-				openBackdropTween.Cancel();
-			};
-		} else {
-			// Slide-out kembali ke atas layar (0.28s Quad In, identik dengan EmoteModal)
-			if (!isMountedRef.current) {
-				panel.Position = TOP_OFFSCREEN;
-				backdrop.BackgroundTransparency = 1;
+		const unsub = posSpring.onComplete(() => {
+			if (!isOpen) {
 				setShouldRender(false);
-				return;
+				onAnimationFinished?.();
 			}
-
-			const closePanelTween = TweenService.Create(
-				panel,
-				new TweenInfo(0.28, Enum.EasingStyle.Quad, Enum.EasingDirection.In),
-				{
-					Position: TOP_OFFSCREEN,
-				},
-			);
-			const closeBackdropTween = TweenService.Create(
-				backdrop,
-				new TweenInfo(0.28, Enum.EasingStyle.Quad, Enum.EasingDirection.In),
-				{
-					BackgroundTransparency: 1,
-				},
-			);
-
-			const conn = closePanelTween.Completed.Connect((status) => {
-				conn.Disconnect();
-				if (status === Enum.PlaybackState.Completed) {
-					setShouldRender(false);
-					onAnimationFinished?.();
-				}
-			});
-
-			closePanelTween.Play();
-			closeBackdropTween.Play();
-
-			return () => {
-				conn.Disconnect();
-				closePanelTween.Cancel();
-				closeBackdropTween.Cancel();
-			};
-		}
-	}, [isOpen, shouldRender]);
-
-	useEffect(() => {
-		isMountedRef.current = true;
-	}, []);
+		});
+		return unsub;
+	}, [isOpen, onAnimationFinished]);
 
 	if (!shouldRender) {
 		return <></>;
@@ -436,10 +385,9 @@ export function SettingsModalComponent({ isOpen, onClose, onAnimationFinished }:
 		<frame Size={new UDim2(1, 0, 1, 0)} BackgroundTransparency={1} ZIndex={100}>
 			{/* Backdrop click to close */}
 			<textbutton
-				ref={backdropRef}
 				Size={new UDim2(1, 0, 1, 0)}
 				BackgroundColor3={Color3.fromHex("#000000")}
-				BackgroundTransparency={0.55}
+				BackgroundTransparency={backdropTransBinding}
 				Text=""
 				AutoButtonColor={false}
 				Active={true}
@@ -470,7 +418,7 @@ export function SettingsModalComponent({ isOpen, onClose, onAnimationFinished }:
 			<frame
 				ref={panelRef}
 				AnchorPoint={new Vector2(0.5, 0.5)}
-				Position={new UDim2(0.5, 0, 0, -420)}
+				Position={posBinding}
 				Size={new UDim2(0, 360, 0, 430)}
 				BackgroundColor3={Color3.fromHex("#0e0e10")}
 				BackgroundTransparency={0.1}
@@ -542,7 +490,7 @@ export function SettingsModalComponent({ isOpen, onClose, onAnimationFinished }:
 						/>
 					</frame>
 
-					{/* Close Button */}
+					{/* Close Button with Spring Bounce */}
 					<textbutton
 						AnchorPoint={new Vector2(1, 0.5)}
 						Position={new UDim2(1, 0, 0.5, 0)}
@@ -553,11 +501,14 @@ export function SettingsModalComponent({ isOpen, onClose, onAnimationFinished }:
 						Text=""
 						ZIndex={12}
 						Event={{
-							MouseEnter: () => setIsCloseHovered(true),
-							MouseLeave: () => setIsCloseHovered(false),
+							MouseEnter: closeHandlers.MouseEnter,
+							MouseLeave: closeHandlers.MouseLeave,
+							MouseButton1Down: closeHandlers.MouseButton1Down,
+							MouseButton1Up: closeHandlers.MouseButton1Up,
 							Activated: onClose,
 						}}
 					>
+						<uiscale Scale={closeScale} />
 						<uicorner CornerRadius={new UDim(1, 0)} />
 						<LucideIcon
 							name="x"

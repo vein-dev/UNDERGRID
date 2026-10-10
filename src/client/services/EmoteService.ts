@@ -1,7 +1,8 @@
-import { Debris, Players, TweenService } from "@rbxts/services";
+import { Debris, Players } from "@rbxts/services";
 import { EMOTE_CONFIG } from "shared/config";
 import { getRemoteEvent } from "shared/network";
 import { EmoteItem } from "shared/types";
+import { createSpring, SpringPresets } from "client/ui/SpringConfig";
 
 /**
  * EmoteService - Client service managing emote animations,
@@ -216,37 +217,44 @@ export class EmoteService {
 		container.Parent = billboard;
 		billboard.Parent = adornee;
 
-		// 1. Pop-in Bounce Tween (Scale & Opacity)
-		TweenService.Create(
-			container,
-			new TweenInfo(0.35, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
-			{
-				GroupTransparency: 0,
-				Size: new UDim2(1, 0, 1, 0),
-			},
-		).Play();
-
-		// 2. Slow gentle float upward
-		TweenService.Create(
-			billboard,
-			new TweenInfo(duration, Enum.EasingStyle.Sine, Enum.EasingDirection.Out),
-			{ StudsOffset: new Vector3(0, 4.2, 0) },
-		).Play();
-
-		// 3. Fade out towards the end
-		task.delay(duration - 0.45, () => {
+		// 1. Pop-in Bouncy Spring (Scale & Opacity)
+		const scaleSpring = createSpring(0.2, SpringPresets.bouncy);
+		scaleSpring.onChange((scale: number) => {
 			if (container.Parent) {
-				const fadeTween = TweenService.Create(
-					container,
-					new TweenInfo(0.4, Enum.EasingStyle.Quad, Enum.EasingDirection.In),
-					{
-						GroupTransparency: 1,
-						Size: new UDim2(1.15, 0, 1.15, 0),
-					},
-				);
-				fadeTween.Play();
-				fadeTween.Completed.Connect(() => {
-					billboard.Destroy();
+				container.Size = new UDim2(scale, 0, scale, 0);
+			}
+		});
+		scaleSpring.setGoal(1.0);
+
+		const transSpring = createSpring(1.0, SpringPresets.snappy);
+		transSpring.onChange((trans: number) => {
+			if (container.Parent) {
+				container.GroupTransparency = trans;
+			}
+		});
+		transSpring.setGoal(0);
+
+		// 2. Slow gentle float upward with physics spring
+		const floatSpring = createSpring(new Vector3(0, 2.6, 0), SpringPresets.gentle);
+		floatSpring.onChange((offset: Vector3) => {
+			if (billboard.Parent) {
+				billboard.StudsOffset = offset;
+			}
+		});
+		floatSpring.setGoal(new Vector3(0, 4.2, 0));
+
+		// 3. Fade out & subtle bloom towards the end
+		task.delay(math.max(0.1, duration - 0.45), () => {
+			if (container.Parent) {
+				scaleSpring.setGoal(1.2);
+				transSpring.setGoal(1.0);
+				transSpring.onComplete((trans: number) => {
+					if (trans >= 0.95) {
+						scaleSpring.destroy();
+						transSpring.destroy();
+						floatSpring.destroy();
+						billboard.Destroy();
+					}
 				});
 			}
 		});

@@ -1,8 +1,9 @@
 import React, { useEffect, useRef, useState } from "@rbxts/react";
 import ReactRoblox, { Root } from "@rbxts/react-roblox";
-import { GuiService, Lighting, Players, RunService, TweenService, UserInputService, Workspace } from "@rbxts/services";
+import { GuiService, Lighting, Players, RunService, UserInputService, Workspace } from "@rbxts/services";
 import { Fonts } from "../Typography";
 import { LucideIcon } from "../components/LucideIcon";
+import { createSpring, Spring, SpringPresets, useSpring } from "../SpringConfig";
 
 export interface BackpackSlotInfo {
 	tool?: Tool;
@@ -37,7 +38,7 @@ export function InventorySlot({
 }: {
 	slotType: "pickup" | "storage";
 	index: number;
-	displayNumber: number;
+	displayNumber?: number;
 	info?: BackpackSlotInfo;
 	onClick: (index: number) => void;
 	searchState?: "match" | "dimmed" | "none";
@@ -46,71 +47,104 @@ export function InventorySlot({
 
 	const isSelected = info?.isSelected ?? false;
 	const isEquipped = info?.isEquipped ?? false;
+	const hasTool = info?.tool !== undefined;
 
-	let strokeColor = Color3.fromHex("#2e313d");
+	const targetScale = isSelected ? 1.05 : isHovered ? 1.03 : 1.0;
+	const [scaleBinding, scaleSpring] = useSpring(targetScale, SpringPresets.snappy);
+
+	useEffect(() => {
+		scaleSpring.setGoal(targetScale);
+	}, [targetScale]);
+
+	// Visual theme styling matching Hotbar system
+	let bgColor = Color3.fromHex("#201f1f");
+	let bgTransparency = 0.15;
+	let strokeColor = Color3.fromHex("#2a2a2a");
 	let strokeThickness = 1.0;
 	let strokeTransparency = 0;
-	let bgColor = Color3.fromHex("#22242b");
-	let bgTransparency = 0;
-	let labelColor = Color3.fromHex("#6b6f80");
-	let nameColor = Color3.fromHex("#cccccc");
+	let numColor = Color3.fromHex("#c4c7cb");
+	let iconColor = Color3.fromHex("#c4c7cb");
+	let nameColor = Color3.fromHex("#c4c7cb");
 	let contentTransparency = 0;
+	let iconSize = 20;
 
 	if (searchState === "dimmed") {
-		strokeColor = Color3.fromHex("#1f212a");
-		strokeThickness = 1.0;
+		strokeColor = Color3.fromHex("#1e1f21");
 		strokeTransparency = 0.5;
-		bgColor = Color3.fromHex("#16171e");
+		bgColor = Color3.fromHex("#141517");
 		bgTransparency = 0.5;
-		labelColor = Color3.fromHex("#3a3c48");
-		nameColor = Color3.fromHex("#555866");
-		contentTransparency = 0.75;
+		numColor = Color3.fromHex("#44474e");
+		iconColor = Color3.fromHex("#44474e");
+		nameColor = Color3.fromHex("#44474e");
+		contentTransparency = 0.5;
+		iconSize = 20;
 	} else if (searchState === "match") {
-		strokeColor = Color3.fromHex("#38bdf8"); // Sky Blue highlight border
-		strokeThickness = 1.8;
-		strokeTransparency = 0;
-		bgColor = Color3.fromHex("#192438"); // Modern glassmorphic accent tint
-		labelColor = Color3.fromHex("#38bdf8");
+		strokeColor = Color3.fromHex("#ffffff");
+		strokeThickness = 1.5;
+		bgColor = Color3.fromHex("#26282c");
+		numColor = Color3.fromHex("#ffffff");
+		iconColor = Color3.fromHex("#ffffff");
 		nameColor = Color3.fromHex("#ffffff");
-		contentTransparency = 0;
+		iconSize = 22;
+	} else if (isSelected) {
+		// High-contrast active inverted card (White card with black text/icon, identik dengan hotbar active)
+		strokeColor = Color3.fromHex("#ffffff");
+		strokeThickness = 1.5;
+		bgColor = Color3.fromHex("#ffffff");
+		bgTransparency = 0.0;
+		numColor = Color3.fromHex("#000000");
+		iconColor = Color3.fromHex("#000000");
+		nameColor = Color3.fromHex("#000000");
+		iconSize = 22;
+	} else if (isEquipped) {
+		strokeColor = Color3.fromHex("#ffffff");
+		strokeThickness = 1.2;
+		bgColor = Color3.fromHex("#282a2e");
+		numColor = Color3.fromHex("#ffffff");
+		iconColor = Color3.fromHex("#ffffff");
+		nameColor = Color3.fromHex("#ffffff");
+		iconSize = 22;
+	} else if (isHovered) {
+		bgColor = Color3.fromHex("#2a2a2a");
+		bgTransparency = 0.05;
+		strokeColor = Color3.fromHex("#444748");
+		strokeThickness = 1.2;
+		numColor = Color3.fromHex("#ffffff");
+		iconColor = Color3.fromHex("#ffffff");
+		nameColor = Color3.fromHex("#ffffff");
+		iconSize = 22;
+	} else if (!hasTool) {
+		// Empty slot (Identik dengan hotbar empty)
+		bgColor = isHovered ? Color3.fromHex("#1a1a1a") : Color3.fromHex("#141414");
+		bgTransparency = 0.45;
+		strokeColor = isHovered ? Color3.fromHex("#3a3a3a") : Color3.fromHex("#222222");
+		numColor = isHovered ? Color3.fromHex("#888888") : Color3.fromHex("#555555");
+		iconColor = Color3.fromHex("#333333");
+		nameColor = Color3.fromHex("#333333");
+		iconSize = 18;
 	}
 
-	if (isSelected) {
-		strokeColor = Color3.fromHex("#ffffff");
-		strokeThickness = 2.0;
-		strokeTransparency = 0;
-		bgColor = Color3.fromHex("#333642");
-		bgTransparency = 0;
-		labelColor = Color3.fromHex("#ffffff");
-		nameColor = Color3.fromHex("#ffffff");
-		contentTransparency = 0;
-	} else if (isEquipped) {
-		strokeColor = Color3.fromHex("#32dc78");
-		strokeThickness = 1.5;
-		strokeTransparency = searchState === "dimmed" ? 0.4 : 0;
-		bgColor = Color3.fromHex("#262a33");
-		labelColor = Color3.fromHex("#32dc78");
-	} else if (isHovered) {
-		if (searchState === "match") {
-			strokeColor = Color3.fromHex("#7dd3fc");
-			bgColor = Color3.fromHex("#223250");
-		} else if (searchState === "dimmed") {
-			strokeColor = Color3.fromHex("#323544");
-			strokeTransparency = 0.3;
-			bgColor = Color3.fromHex("#1e202a");
-			bgTransparency = 0.3;
-			contentTransparency = 0.4;
-		} else {
-			strokeColor = Color3.fromHex("#454959");
-			strokeThickness = 1.2;
-			bgColor = Color3.fromHex("#292b34");
-		}
+	// Smart Lucide icon detection matching reference icons (smartphone, radio, lock, etc.)
+	let iconName = "box";
+	if (info?.tool) {
+		const lowerName = info.tool.Name.lower();
+		if (lowerName.find("phone")[0] !== undefined) iconName = "smartphone";
+		else if (lowerName.find("radio")[0] !== undefined) iconName = "radio";
+		else if (lowerName.find("lock")[0] !== undefined || lowerName.find("shield")[0] !== undefined) iconName = "lock";
+		else if (lowerName.find("potion")[0] !== undefined || lowerName.find("flask")[0] !== undefined || lowerName.find("med")[0] !== undefined || lowerName.find("health")[0] !== undefined) iconName = "plus";
+		else if (lowerName.find("bolt")[0] !== undefined || lowerName.find("lightning")[0] !== undefined || lowerName.find("plasma")[0] !== undefined) iconName = "zap";
+		else if (lowerName.find("camera")[0] !== undefined || lowerName.find("video")[0] !== undefined) iconName = "camera";
+		else if (lowerName.find("key")[0] !== undefined) iconName = "key";
+		else if (lowerName.find("chip")[0] !== undefined || lowerName.find("core")[0] !== undefined) iconName = "cpu";
+		else if (lowerName.find("headphone")[0] !== undefined || lowerName.find("audio")[0] !== undefined) iconName = "headphones";
+		else if (lowerName.find("wrench")[0] !== undefined || lowerName.find("tool")[0] !== undefined) iconName = "wrench";
+		else if (lowerName.find("blade")[0] !== undefined || lowerName.find("dagger")[0] !== undefined || lowerName.find("sword")[0] !== undefined) iconName = "sword";
 	}
 
 	return (
 		<textbutton
 			key={`slot_${slotType}_${index}`}
-			Size={new UDim2(0, 56, 0, 56)}
+			Size={new UDim2(0, 64, 0, 64)}
 			BackgroundColor3={bgColor}
 			BackgroundTransparency={bgTransparency}
 			AutoButtonColor={false}
@@ -121,56 +155,100 @@ export function InventorySlot({
 				MouseButton1Click: () => onClick(index),
 			}}
 		>
-			<uicorner CornerRadius={new UDim(0, 8)} />
+			<uiscale Scale={scaleBinding} />
 			<uistroke
 				Color={strokeColor}
 				Thickness={strokeThickness}
 				Transparency={strokeTransparency}
 				ApplyStrokeMode={Enum.ApplyStrokeMode.Border}
 			/>
-
-			{/* Slot number badge (1-5 for Pickup, 6-25 for Storage) */}
-			<textlabel
-				key="SlotNum"
-				Size={new UDim2(0, 20, 0, 14)}
-				Position={new UDim2(0, 5, 0, 4)}
-				BackgroundTransparency={1}
-				Text={tostring(displayNumber)}
-				TextColor3={labelColor}
-				TextTransparency={contentTransparency > 0 ? 0.5 : 0}
-				Font={Fonts.Bold}
-				TextSize={10}
-				TextXAlignment={Enum.TextXAlignment.Left}
+			<uipadding
+				PaddingTop={new UDim(0, 7)}
+				PaddingBottom={new UDim(0, 7)}
+				PaddingLeft={new UDim(0, 7)}
+				PaddingRight={new UDim(0, 7)}
 			/>
+
+			{/* Equipped top-right indicator dot */}
+			{isEquipped && !isSelected ? (
+				<frame
+					key="EquippedDot"
+					AnchorPoint={new Vector2(1, 0)}
+					Position={new UDim2(1, 0, 0, 0)}
+					Size={new UDim2(0, 4, 0, 4)}
+					BackgroundColor3={Color3.fromHex("#ffffff")}
+					BackgroundTransparency={0}
+				/>
+			) : undefined}
+
+			{/* Slot number badge: 1 digit for hotbar/pickup only, none for storage/inventory */}
+			{slotType === "pickup" && displayNumber !== undefined ? (
+				<textlabel
+					key="SlotNum"
+					AnchorPoint={new Vector2(0, 0)}
+					Position={new UDim2(0, 0, 0, 0)}
+					Size={new UDim2(0, 16, 0, 13)}
+					BackgroundTransparency={1}
+					Text={tostring(displayNumber)}
+					TextColor3={numColor}
+					TextTransparency={contentTransparency > 0 ? contentTransparency : 0}
+					TextScaled={true}
+					Font={Fonts.Bold}
+					TextXAlignment={Enum.TextXAlignment.Left}
+					TextYAlignment={Enum.TextYAlignment.Top}
+				>
+					<uitextsizeconstraint MaxTextSize={11} MinTextSize={8} />
+				</textlabel>
+			) : undefined}
 
 			{/* Tool Icon */}
 			{info?.tool?.TextureId && info.tool.TextureId !== "" ? (
 				<imagelabel
-					key="Icon"
+					key="ToolTexture"
 					AnchorPoint={new Vector2(0.5, 0.5)}
 					Position={new UDim2(0.5, 0, 0.45, 0)}
-					Size={new UDim2(0, 28, 0, 28)}
+					Size={new UDim2(0, iconSize, 0, iconSize)}
 					BackgroundTransparency={1}
 					Image={info.tool.TextureId}
 					ImageTransparency={contentTransparency}
+					ImageColor3={isSelected ? Color3.fromHex("#000000") : Color3.fromHex("#ffffff")}
+					ScaleType={Enum.ScaleType.Fit}
 				/>
+			) : hasTool ? (
+				<frame
+					key="ToolIconFrame"
+					AnchorPoint={new Vector2(0.5, 0.5)}
+					Position={new UDim2(0.5, 0, 0.45, 0)}
+					Size={new UDim2(0, iconSize, 0, iconSize)}
+					BackgroundTransparency={1}
+				>
+					<LucideIcon
+						name={iconName}
+						size={new UDim2(1, 0, 1, 0)}
+						color={iconColor}
+						transparency={contentTransparency}
+					/>
+				</frame>
 			) : undefined}
 
-			{/* Tool Name */}
-			{info?.tool ? (
+			{/* Tool Name: bottom label */}
+			{hasTool ? (
 				<textlabel
-					key="Name"
+					key="SlotLabel"
 					AnchorPoint={new Vector2(0.5, 1)}
-					Position={new UDim2(0.5, 0, 1, -4)}
-					Size={new UDim2(1, -6, 0, 12)}
+					Position={new UDim2(0.5, 0, 1, 0)}
+					Size={new UDim2(1, 0, 0, 11)}
 					BackgroundTransparency={1}
-					Text={info.tool.Name}
-					TextColor3={isSelected ? Color3.fromHex("#ffffff") : nameColor}
+					Text={string.upper(info!.tool!.Name)}
+					TextColor3={nameColor}
 					TextTransparency={contentTransparency}
-					Font={Fonts.Medium}
-					TextSize={8}
+					TextScaled={true}
+					Font={isSelected || isEquipped ? Fonts.Bold : Fonts.Medium}
 					TextTruncate={Enum.TextTruncate.AtEnd}
-				/>
+					TextXAlignment={Enum.TextXAlignment.Center}
+				>
+					<uitextsizeconstraint MaxTextSize={8} MinTextSize={6} />
+				</textlabel>
 			) : undefined}
 		</textbutton>
 	);
@@ -328,7 +406,7 @@ function CharacterPreview() {
 		<viewportframe
 			key="CharacterViewport"
 			ref={viewportRef}
-			Size={new UDim2(0, 360, 0, 470)}
+			Size={new UDim2(0, 360, 0, 352)}
 			BackgroundTransparency={1}
 			Ambient={Color3.fromRGB(180, 180, 180)}
 			LightColor={Color3.fromRGB(240, 240, 240)}
@@ -356,8 +434,10 @@ export function BackpackComponent({
 	const [shouldRender, setShouldRender] = useState(visible);
 	const [searchQuery, setSearchQuery] = useState(initialSearchQuery ?? "");
 	const centerWrapperRef = useRef<Frame>();
-	const backdropRef = useRef<TextButton>();
-	const isMountedRef = useRef(false);
+
+	const offscreenPos = new UDim2(0.5, 0, 1.4, 0);
+	const [posBinding, posSpring] = useSpring(visible ? targetPos : offscreenPos, SpringPresets.gentle);
+	const [backdropTransBinding, backdropTransSpring] = useSpring(visible ? 0.35 : 1, SpringPresets.gentle);
 
 	useEffect(() => {
 		setSearchQuery(initialSearchQuery ?? "");
@@ -368,28 +448,35 @@ export function BackpackComponent({
 			const camera = Workspace.CurrentCamera;
 			const vp = camera ? camera.ViewportSize : new Vector2(1280, 720);
 
-			const [topInset] = GuiService.GetGuiInset();
+			const [topInset, bottomInset] = GuiService.GetGuiInset();
 			const topHeight = math.max(topInset.Y, 54);
 			setTopbarHeight(topHeight);
 
-			const bottomInset = 16;
-			const availableHeight = math.max(vp.Y - topHeight - bottomInset, 200);
+			const bottomInsetVal = math.max(bottomInset.Y, 20);
+			const availableHeight = math.max(vp.Y - topHeight - bottomInsetVal, 200);
+			const availableWidth = math.max(vp.X - math.max(topInset.X, 24) * 2, 280);
 			const centerY = topHeight + availableHeight / 2;
 
-			const compact = vp.X < 720 || vp.X < vp.Y;
-			setIsCompact(compact);
+			const isPortrait = vp.X < 720 || vp.X < vp.Y;
+			setIsCompact(isPortrait);
 			setTargetPos(new UDim2(0.5, 0, 0, centerY));
 
-			if (compact) {
-				const availableWidth = math.max(vp.X - 32, 200);
-				const scaleY = availableHeight / 470;
-				const scaleX = availableWidth / 360;
-				setScale(math.clamp(math.min(scaleY, scaleX), 0.65, 1.05));
+			// AGENTS.md Dynamic Canvas Scaling (3-Pilar Multi-Platform System)
+			const baseScale = vp.Y / 760;
+
+			if (isPortrait) {
+				// Mobile portrait: single inventory card (384px wide, 352px tall)
+				const maxScaleW = availableWidth / 384;
+				const maxScaleH = availableHeight / 352;
+				const targetScale = math.min(baseScale, maxScaleW, maxScaleH);
+				setScale(math.clamp(targetScale, 0.48, 1.15));
 			} else {
-				const availableWidth = math.max(vp.X - 40, 300);
-				const scaleY = availableHeight / 470;
-				const scaleX = availableWidth / 736;
-				setScale(math.clamp(math.min(scaleY, scaleX), 0.45, 1.0));
+				// Desktop PC / Landscape: character portrait + inventory card (760px wide, 352px tall)
+				// On 1080p desktop (vp.Y = 1080): baseScale is 1.42x, rendering a large, prominent UI
+				const maxScaleW = availableWidth / 760;
+				const maxScaleH = availableHeight / 352;
+				const targetScale = math.min(baseScale, maxScaleW, maxScaleH);
+				setScale(math.clamp(targetScale, 0.50, 1.45));
 			}
 		};
 
@@ -404,68 +491,27 @@ export function BackpackComponent({
 		};
 	}, []);
 
+	// Smooth reactive spring transitions for modal show/hide
 	useEffect(() => {
 		if (visible) {
 			setShouldRender(true);
-		}
-	}, [visible]);
-
-	useEffect(() => {
-		if (!shouldRender) return;
-
-		const center = centerWrapperRef.current;
-		const backdrop = backdropRef.current;
-		if (!center || !backdrop) return;
-
-		if (visible) {
-			center.Position = new UDim2(0.5, 0, 1.5, 0);
-			backdrop.BackgroundTransparency = 1;
-
-			const openCenterTween = TweenService.Create(
-				center,
-				new TweenInfo(0.38, Enum.EasingStyle.Quart, Enum.EasingDirection.Out),
-				{ Position: targetPos },
-			);
-
-			openCenterTween.Play();
-
-			return () => {
-				openCenterTween.Cancel();
-			};
+			posSpring.setGoal(targetPos);
+			backdropTransSpring.setGoal(0.35);
 		} else {
-			if (!isMountedRef.current) {
-				center.Position = new UDim2(0.5, 0, 1.5, 0);
-				backdrop.BackgroundTransparency = 1;
-				setShouldRender(false);
-				return;
-			}
-
-			const closeCenterTween = TweenService.Create(
-				center,
-				new TweenInfo(0.28, Enum.EasingStyle.Quad, Enum.EasingDirection.In),
-				{ Position: new UDim2(0.5, 0, 1.5, 0) },
-			);
-
-			const conn = closeCenterTween.Completed.Connect((status) => {
-				conn.Disconnect();
-				if (status === Enum.PlaybackState.Completed) {
-					setShouldRender(false);
-					onAnimationFinished?.();
-				}
-			});
-
-			closeCenterTween.Play();
-
-			return () => {
-				conn.Disconnect();
-				closeCenterTween.Cancel();
-			};
+			posSpring.setGoal(offscreenPos);
+			backdropTransSpring.setGoal(1);
 		}
-	}, [visible, shouldRender, targetPos]);
+	}, [visible, targetPos]);
 
 	useEffect(() => {
-		isMountedRef.current = true;
-	}, []);
+		const unsub = posSpring.onComplete(() => {
+			if (!visible) {
+				setShouldRender(false);
+				onAnimationFinished?.();
+			}
+		});
+		return unsub;
+	}, [visible, onAnimationFinished]);
 
 	if (!shouldRender) return <></>;
 
@@ -501,7 +547,7 @@ export function BackpackComponent({
 		);
 	}
 
-	// Build storage slot elements (1 to 20, displayed as 6 to 25)
+	// Build storage slot elements (1 to 10)
 	const storageElements: React.Element[] = [];
 	for (let i = 1; i <= BackpackView.STORAGE_SLOT_COUNT; i++) {
 		const info = storageSlots.get(i);
@@ -522,7 +568,6 @@ export function BackpackComponent({
 				key={`storage_${i}`}
 				slotType="storage"
 				index={i}
-				displayNumber={i + 5}
 				info={info}
 				searchState={searchState}
 				onClick={onStorageClicked}
@@ -532,20 +577,18 @@ export function BackpackComponent({
 
 	return (
 		<frame key="BackpackRoot" Size={new UDim2(1, 0, 1, 0)} BackgroundTransparency={1} ZIndex={1}>
-			{/* Dark Backdrop - Berada di bawah Topbar agar menu Topbar tidak tertutup dan bebas diklik */}
+			{/* Dark Backdrop */}
 			<textbutton
-				ref={backdropRef}
 				key="Backdrop"
 				Position={new UDim2(0, 0, 0, topbarHeight)}
 				Size={new UDim2(1, 0, 1, -topbarHeight)}
 				BackgroundColor3={Color3.fromHex("#000000")}
-				BackgroundTransparency={1}
+				BackgroundTransparency={backdropTransBinding}
 				Text=""
 				AutoButtonColor={false}
 				ZIndex={1}
 				Event={{
 					MouseButton1Click: () => {
-						// Pastikan klik benar-benar berada di LUAR area Inventory/Backpack
 						const center = centerWrapperRef.current;
 						if (center) {
 							const mousePos = UserInputService.GetMouseLocation();
@@ -557,7 +600,7 @@ export function BackpackComponent({
 								mousePos.Y >= pos.Y &&
 								mousePos.Y <= pos.Y + size.Y
 							) {
-								return; // Klik di dalam area Backpack, jangan tutup!
+								return;
 							}
 						}
 						onClose();
@@ -565,13 +608,13 @@ export function BackpackComponent({
 				}}
 			/>
 
-			{/* Center Split Wrapper: Left = Character Viewport (Landscape only), Right = Inventory Storage */}
+			{/* Center Split Wrapper: Left = Avatar Viewport, Right = Inventory Storage */}
 			<frame
 				ref={centerWrapperRef}
 				key="CenterWrapper"
 				AnchorPoint={new Vector2(0.5, 0.5)}
-				Position={new UDim2(0.5, 0, 1.5, 0)}
-				Size={new UDim2(0, isCompact ? 360 : 736, 0, 470)}
+				Position={posBinding}
+				Size={new UDim2(0, isCompact ? 384 : 760, 0, 352)}
 				BackgroundTransparency={1}
 				ZIndex={2}
 			>
@@ -589,47 +632,62 @@ export function BackpackComponent({
 				{/* Right: Sleek Dark Inventory & Storage Card */}
 				<frame
 					key="InventoryPanel"
-					Size={new UDim2(0, 360, 0, 470)}
-					BackgroundColor3={Color3.fromHex("#131418")}
+					Size={new UDim2(0, 384, 0, 352)}
+					BackgroundColor3={Color3.fromHex("#0d0e0f")}
 					ZIndex={3}
 				>
-					<uicorner CornerRadius={new UDim(0, 16)} />
 					<uistroke
-						Color={Color3.fromHex("#262833")}
+						Color={Color3.fromHex("#222325")}
 						Thickness={1.2}
-						Transparency={0.2}
 						ApplyStrokeMode={Enum.ApplyStrokeMode.Border}
 					/>
 					<uipadding
-						PaddingTop={new UDim(0, 18)}
-						PaddingBottom={new UDim(0, 18)}
-						PaddingLeft={new UDim(0, 24)}
-						PaddingRight={new UDim(0, 24)}
+						PaddingTop={new UDim(0, 20)}
+						PaddingBottom={new UDim(0, 20)}
+						PaddingLeft={new UDim(0, 20)}
+						PaddingRight={new UDim(0, 20)}
 					/>
 
-					{/* Top Action Row: Search & Close */}
+					{/* Top Action Row: Title, Search & Close */}
 					<frame
 						key="TopRow"
-						Size={new UDim2(1, 0, 0, 28)}
+						Size={new UDim2(1, 0, 0, 36)}
 						BackgroundTransparency={1}
 						ZIndex={4}
 					>
+						{/* Main Panel Title Image: Inventory Gothic Artwork */}
+						<imagelabel
+							key="HeaderImageTitle"
+							AnchorPoint={new Vector2(0, 0.5)}
+							Position={new UDim2(0, 0, 0.5, 0)}
+							Size={new UDim2(0, 0, 1, 0)}
+							BackgroundTransparency={1}
+							Image="rbxassetid://79610305922357"
+							ScaleType={Enum.ScaleType.Fit}
+							ZIndex={5}
+						>
+							<uiaspectratioconstraint
+								AspectRatio={389 / 108}
+								DominantAxis={Enum.DominantAxis.Height}
+								AspectType={Enum.AspectType.ScaleWithParentSize}
+							/>
+						</imagelabel>
+
 						{/* Search Bar */}
 						<frame
 							key="SearchBar"
 							AnchorPoint={new Vector2(1, 0.5)}
-							Position={new UDim2(1, -34, 0.5, 0)}
-							Size={new UDim2(0, 140, 0, 28)}
-							BackgroundColor3={Color3.fromHex("#1e2026")}
+							Position={new UDim2(1, -38, 0.5, 0)}
+							Size={new UDim2(0, 160, 0, 30)}
+							BackgroundColor3={Color3.fromHex("#161719")}
 							ZIndex={5}
 						>
-							<uicorner CornerRadius={new UDim(0, 6)} />
-							<uistroke Color={Color3.fromHex("#2e313d")} Thickness={1} />
+							<uistroke Color={Color3.fromHex("#2a2b2e")} Thickness={1} />
 							<LucideIcon
 								name="search"
 								size={new UDim2(0, 12, 0, 12)}
 								position={new UDim2(0, 8, 0.5, -6)}
-								color={Color3.fromHex("#6c7082")}
+								color={Color3.fromHex("#8e9192")}
 								zIndex={6}
 							/>
 							<textbox
@@ -637,12 +695,12 @@ export function BackpackComponent({
 								Position={new UDim2(0, 24, 0, 0)}
 								Size={new UDim2(1, -30, 1, 0)}
 								BackgroundTransparency={1}
-								PlaceholderText="Search..."
-								PlaceholderColor3={Color3.fromHex("#6c7082")}
+								PlaceholderText="SEARCH..."
+								PlaceholderColor3={Color3.fromHex("#606368")}
 								Text={searchQuery}
 								TextColor3={Color3.fromHex("#ffffff")}
 								Font={Fonts.Regular}
-								TextSize={11}
+								TextSize={10}
 								TextXAlignment={Enum.TextXAlignment.Left}
 								ClearTextOnFocus={false}
 								ZIndex={6}
@@ -660,8 +718,8 @@ export function BackpackComponent({
 							key="CloseBtn"
 							AnchorPoint={new Vector2(1, 0.5)}
 							Position={new UDim2(1, 0, 0.5, 0)}
-							Size={new UDim2(0, 26, 0, 26)}
-							BackgroundColor3={Color3.fromHex("#1e2026")}
+							Size={new UDim2(0, 30, 0, 30)}
+							BackgroundColor3={Color3.fromHex("#161719")}
 							Text=""
 							AutoButtonColor={false}
 							ZIndex={5}
@@ -669,11 +727,10 @@ export function BackpackComponent({
 								MouseButton1Click: onClose,
 							}}
 						>
-							<uicorner CornerRadius={new UDim(0, 6)} />
-							<uistroke Color={Color3.fromHex("#2e313d")} Thickness={1} />
+							<uistroke Color={Color3.fromHex("#2a2b2e")} Thickness={1} />
 							<LucideIcon
 								name="x"
-								size={new UDim2(0, 12, 0, 12)}
+								size={new UDim2(0, 13, 0, 13)}
 								anchorPoint={new Vector2(0.5, 0.5)}
 								position={new UDim2(0.5, 0, 0.5, 0)}
 								color={Color3.fromHex("#aaaaaa")}
@@ -682,73 +739,73 @@ export function BackpackComponent({
 						</textbutton>
 					</frame>
 
-					{/* Section 1: Pickup (1 to 5) */}
+					{/* Section 1: Pickup (Hotbar) */}
 					<frame
 						key="PickupSection"
-						Position={new UDim2(0, 0, 0, 36)}
-						Size={new UDim2(1, 0, 0, 80)}
+						Position={new UDim2(0, 0, 0, 52)}
+						Size={new UDim2(1, 0, 0, 86)}
 						BackgroundTransparency={1}
 						ZIndex={4}
 					>
 						<textlabel
 							key="PickupTitle"
-							Size={new UDim2(1, 0, 0, 18)}
+							Size={new UDim2(1, 0, 0, 14)}
 							BackgroundTransparency={1}
-							Text="Hotbar"
-							TextColor3={Color3.fromHex("#ffffff")}
+							Text="HOTBAR"
+							TextColor3={Color3.fromHex("#b0b3b8")}
 							Font={Fonts.Bold}
-							TextSize={13}
+							TextSize={11}
 							TextXAlignment={Enum.TextXAlignment.Left}
 							ZIndex={5}
 						/>
 
-						{/* 5 Slots Row */}
+						{/* 5 Slots Row (1:1 square slots) */}
 						<frame
 							key="PickupGrid"
 							Position={new UDim2(0, 0, 0, 22)}
-							Size={new UDim2(1, 0, 0, 56)}
+							Size={new UDim2(1, 0, 0, 64)}
 							BackgroundTransparency={1}
 							ZIndex={5}
 						>
 							<uilistlayout
 								FillDirection={Enum.FillDirection.Horizontal}
-								Padding={new UDim(0, 8)}
+								Padding={new UDim(0, 6)}
 							/>
 							{pickupElements}
 						</frame>
 					</frame>
 
-					{/* Section 2: Storage (6 to 25) */}
+					{/* Section 2: Storage (Inventory) */}
 					<frame
 						key="StorageSection"
-						Position={new UDim2(0, 0, 0, 126)}
-						Size={new UDim2(1, 0, 0, 280)}
+						Position={new UDim2(0, 0, 0, 156)}
+						Size={new UDim2(1, 0, 0, 156)}
 						BackgroundTransparency={1}
 						ZIndex={4}
 					>
 						<textlabel
 							key="StorageTitle"
-							Size={new UDim2(1, 0, 0, 18)}
+							Size={new UDim2(1, 0, 0, 14)}
 							BackgroundTransparency={1}
-							Text="Inventory"
-							TextColor3={Color3.fromHex("#ffffff")}
+							Text="INVENTORY"
+							TextColor3={Color3.fromHex("#b0b3b8")}
 							Font={Fonts.Bold}
-							TextSize={13}
+							TextSize={11}
 							TextXAlignment={Enum.TextXAlignment.Left}
 							ZIndex={5}
 						/>
 
-						{/* 5 Columns x 4 Rows Grid (20 slots) */}
+						{/* 5 Columns x 2 Rows Grid (10 slots, 1:1 square ratio) */}
 						<frame
 							key="StorageGrid"
 							Position={new UDim2(0, 0, 0, 22)}
-							Size={new UDim2(1, 0, 0, 248)}
+							Size={new UDim2(1, 0, 0, 134)}
 							BackgroundTransparency={1}
 							ZIndex={5}
 						>
 							<uigridlayout
-								CellSize={new UDim2(0, 56, 0, 56)}
-								CellPadding={new UDim2(0, 8, 0, 8)}
+								CellSize={new UDim2(0, 64, 0, 64)}
+								CellPadding={new UDim2(0, 6, 0, 6)}
 								SortOrder={Enum.SortOrder.LayoutOrder}
 							/>
 							{storageElements}
@@ -767,7 +824,7 @@ export function BackpackComponent({
  */
 export class BackpackView {
 	public static readonly PICKUP_SLOT_COUNT = 5;
-	public static readonly STORAGE_SLOT_COUNT = 20;
+	public static readonly STORAGE_SLOT_COUNT = 10;
 
 	private screenGui?: ScreenGui;
 	private hostInstance: Instance;
@@ -784,7 +841,8 @@ export class BackpackView {
 	private onSearchChangeCallback?: (query: string) => void;
 	private onCloseCallback?: () => void;
 	private originalFOV = 70;
-	private fovTween?: Tween;
+	private fovSpring?: Spring<number>;
+	private blurSpring?: Spring<number>;
 
 	constructor(parentContainer?: Instance) {
 		const isGuiObject = parentContainer && parentContainer.IsA("GuiObject");
@@ -823,6 +881,24 @@ export class BackpackView {
 		if (!RunService.IsRunning() && this.isGuiObject) return;
 
 		let blur = Lighting.FindFirstChild("BackpackBlur") as BlurEffect | undefined;
+		if (!this.blurSpring) {
+			this.blurSpring = createSpring(0, SpringPresets.gentle);
+			this.blurSpring.onChange((size: number) => {
+				const currentBlur = Lighting.FindFirstChild("BackpackBlur") as BlurEffect | undefined;
+				if (currentBlur) {
+					currentBlur.Size = size;
+				}
+			});
+			this.blurSpring.onComplete((size: number) => {
+				if (!this._isVisible && size <= 0.5) {
+					const currentBlur = Lighting.FindFirstChild("BackpackBlur") as BlurEffect | undefined;
+					if (currentBlur) {
+						currentBlur.Enabled = false;
+					}
+				}
+			});
+		}
+
 		if (visible) {
 			if (!blur) {
 				blur = new Instance("BlurEffect");
@@ -831,20 +907,9 @@ export class BackpackView {
 				blur.Parent = Lighting;
 			}
 			blur.Enabled = true;
-			TweenService.Create(blur, new TweenInfo(0.38, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {
-				Size: 20,
-			}).Play();
+			this.blurSpring.setGoal(20);
 		} else if (blur) {
-			const tween = TweenService.Create(blur, new TweenInfo(0.28, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
-				Size: 0,
-			});
-			tween.Play();
-			const conn = tween.Completed.Connect(() => {
-				conn.Disconnect();
-				if (!this._isVisible && blur && blur.Parent) {
-					blur.Enabled = false;
-				}
-			});
+			this.blurSpring.setGoal(0);
 		}
 	}
 
@@ -920,25 +985,24 @@ export class BackpackView {
 		const camera = Workspace.CurrentCamera;
 		if (!camera) return;
 
-		this.fovTween?.Cancel();
+		if (!this.fovSpring) {
+			this.originalFOV = camera.FieldOfView > 0 ? camera.FieldOfView : 70;
+			this.fovSpring = createSpring(camera.FieldOfView, SpringPresets.gentle);
+			this.fovSpring.onChange((fov: number) => {
+				const currentCam = Workspace.CurrentCamera;
+				if (currentCam) {
+					currentCam.FieldOfView = fov;
+				}
+			});
+		}
 
 		if (zoomIn) {
 			this.originalFOV = camera.FieldOfView > 0 ? camera.FieldOfView : 70;
 			const targetFOV = math.max(this.originalFOV - 35, 45); // Zoom-in halus identik dengan smartphone & emote modal
-			this.fovTween = TweenService.Create(
-				camera,
-				new TweenInfo(0.4, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
-				{ FieldOfView: targetFOV },
-			);
+			this.fovSpring.setGoal(targetFOV);
 		} else {
-			this.fovTween = TweenService.Create(
-				camera,
-				new TweenInfo(0.35, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
-				{ FieldOfView: this.originalFOV },
-			);
+			this.fovSpring.setGoal(this.originalFOV);
 		}
-
-		this.fovTween.Play();
 	}
 
 	public setVisible(visible: boolean, onFinished?: () => void): void {
@@ -967,7 +1031,8 @@ export class BackpackView {
 	}
 
 	public destroy(): void {
-		this.fovTween?.Cancel();
+		this.fovSpring?.destroy();
+		this.blurSpring?.destroy();
 		const camera = Workspace.CurrentCamera;
 		if (camera && this._isVisible) {
 			camera.FieldOfView = this.originalFOV;

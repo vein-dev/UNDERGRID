@@ -6,13 +6,13 @@ import {
 	Players,
 	RunService,
 	SoundService,
-	TweenService,
 	UserInputService,
 	Workspace,
 } from "@rbxts/services";
 import { CreditsView } from "./CreditsView";
 import { GraphicsPresetView } from "./GraphicsPresetView";
 import { SettingsModalView } from "./SettingsModalView";
+import { createSpring, SpringPresets, useSpring } from "../SpringConfig";
 
 export const DEFAULT_MAIN_MENU_BANNER = "rbxassetid://134317644021810";
 export const DEFAULT_MAIN_MENU_LOGO = "rbxassetid://79461853534630";
@@ -47,6 +47,68 @@ const MENU_ITEMS: MenuItemData[] = [
 	{ id: "credits", title: "Credits", imageAssetId: DEFAULT_MENU_IMAGES.CREDITS, width: 225 },
 ];
 
+function MainMenuItem({
+	item,
+	index,
+	isSelected,
+	isStarting,
+	onHover,
+	onClick,
+}: {
+	item: MenuItemData;
+	index: number;
+	isSelected: boolean;
+	isStarting: boolean;
+	onHover: () => void;
+	onClick: () => void;
+}) {
+	const targetX = isSelected ? 24 : 16;
+	const targetScale = isSelected ? 1.04 : 1.0;
+
+	const [xBinding, xSpring] = useSpring(targetX, SpringPresets.snappy);
+	const [scaleBinding, scaleSpring] = useSpring(targetScale, SpringPresets.snappy);
+
+	useEffect(() => {
+		xSpring.setGoal(targetX);
+		scaleSpring.setGoal(targetScale);
+	}, [isSelected]);
+
+	return (
+		<textbutton
+			key={item.id}
+			LayoutOrder={index}
+			Size={new UDim2(1, 0, 0, 52)}
+			BackgroundTransparency={1}
+			BorderSizePixel={0}
+			AutoButtonColor={false}
+			Text=""
+			ZIndex={13}
+			Event={{
+				MouseEnter: () => {
+					if (!isStarting) onHover();
+				},
+				Activated: () => {
+					if (!isStarting) onClick();
+				},
+			}}
+		>
+			<uiscale Scale={scaleBinding} />
+			<imagelabel
+				key="ItemImageLabel"
+				AnchorPoint={new Vector2(0, 0.5)}
+				Position={xBinding.map((x) => new UDim2(0, x, 0.5, 0))}
+				Size={new UDim2(0, item.width, 0, 48)}
+				Image={item.imageAssetId}
+				ImageColor3={isSelected ? Color3.fromRGB(255, 255, 255) : Color3.fromHex("#8a8a8a")}
+				ScaleType={Enum.ScaleType.Fit}
+				BackgroundTransparency={1}
+				BorderSizePixel={0}
+				ZIndex={14}
+			/>
+		</textbutton>
+	);
+}
+
 /**
  * Main Menu View strictly matching the 16:9 widescreen HTML template.
  * Features:
@@ -55,8 +117,7 @@ const MENU_ITEMS: MenuItemData[] = [
  * - Top & bottom vignette gradient overlays
  * - High-contrast game title/logo (rbxassetid://79461853534630) pinned tightly to the left margin
  * - Authentic exported Figma PNG typography for Start, Graphics, Credits
- * - Sliding pure white solid diamond indicator
- * - Full mouse hover, click, and W/S/Arrow/Enter keyboard navigation
+ * - Full mouse hover, click, and W/S/Arrow/Enter keyboard navigation with spring nudge physics
  */
 export function MainMenuComponent({
 	isOpen,
@@ -261,32 +322,32 @@ export function MainMenuComponent({
 		curtain.Position = new UDim2(-1.08, -60, 0, 0);
 		curtain.Visible = true;
 
-		// 2. Berikan dorongan fisik sedikit ke kanan pada menu content untuk momentum visual
+		// 2. Berikan dorongan fisik sedikit ke kanan pada menu content untuk momentum visual dengan spring
+		let contentSpringClean: (() => void) | undefined;
 		if (contentWrapper) {
-			const contentTween = TweenService.Create(
-				contentWrapper,
-				new TweenInfo(0.70, Enum.EasingStyle.Cubic, Enum.EasingDirection.Out),
-				{
-					Position: new UDim2(0, 90, 0, 0),
-				},
-			);
-			contentTween.Play();
+			const contentSpring = createSpring(new UDim2(0, 0, 0, 0), SpringPresets.gentle);
+			contentSpring.onChange((pos: UDim2) => {
+				contentWrapper.Position = pos;
+			});
+			contentSpring.setGoal(new UDim2(0, 90, 0, 0));
+			contentSpringClean = () => contentSpring.destroy();
 		}
 
-		// 3. FASE 1: Swipe-in menyapu layar dari kiri ke kanan (Cubic InOut, 0.70 detik - anggun, smooth, dan jelas)
-		const wipeInTween = TweenService.Create(
-			curtain,
-			new TweenInfo(0.70, Enum.EasingStyle.Cubic, Enum.EasingDirection.InOut),
-			{
-				Position: new UDim2(0, 0, 0, 0),
-			},
-		);
+		// 3. FASE 1: Swipe-in menyapu layar dari kiri ke kanan dengan spring physics
+		const curtainSpring = createSpring(new UDim2(-1.08, -60, 0, 0), SpringPresets.gentle);
+		curtainSpring.onChange((pos: UDim2) => {
+			curtain.Position = pos;
+		});
 
-		const conn = wipeInTween.Completed.Connect((playbackState) => {
-			if (playbackState !== Enum.PlaybackState.Completed) return;
+		let isPhase2 = false;
+		let phase2DelayThread: thread | undefined;
+		let curtainPhase2SpringClean: (() => void) | undefined;
+
+		curtainSpring.onComplete(() => {
+			if (isPhase2) return;
+			isPhase2 = true;
 
 			// Layar sekarang 100% tertutup tirai hitam gelap!
-			// Sembunyikan layer konten menu di balik tirai
 			if (contentWrapper) {
 				contentWrapper.Visible = false;
 			}
@@ -295,32 +356,34 @@ export function MainMenuComponent({
 			onStart?.();
 
 			// Jeda dramatis (0.18s) di balik layar gelap agar transisi terasa berbobot
-			task.delay(0.18, () => {
-				// 4. FASE 2: Swipe-out meluncur ke arah kanan membuka pemandangan 3D (Cubic InOut, 0.75 detik)
-				const wipeOutTween = TweenService.Create(
-					curtain,
-					new TweenInfo(0.75, Enum.EasingStyle.Cubic, Enum.EasingDirection.InOut),
-					{
-						Position: new UDim2(1.08, 60, 0, 0),
-					},
-				);
+			phase2DelayThread = task.delay(0.18, () => {
+				curtainSpring.destroy();
 
-				wipeOutTween.Completed.Connect((status) => {
-					if (status === Enum.PlaybackState.Completed) {
-						curtain.Visible = false;
-						// Selesai seluruh transisi: beritahu adapter untuk unmount / hide MainMenuView
-						onTransitionComplete?.();
-					}
+				// 4. FASE 2: Swipe-out meluncur ke arah kanan membuka pemandangan 3D
+				const wipeOutSpring = createSpring(new UDim2(0, 0, 0, 0), SpringPresets.gentle);
+				wipeOutSpring.onChange((pos: UDim2) => {
+					curtain.Position = pos;
 				});
-
-				wipeOutTween.Play();
+				wipeOutSpring.onComplete(() => {
+					curtain.Visible = false;
+					wipeOutSpring.destroy();
+					// Selesai seluruh transisi: beritahu adapter untuk unmount / hide MainMenuView
+					onTransitionComplete?.();
+				});
+				wipeOutSpring.setGoal(new UDim2(1.08, 60, 0, 0));
+				curtainPhase2SpringClean = () => wipeOutSpring.destroy();
 			});
 		});
 
-		wipeInTween.Play();
+		curtainSpring.setGoal(new UDim2(0, 0, 0, 0));
 
 		return () => {
-			conn.Disconnect();
+			curtainSpring.destroy();
+			contentSpringClean?.();
+			curtainPhase2SpringClean?.();
+			if (phase2DelayThread) {
+				task.cancel(phase2DelayThread);
+			}
 		};
 	}, [isStarting]);
 
@@ -519,47 +582,21 @@ export function MainMenuComponent({
 							/>
 
 							{MENU_ITEMS.map((item, index) => {
-								const isSelected = index === selectedIndex;
 								return (
-									<textbutton
+									<MainMenuItem
 										key={item.id}
-										LayoutOrder={index}
-										Size={new UDim2(1, 0, 0, ITEM_HEIGHT)}
-										BackgroundTransparency={1}
-										BorderSizePixel={0}
-										AutoButtonColor={false}
-										Text=""
-										ZIndex={13}
-										Event={{
-											MouseEnter: () => {
-												if (isStarting) return;
-												if (selectedIndex !== index) {
-													playHoverSound();
-													setSelectedIndex(index);
-												}
-											},
-											Activated: () => {
-												if (isStarting) return;
-												handleAction(index);
-											},
-										}}
-									>
-										{/* Render tipografi grafis PNG seragam dari Figma (UnifrakturMaguntia) */}
-										<imagelabel
-											key="ItemImageLabel"
-											AnchorPoint={new Vector2(0, 0.5)}
-											Position={new UDim2(0, 16, 0.5, 0)}
-											Size={new UDim2(0, item.width, 0, 48)}
-											Image={item.imageAssetId}
-											ImageColor3={
-												isSelected ? Color3.fromRGB(255, 255, 255) : Color3.fromHex("#8a8a8a")
+										item={item}
+										index={index}
+										isSelected={index === selectedIndex}
+										isStarting={isStarting}
+										onHover={() => {
+											if (selectedIndex !== index) {
+												playHoverSound();
+												setSelectedIndex(index);
 											}
-											ScaleType={Enum.ScaleType.Fit}
-											BackgroundTransparency={1}
-											BorderSizePixel={0}
-											ZIndex={14}
-										/>
-									</textbutton>
+										}}
+										onClick={() => handleAction(index)}
+									/>
 								);
 							})}
 						</frame>

@@ -3,7 +3,7 @@ import { Icon } from "@rbxts/topbar-plus";
 import { AdminPanelView } from "client/ui/admin/AdminPanelView";
 import { EmoteModalView } from "client/ui/views/EmoteModalView";
 import { LightingRemoteView } from "client/ui/views/LightingRemoteView";
-import { SettingsModalView } from "client/ui/views/SettingsModalView";
+import { GraphicsPresetView } from "client/ui/views/GraphicsPresetView";
 import { isPlayerAdmin } from "shared/config";
 import { GetIconUri } from "shared/utils";
 import { BackpackController } from "./BackpackController";
@@ -137,12 +137,12 @@ export class TopbarController {
 		});
 
 
-		// 4. Icon Settings (Terhubung dengan SettingsModalView)
-		const settingsView = SettingsModalView.getInstance();
+		// 4. Icon Settings (Terhubung langsung dengan GraphicsPresetView / Presets Setting)
+		const presetView = GraphicsPresetView.getInstance();
 		const settingsIcon = new Icon()
 			.setName("Settings")
 			.setImage(GetIconUri("settings"))
-			.setCaption("Settings (M)")
+			.setCaption("Presets Setting (M)")
 			.autoDeselect(false)
 			.bindToggleKey(Enum.KeyCode.M);
 
@@ -152,11 +152,11 @@ export class TopbarController {
 			if (!this.isTopbarEnabled) return;
 			if (isSyncingSettings) return;
 			isSyncingSettings = true;
-			settingsView.toggle(isSelected);
+			presetView.toggle(isSelected);
 			isSyncingSettings = false;
 		});
 
-		settingsView.onToggle((isOpen) => {
+		presetView.onToggle((isOpen) => {
 			if (!this.isTopbarEnabled) return;
 			if (isSyncingSettings) return;
 			isSyncingSettings = true;

@@ -1,5 +1,6 @@
-import { Players, TweenService } from "@rbxts/services";
+import { Players } from "@rbxts/services";
 import { StageCameraController } from "client/controllers/StageCameraController";
+import { createSpring, Spring, SpringPresets } from "../SpringConfig";
 
 /**
  * OOP Class Adapter for StageCameraOverlayView.
@@ -11,8 +12,7 @@ export class StageCameraOverlayView {
 	private screenGui: ScreenGui;
 	private topBar: Frame;
 	private bottomBar: Frame;
-	private topTween?: Tween;
-	private bottomTween?: Tween;
+	private offsetSpring: Spring<number>;
 	private isVisible = false;
 	private unsubController?: () => void;
 
@@ -63,6 +63,18 @@ export class StageCameraOverlayView {
 		this.bottomBar.ZIndex = 201;
 		this.bottomBar.Parent = this.screenGui;
 
+		// Offset spring: 0 = on screen, 1 = off screen
+		this.offsetSpring = createSpring(1, SpringPresets.snappy);
+		this.offsetSpring.onChange((offset: number) => {
+			this.topBar.Position = new UDim2(0, -100, -0.2 * offset, 0);
+			this.bottomBar.Position = new UDim2(0, -100, 1 + 0.2 * offset, 0);
+		});
+		this.offsetSpring.onComplete((offset: number) => {
+			if (!this.isVisible && offset >= 0.95) {
+				this.screenGui.Enabled = false;
+			}
+		});
+
 		// Hubungkan listener otomatis ke StageCameraController saat berjalan di client
 		if (!parentContainer) {
 			const controller = StageCameraController.getInstance();
@@ -87,48 +99,15 @@ export class StageCameraOverlayView {
 		if (this.isVisible) return;
 		this.isVisible = true;
 
-		this.topTween?.Cancel();
-		this.bottomTween?.Cancel();
-
 		this.screenGui.Enabled = true;
-
-		const tweenInfo = new TweenInfo(0.6, Enum.EasingStyle.Cubic, Enum.EasingDirection.Out);
-
-		this.topTween = TweenService.Create(this.topBar, tweenInfo, {
-			Position: new UDim2(0, -100, 0, 0),
-		});
-		this.bottomTween = TweenService.Create(this.bottomBar, tweenInfo, {
-			Position: new UDim2(0, -100, 1, 0),
-		});
-
-		this.topTween.Play();
-		this.bottomTween.Play();
+		this.offsetSpring.setGoal(0);
 	}
 
 	public hide(): void {
 		if (!this.isVisible) return;
 		this.isVisible = false;
 
-		this.topTween?.Cancel();
-		this.bottomTween?.Cancel();
-
-		const tweenInfo = new TweenInfo(0.7, Enum.EasingStyle.Cubic, Enum.EasingDirection.InOut);
-
-		this.topTween = TweenService.Create(this.topBar, tweenInfo, {
-			Position: new UDim2(0, -100, -0.2, 0),
-		});
-		this.bottomTween = TweenService.Create(this.bottomBar, tweenInfo, {
-			Position: new UDim2(0, -100, 1.2, 0),
-		});
-
-		this.topTween.Completed.Connect((status) => {
-			if (status === Enum.PlaybackState.Completed && !this.isVisible) {
-				this.screenGui.Enabled = false;
-			}
-		});
-
-		this.topTween.Play();
-		this.bottomTween.Play();
+		this.offsetSpring.setGoal(1);
 	}
 
 	public destroy(): void {
@@ -136,10 +115,8 @@ export class StageCameraOverlayView {
 			this.unsubController();
 			this.unsubController = undefined;
 		}
-		this.topTween?.Cancel();
-		this.bottomTween?.Cancel();
+		this.offsetSpring.destroy();
 		this.screenGui.Destroy();
-
 		if (StageCameraOverlayView.instance === this) {
 			StageCameraOverlayView.instance = undefined;
 		}

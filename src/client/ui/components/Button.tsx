@@ -1,7 +1,8 @@
-import React, { useState } from "@rbxts/react";
+import React from "@rbxts/react";
 import { MonochromeTheme } from "../Theme";
 import { Fonts } from "../Typography";
 import { LucideIcon } from "./LucideIcon";
+import { usePressSpring } from "../hooks";
 
 export type ButtonVariant = "primary" | "secondary" | "ghost" | "danger";
 
@@ -22,7 +23,7 @@ export interface ButtonProps {
 
 /**
  * Reusable iOS-styled interactive Button.
- * Built with MonochromeTheme tokens, dynamic hover/press states, and clean lifecycle.
+ * Built with MonochromeTheme tokens, dynamic hover/press tactile spring states, and clean lifecycle.
  */
 export function Button({
 	text,
@@ -38,8 +39,12 @@ export function Button({
 	textSize = 13,
 	onClick,
 }: ButtonProps) {
-	const [isHovered, setIsHovered] = useState(false);
-	const [isPressed, setIsPressed] = useState(false);
+	const { scaleBinding, isHovered, isPressed, eventHandlers } = usePressSpring({
+		disabled,
+		idleScale: 1.0,
+		hoverScale: 1.02,
+		pressScale: 0.95,
+	});
 
 	let bgColor = MonochromeTheme.Button.SecondaryBg;
 	let textColor = MonochromeTheme.Button.SecondaryText;
@@ -95,19 +100,7 @@ export function Button({
 			AutoButtonColor={false}
 			Text=""
 			Event={{
-				MouseEnter: () => {
-					if (!disabled) setIsHovered(true);
-				},
-				MouseLeave: () => {
-					setIsHovered(false);
-					setIsPressed(false);
-				},
-				MouseButton1Down: () => {
-					if (!disabled) setIsPressed(true);
-				},
-				MouseButton1Up: () => {
-					setIsPressed(false);
-				},
+				...eventHandlers,
 				Activated: () => {
 					if (!disabled && onClick) {
 						onClick();
@@ -115,6 +108,7 @@ export function Button({
 				},
 			}}
 		>
+			<uiscale Scale={scaleBinding} />
 			<uicorner CornerRadius={cornerRadius} />
 			{strokeTransparency < 1 && (
 				<uistroke

@@ -1,7 +1,9 @@
 import React, { useEffect, useRef, useState } from "@rbxts/react";
 import ReactRoblox, { Root } from "@rbxts/react-roblox";
-import { Players, TweenService, Workspace } from "@rbxts/services";
+import { Players, Workspace } from "@rbxts/services";
 import { AvatarContextMenuAction, AvatarTargetPlayer } from "shared/types";
+import { SpringPresets, useSpring } from "../SpringConfig";
+import { usePressSpring } from "../hooks";
 import { LucideIcon } from "../components/LucideIcon";
 import { MonochromeTheme } from "../Theme";
 import { Fonts } from "../Typography";
@@ -15,6 +17,102 @@ export interface AvatarContextMenuProps {
 	onClose?: () => void;
 }
 
+interface ContextActionButtonProps {
+	actionKey: string;
+	label: string;
+	iconName: string;
+	layoutOrder: number;
+	activeColor?: Color3;
+	textColor?: Color3;
+	isHighlighted?: boolean;
+	onClick: () => void;
+}
+
+function ContextActionButton({
+	actionKey,
+	label,
+	iconName,
+	layoutOrder,
+	activeColor,
+	textColor,
+	isHighlighted,
+	onClick,
+}: ContextActionButtonProps) {
+	const { scaleBinding, isHovered, eventHandlers } = usePressSpring({
+		hoverScale: 1.02,
+		pressScale: 0.97,
+		springConfig: SpringPresets.snappy,
+	});
+
+	const defaultBg = MonochromeTheme.Background.DeepCharcoal;
+	const hoverBg = isHighlighted
+		? Color3.fromHex("#ef4444")
+		: MonochromeTheme.Background.CardHover;
+
+	const bgColor = isHovered ? hoverBg : defaultBg;
+	const bgTrans = isHovered ? (isHighlighted ? 0.35 : 0.3) : 1;
+
+	const resolvedIconColor = isHovered && isHighlighted
+		? Color3.fromHex("#ffffff")
+		: activeColor ?? (textColor ?? MonochromeTheme.Text.Primary);
+
+	const resolvedTextColor = isHovered && isHighlighted
+		? Color3.fromHex("#ffffff")
+		: textColor ?? MonochromeTheme.Text.Primary;
+
+	return (
+		<textbutton
+			key={`Action_${actionKey}`}
+			LayoutOrder={layoutOrder}
+			Size={new UDim2(1, 0, 0, 44)}
+			BackgroundColor3={bgColor}
+			BackgroundTransparency={bgTrans}
+			AutoButtonColor={false}
+			Text=""
+			ZIndex={92}
+			Event={{
+				MouseEnter: eventHandlers.MouseEnter,
+				MouseLeave: eventHandlers.MouseLeave,
+				MouseButton1Down: eventHandlers.MouseButton1Down,
+				MouseButton1Up: eventHandlers.MouseButton1Up,
+				MouseButton1Click: onClick,
+			}}
+		>
+			<uiscale Scale={scaleBinding} />
+			<frame
+				AnchorPoint={new Vector2(0.5, 0.5)}
+				Position={new UDim2(0.5, 0, 0.5, 0)}
+				Size={new UDim2(0, 0, 1, 0)}
+				AutomaticSize={Enum.AutomaticSize.X}
+				BackgroundTransparency={1}
+				ZIndex={93}
+			>
+				<uilistlayout
+					FillDirection={Enum.FillDirection.Horizontal}
+					VerticalAlignment={Enum.VerticalAlignment.Center}
+					HorizontalAlignment={Enum.HorizontalAlignment.Center}
+					Padding={new UDim(0, 8)}
+				/>
+				<LucideIcon
+					name={iconName}
+					size={new UDim2(0, 16, 0, 16)}
+					color={resolvedIconColor}
+					zIndex={94}
+				/>
+				<textlabel
+					Text={label}
+					Font={isHighlighted ? Fonts.Bold : Fonts.Medium}
+					TextSize={14}
+					TextColor3={resolvedTextColor}
+					BackgroundTransparency={1}
+					AutomaticSize={Enum.AutomaticSize.XY}
+					ZIndex={94}
+				/>
+			</frame>
+		</textbutton>
+	);
+}
+
 export function AvatarContextMenuComponent({
 	visible,
 	target,
@@ -24,11 +122,13 @@ export function AvatarContextMenuComponent({
 	onClose,
 }: AvatarContextMenuProps) {
 	const [shouldRender, setShouldRender] = useState(visible);
-	const [hoveredAction, setHoveredAction] = useState<string | undefined>();
 	const [scale, setScale] = useState(1);
 
-	const containerRef = useRef<CanvasGroup>();
-	const isMountedRef = useRef(false);
+	const targetPos = new UDim2(0.5, 0, 1, -95);
+	const offscreenPos = new UDim2(0.5, 0, 1, 80);
+
+	const [posBinding, posSpring] = useSpring(visible ? targetPos : offscreenPos, SpringPresets.bouncy);
+	const [transBinding, transSpring] = useSpring(visible ? 0 : 1, SpringPresets.gentle);
 
 	// Carousel navigation state
 	const playerList = nearbyPlayers.size() > 0 ? nearbyPlayers : target ? [target] : [];
@@ -38,10 +138,6 @@ export function AvatarContextMenuComponent({
 				playerList.findIndex((p) => p.userId === target.userId),
 			)
 		: 0;
-
-	useEffect(() => {
-		isMountedRef.current = true;
-	}, []);
 
 	// Responsive scale
 	useEffect(() => {
@@ -58,66 +154,26 @@ export function AvatarContextMenuComponent({
 		return () => vpConn?.Disconnect();
 	}, []);
 
-	// Mount rendering when visible becomes true
+	// Spring goal updates
 	useEffect(() => {
 		if (visible && target) {
 			setShouldRender(true);
+			posSpring.setGoal(targetPos);
+			transSpring.setGoal(0);
+		} else {
+			posSpring.setGoal(offscreenPos);
+			transSpring.setGoal(1);
 		}
 	}, [visible, target]);
 
-	// Open / Close Animation
 	useEffect(() => {
-		if (!shouldRender) return;
-
-		const container = containerRef.current;
-		if (!container) return;
-
-		const targetPos = new UDim2(0.5, 0, 1, -95);
-		const offscreenPos = new UDim2(0.5, 0, 1, 80);
-
-		if (visible) {
-			container.Position = offscreenPos;
-			container.GroupTransparency = 1;
-
-			const tween = TweenService.Create(
-				container,
-				new TweenInfo(0.35, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
-				{
-					Position: targetPos,
-					GroupTransparency: 0,
-				},
-			);
-			tween.Play();
-			return () => tween.Cancel();
-		} else {
-			if (!isMountedRef.current) {
-				container.Position = offscreenPos;
-				container.GroupTransparency = 1;
+		const unsub = posSpring.onComplete(() => {
+			if (!visible) {
 				setShouldRender(false);
-				return;
 			}
-
-			const tween = TweenService.Create(
-				container,
-				new TweenInfo(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.In),
-				{
-					Position: offscreenPos,
-					GroupTransparency: 1,
-				},
-			);
-			const conn = tween.Completed.Connect((status) => {
-				conn.Disconnect();
-				if (status === Enum.PlaybackState.Completed) {
-					setShouldRender(false);
-				}
-			});
-			tween.Play();
-			return () => {
-				conn.Disconnect();
-				tween.Cancel();
-			};
-		}
-	}, [visible, shouldRender]);
+		});
+		return unsub;
+	}, [visible]);
 
 	if (!shouldRender || !target) {
 		return <></>;
@@ -137,9 +193,9 @@ export function AvatarContextMenuComponent({
 
 	return (
 		<canvasgroup
-			ref={containerRef}
 			AnchorPoint={new Vector2(0.5, 1)}
-			Position={new UDim2(0.5, 0, 1, -95)}
+			Position={posBinding}
+			GroupTransparency={transBinding}
 			Size={new UDim2(0, 310, 0, 0)}
 			AutomaticSize={Enum.AutomaticSize.Y}
 			BackgroundColor3={MonochromeTheme.Background.DeepCharcoal}
@@ -353,64 +409,15 @@ export function AvatarContextMenuComponent({
 			/>
 
 			{/* ─── Action Button 1: Sync / Unsync ─── */}
-			<textbutton
-				key="Action_Sync"
-				LayoutOrder={5}
-				Size={new UDim2(1, 0, 0, 44)}
-				BackgroundColor3={
-					hoveredAction === "sync"
-						? MonochromeTheme.Background.CardHover
-						: MonochromeTheme.Background.DeepCharcoal
-				}
-				BackgroundTransparency={hoveredAction === "sync" ? 0.3 : 1}
-				AutoButtonColor={false}
-				Text=""
-				ZIndex={92}
-				Event={{
-					MouseEnter: () => setHoveredAction("sync"),
-					MouseLeave: () => setHoveredAction(undefined),
-					MouseButton1Click: () => onAction?.("sync", target),
-				}}
-			>
-				<frame
-					AnchorPoint={new Vector2(0.5, 0.5)}
-					Position={new UDim2(0.5, 0, 0.5, 0)}
-					Size={new UDim2(0, 0, 1, 0)}
-					AutomaticSize={Enum.AutomaticSize.X}
-					BackgroundTransparency={1}
-					ZIndex={93}
-				>
-					<uilistlayout
-						FillDirection={Enum.FillDirection.Horizontal}
-						VerticalAlignment={Enum.VerticalAlignment.Center}
-						HorizontalAlignment={Enum.HorizontalAlignment.Center}
-						Padding={new UDim(0, 8)}
-					/>
-					<LucideIcon
-						name="refresh-cw"
-						size={new UDim2(0, 16, 0, 16)}
-						color={
-							target.isSyncing
-								? Color3.fromHex("#00ff88")
-								: MonochromeTheme.Text.Primary
-						}
-						zIndex={94}
-					/>
-					<textlabel
-						Text={target.isSyncing ? "Unsync" : "Sync"}
-						Font={Fonts.Medium}
-						TextSize={14}
-						TextColor3={
-							target.isSyncing
-								? Color3.fromHex("#00ff88")
-								: MonochromeTheme.Text.Primary
-						}
-						BackgroundTransparency={1}
-						AutomaticSize={Enum.AutomaticSize.XY}
-						ZIndex={94}
-					/>
-				</frame>
-			</textbutton>
+			<ContextActionButton
+				actionKey="sync"
+				label={target.isSyncing ? "Unsync" : "Sync"}
+				iconName="refresh-cw"
+				layoutOrder={5}
+				activeColor={target.isSyncing ? Color3.fromHex("#00ff88") : MonochromeTheme.Text.Primary}
+				textColor={target.isSyncing ? Color3.fromHex("#00ff88") : MonochromeTheme.Text.Primary}
+				onClick={() => onAction?.("sync", target)}
+			/>
 
 			{/* ─── Separator ─── */}
 			<frame
@@ -422,70 +429,19 @@ export function AvatarContextMenuComponent({
 			/>
 
 			{/* ─── Action Button 2: Friends / Add Friend ─── */}
-			<textbutton
-				key="Action_Friend"
-				LayoutOrder={7}
-				Size={new UDim2(1, 0, 0, 44)}
-				BackgroundColor3={
-					hoveredAction === "friend" && !target.isFriend
-						? MonochromeTheme.Background.CardHover
-						: MonochromeTheme.Background.DeepCharcoal
-				}
-				BackgroundTransparency={
-					hoveredAction === "friend" && !target.isFriend ? 0.3 : 1
-				}
-				AutoButtonColor={false}
-				Text=""
-				ZIndex={92}
-				Event={{
-					MouseEnter: () => setHoveredAction("friend"),
-					MouseLeave: () => setHoveredAction(undefined),
-					MouseButton1Click: () => {
-						if (!target.isFriend) {
-							onAction?.("friend", target);
-						}
-					},
+			<ContextActionButton
+				actionKey="friend"
+				label={target.isFriend ? "Friends" : "Add Friend"}
+				iconName={target.isFriend ? "user-check" : "user-plus"}
+				layoutOrder={7}
+				activeColor={target.isFriend ? MonochromeTheme.Text.Muted : MonochromeTheme.Text.Primary}
+				textColor={target.isFriend ? MonochromeTheme.Text.Muted : MonochromeTheme.Text.Primary}
+				onClick={() => {
+					if (!target.isFriend) {
+						onAction?.("friend", target);
+					}
 				}}
-			>
-				<frame
-					AnchorPoint={new Vector2(0.5, 0.5)}
-					Position={new UDim2(0.5, 0, 0.5, 0)}
-					Size={new UDim2(0, 0, 1, 0)}
-					AutomaticSize={Enum.AutomaticSize.X}
-					BackgroundTransparency={1}
-					ZIndex={93}
-				>
-					<uilistlayout
-						FillDirection={Enum.FillDirection.Horizontal}
-						VerticalAlignment={Enum.VerticalAlignment.Center}
-						HorizontalAlignment={Enum.HorizontalAlignment.Center}
-						Padding={new UDim(0, 8)}
-					/>
-					<LucideIcon
-						name={target.isFriend ? "user-check" : "user-plus"}
-						size={new UDim2(0, 16, 0, 16)}
-						color={
-							target.isFriend
-								? MonochromeTheme.Text.Muted
-								: MonochromeTheme.Text.Primary
-						}
-						zIndex={94}
-					/>
-					<textlabel
-						Text={target.isFriend ? "Friends" : "Add Friend"}
-						Font={Fonts.Medium}
-						TextSize={14}
-						TextColor3={
-							target.isFriend
-								? MonochromeTheme.Text.Muted
-								: MonochromeTheme.Text.Primary
-						}
-						BackgroundTransparency={1}
-						AutomaticSize={Enum.AutomaticSize.XY}
-						ZIndex={94}
-					/>
-				</frame>
-			</textbutton>
+			/>
 
 			{/* ─── Separator ─── */}
 			<frame
@@ -497,56 +453,15 @@ export function AvatarContextMenuComponent({
 			/>
 
 			{/* ─── Action Button 3: Inspect Avatar ─── */}
-			<textbutton
-				key="Action_Inspect"
-				LayoutOrder={9}
-				Size={new UDim2(1, 0, 0, 44)}
-				BackgroundColor3={
-					hoveredAction === "inspect"
-						? MonochromeTheme.Background.CardHover
-						: MonochromeTheme.Background.DeepCharcoal
-				}
-				BackgroundTransparency={hoveredAction === "inspect" ? 0.3 : 1}
-				AutoButtonColor={false}
-				Text=""
-				ZIndex={92}
-				Event={{
-					MouseEnter: () => setHoveredAction("inspect"),
-					MouseLeave: () => setHoveredAction(undefined),
-					MouseButton1Click: () => onAction?.("inspect", target),
-				}}
-			>
-				<frame
-					AnchorPoint={new Vector2(0.5, 0.5)}
-					Position={new UDim2(0.5, 0, 0.5, 0)}
-					Size={new UDim2(0, 0, 1, 0)}
-					AutomaticSize={Enum.AutomaticSize.X}
-					BackgroundTransparency={1}
-					ZIndex={93}
-				>
-					<uilistlayout
-						FillDirection={Enum.FillDirection.Horizontal}
-						VerticalAlignment={Enum.VerticalAlignment.Center}
-						HorizontalAlignment={Enum.HorizontalAlignment.Center}
-						Padding={new UDim(0, 8)}
-					/>
-					<LucideIcon
-						name="search"
-						size={new UDim2(0, 16, 0, 16)}
-						color={MonochromeTheme.Text.Primary}
-						zIndex={94}
-					/>
-					<textlabel
-						Text="Inspect Avatar"
-						Font={Fonts.Medium}
-						TextSize={14}
-						TextColor3={MonochromeTheme.Text.Primary}
-						BackgroundTransparency={1}
-						AutomaticSize={Enum.AutomaticSize.XY}
-						ZIndex={94}
-					/>
-				</frame>
-			</textbutton>
+			<ContextActionButton
+				actionKey="inspect"
+				label="Inspect Avatar"
+				iconName="search"
+				layoutOrder={9}
+				activeColor={MonochromeTheme.Text.Primary}
+				textColor={MonochromeTheme.Text.Primary}
+				onClick={() => onAction?.("inspect", target)}
+			/>
 
 			{/* ─── Separator ─── */}
 			<frame
@@ -558,64 +473,16 @@ export function AvatarContextMenuComponent({
 			/>
 
 			{/* ─── Action Button 4: Fight / Duel ─── */}
-			<textbutton
-				key="Action_Fight"
-				LayoutOrder={11}
-				Size={new UDim2(1, 0, 0, 44)}
-				BackgroundColor3={
-					hoveredAction === "fight"
-						? Color3.fromHex("#ef4444")
-						: MonochromeTheme.Background.DeepCharcoal
-				}
-				BackgroundTransparency={hoveredAction === "fight" ? 0.35 : 1}
-				AutoButtonColor={false}
-				Text=""
-				ZIndex={92}
-				Event={{
-					MouseEnter: () => setHoveredAction("fight"),
-					MouseLeave: () => setHoveredAction(undefined),
-					MouseButton1Click: () => onAction?.("fight", target),
-				}}
-			>
-				<frame
-					AnchorPoint={new Vector2(0.5, 0.5)}
-					Position={new UDim2(0.5, 0, 0.5, 0)}
-					Size={new UDim2(0, 0, 1, 0)}
-					AutomaticSize={Enum.AutomaticSize.X}
-					BackgroundTransparency={1}
-					ZIndex={93}
-				>
-					<uilistlayout
-						FillDirection={Enum.FillDirection.Horizontal}
-						VerticalAlignment={Enum.VerticalAlignment.Center}
-						HorizontalAlignment={Enum.HorizontalAlignment.Center}
-						Padding={new UDim(0, 8)}
-					/>
-					<LucideIcon
-						name="swords"
-						size={new UDim2(0, 16, 0, 16)}
-						color={
-							hoveredAction === "fight"
-								? Color3.fromHex("#ffffff")
-								: Color3.fromHex("#f87171")
-						}
-						zIndex={94}
-					/>
-					<textlabel
-						Text="Fight"
-						Font={Fonts.Bold}
-						TextSize={14}
-						TextColor3={
-							hoveredAction === "fight"
-								? Color3.fromHex("#ffffff")
-								: Color3.fromHex("#f87171")
-						}
-						BackgroundTransparency={1}
-						AutomaticSize={Enum.AutomaticSize.XY}
-						ZIndex={94}
-					/>
-				</frame>
-			</textbutton>
+			<ContextActionButton
+				actionKey="fight"
+				label="Fight"
+				iconName="swords"
+				layoutOrder={11}
+				activeColor={Color3.fromHex("#f87171")}
+				textColor={Color3.fromHex("#f87171")}
+				isHighlighted={true}
+				onClick={() => onAction?.("fight", target)}
+			/>
 		</canvasgroup>
 	);
 }

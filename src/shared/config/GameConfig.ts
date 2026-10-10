@@ -28,5 +28,9 @@ export const GameConfig = {
 		BACKGROUND_IMAGE: "rbxassetid://131049045044389",
 		/** Tingkat transparansi overlay gelap di atas gambar (0 = hitam pekat, 1 = transparan penuh) */
 		OVERLAY_TRANSPARENCY: 1,
+		/** Target durasi loading screen dalam detik */
+		TARGET_DURATION: 15,
+		/** Batas toleransi timeout darurat jika internet pemain sangat lambat */
+		FALLBACK_TIMEOUT: 17,
 	},
 } as const;
